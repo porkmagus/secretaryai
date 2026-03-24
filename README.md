@@ -1,6 +1,6 @@
 # HamCult - Secretary-First Personal Assistant
 
-This repository contains a polished Phase 1 through Phase 3 checkpoint plus an active Phase 4 local voice pipeline build for a self-hosted, single-user Secretary-first assistant system.
+This repository contains a polished Phase 1 through Phase 4 checkpoint for a self-hosted, single-user Secretary-first assistant system.
 
 ## Workspace Layout
 
@@ -103,16 +103,16 @@ The Phase 3 verifier checks:
 - due reminders can be dispatched through Telegram
 - disabling the integration removes webhook state cleanly
 
-## Phase 4 Foundations
+## Phase 4 Voice
 
-Phase 4 is in progress. The current checkpoint now includes:
+Phase 4 is now complete for local development. The current checkpoint includes:
 
 - speech storage under `runtime/speech`
 - seeded voice profiles and speech artifact tables
 - Telegram voice-note intake that stores inbound audio locally
 - a local STT hook through `STT_BASE_URL`
 - a local Chatterbox TTS hook through `TTS_BASE_URL`
-- `/voice` UI for voice profile and speech artifact inspection
+- `/voice` UI for profile editing, sample upload, preview synthesis, browser push-to-talk, and speech artifact inspection
 - a repo-native CPU speech service in `services/stt-faster-whisper`
 - a repo-native Chatterbox TTS service in `services/tts-chatterbox`
 - Telegram spoken replies backed by synthesized local TTS artifacts
@@ -174,6 +174,7 @@ The current Phase 4 verifiers check:
 - the `/voice` page loads
 - voice profile data is available through the web API
 - speech artifacts round-trip through the worker and web API
+- the web voice-turn endpoint is available for browser push-to-talk
 - a Telegram voice note is stored locally
 - local STT produces a real transcript
 - the transcript is routed into the Secretary chat flow

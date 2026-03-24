@@ -35,6 +35,10 @@ export async function createVoicePreview(params: {
     throw new Error("Preview text is required.");
   }
 
+  if (text.length > 1200) {
+    throw new Error("Preview text must be 1200 characters or shorter.");
+  }
+
   const voiceProfile = params.request.profileId
     ? await getVoiceProfileById(params.dbClient, params.request.profileId)
     : await getActiveVoiceProfile(params.dbClient);
@@ -111,6 +115,10 @@ export async function processWebSpeechTurn(params: {
     throw new Error("STT_BASE_URL is not configured.");
   }
 
+  if (params.audio.byteLength === 0) {
+    throw new Error("Audio upload was empty.");
+  }
+
   const traceId = createTraceId();
   const extension =
     params.originalFilename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") ||
@@ -161,7 +169,7 @@ export async function processWebSpeechTurn(params: {
   const transcription = await transcribeAudioFile({
     config: params.config,
     filePath: storagePath,
-    mimeType: params.mimeType ?? undefined,
+    mimeType: params.mimeType ?? null,
   });
 
   if (!transcription) {

@@ -2,6 +2,9 @@ import { Queue, Worker } from "bullmq";
 import type { MemoryCandidateJobPayload } from "@secretary/core-runtime";
 
 export const memoryCandidateQueueName = "memory-extract-candidates";
+export type MemoryQueueAdapter = {
+  enqueue(jobId: string, payload: MemoryCandidateJobPayload): Promise<void>;
+};
 
 type CreateMemoryQueueOptions = {
   processCandidate?: (jobId: string, payload: MemoryCandidateJobPayload) => Promise<void>;

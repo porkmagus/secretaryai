@@ -438,6 +438,28 @@ async function waitForTtsArtifact(webPort, conversationId) {
   throw new Error("Timed out waiting for synthesized TTS artifact.");
 }
 
+async function postWebSpeechTurn(webPort, sampleAudioBuffer) {
+  const form = new FormData();
+  form.set(
+    "audio",
+    new File([sampleAudioBuffer], "phase4-web-turn.wav", {
+      type: "audio/wav",
+    }),
+  );
+
+  const response = await fetch(`http://127.0.0.1:${webPort}/api/speech/web-turn`, {
+    method: "POST",
+    body: form,
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Web speech turn failed: ${JSON.stringify(payload)}`);
+  }
+
+  return payload;
+}
+
 async function ensureSampleAudio() {
   if (process.platform !== "win32") {
     throw new Error("Phase 4 voice verification currently expects Windows speech synthesis.");
@@ -611,6 +633,7 @@ try {
 
   const artifact = await waitForSpeechArtifact(webPort);
   const ttsArtifact = await waitForTtsArtifact(webPort, artifact.conversationId);
+  const webTurn = await postWebSpeechTurn(webPort, sampleAudioBuffer);
   const historyResponse = await fetch(
     `http://127.0.0.1:${webPort}/api/conversations/${artifact.conversationId}`,
     { cache: "no-store" },
@@ -632,6 +655,10 @@ try {
     throw new Error(`Expected assistant reply to be based on STT transcript. Got: ${assistantReply}`);
   }
 
+  if (!String(webTurn.transcriptText ?? "").includes("coffee over tea")) {
+    throw new Error(`Expected browser speech turn transcript. Got: ${JSON.stringify(webTurn)}`);
+  }
+
   if (
     fakeTelegram.state.sentVoices.length < 1 &&
     fakeTelegram.state.sentAudioReplies.length < 1
@@ -646,6 +673,7 @@ try {
         artifactId: artifact.id,
         transcriptText: artifact.transcriptText,
         assistantReply,
+        webTurnConversationId: webTurn.reply?.conversationId,
         reusedSttService: sttService.reused,
         reusedTtsService: ttsService.reused,
         sentAudioReplies: fakeTelegram.state.sentAudioReplies.length,

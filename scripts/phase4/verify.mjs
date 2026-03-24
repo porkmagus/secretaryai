@@ -242,6 +242,54 @@ async function insertSpeechArtifact(connectionString) {
   return artifact;
 }
 
+async function createVoiceProfile(webPort) {
+  const response = await fetch(`http://127.0.0.1:${webPort}/api/voice/profiles`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: "Phase 4 Verify Voice",
+      engineId: "chatterbox",
+      qualityPreset: "balanced",
+      speakingStyle: "clear and grounded",
+      isActive: false,
+    }),
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Voice profile create failed: ${JSON.stringify(payload)}`);
+  }
+
+  return payload.profile;
+}
+
+async function uploadVoiceSample(webPort, profileId) {
+  const form = new FormData();
+  form.set(
+    "file",
+    new File([Buffer.from("RIFFphase4verifyWAVEfmt ")], "phase4-verify.wav", {
+      type: "audio/wav",
+    }),
+  );
+
+  const response = await fetch(
+    `http://127.0.0.1:${webPort}/api/voice/profiles/${profileId}/sample`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Voice profile sample upload failed: ${JSON.stringify(payload)}`);
+  }
+
+  return payload;
+}
+
 const workerPort = await allocatePort();
 const webPort = await allocatePort();
 const env = {
@@ -278,8 +326,13 @@ try {
 
   const seededProfile = await waitForVoiceProfile(databaseUrl);
   const insertedArtifact = await insertSpeechArtifact(databaseUrl);
+  const createdProfile = await createVoiceProfile(webPort);
+  const uploadedSample = await uploadVoiceSample(webPort, createdProfile.id);
 
   const voicePage = await fetch(`http://127.0.0.1:${webPort}/voice`, {
+    cache: "no-store",
+  });
+  const speechStatusResponse = await fetch(`http://127.0.0.1:${webPort}/api/speech/status`, {
     cache: "no-store",
   });
   const profilesResponse = await fetch(`http://127.0.0.1:${webPort}/api/voice/profiles`, {
@@ -291,6 +344,11 @@ try {
 
   const profilesBody = await profilesResponse.json();
   const artifactsBody = await artifactsResponse.json();
+  const speechStatusBody = await speechStatusResponse.json();
+
+  if (!speechStatusResponse.ok) {
+    throw new Error(`Speech status request failed: ${JSON.stringify(speechStatusBody)}`);
+  }
 
   if (!profilesResponse.ok) {
     throw new Error(`Voice profiles request failed: ${JSON.stringify(profilesBody)}`);
@@ -315,14 +373,36 @@ try {
     throw new Error("Expected speech artifact transcript text to round-trip through the API.");
   }
 
+  if (!uploadedSample.profile?.sampleStorageKey) {
+    throw new Error("Expected uploaded sample to attach a storage key to the created voice profile.");
+  }
+
+  const sampleResponse = await fetch(
+    `http://127.0.0.1:${webPort}/api/speech/file?storageKey=${encodeURIComponent(uploadedSample.profile.sampleStorageKey)}&mimeType=audio%2Fwav`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  if (!sampleResponse.ok) {
+    throw new Error(`Expected uploaded voice sample to be retrievable. Got ${sampleResponse.status}.`);
+  }
+
+  if (!speechStatusBody.services?.stt || !speechStatusBody.services?.tts) {
+    throw new Error("Expected speech status payload to include STT and TTS service states.");
+  }
+
   console.log(
     JSON.stringify(
       {
         voicePageStatus: voicePage.status,
         seededProfile,
+        createdProfileId: createdProfile.id,
         profileCount: profilesBody.profiles.length,
         artifactCount: artifactsBody.artifacts.length,
         verifiedArtifactId: artifact.id,
+        sampleStorageKey: uploadedSample.profile.sampleStorageKey,
+        speechStatus: speechStatusBody.services,
       },
       null,
       2,

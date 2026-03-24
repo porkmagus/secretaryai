@@ -112,6 +112,28 @@ export type SpeechArtifactListResponse = {
   artifacts: SpeechArtifactRecord[];
 };
 
+export type SpeechServiceStatusResponse = {
+  services: {
+    ffmpeg: {
+      available: boolean;
+      configuredPath: string | null;
+      summary: string;
+    };
+    stt: {
+      configured: boolean;
+      healthStatus: "ok" | "degraded" | "not_configured";
+      summary: string;
+      url: string | null;
+    };
+    tts: {
+      configured: boolean;
+      healthStatus: "ok" | "degraded" | "not_configured";
+      summary: string;
+      url: string | null;
+    };
+  };
+};
+
 export type CreateVoiceProfileRequest = {
   name: string;
   engineId: string;

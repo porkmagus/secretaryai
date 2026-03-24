@@ -9,6 +9,7 @@ import {
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
   type MemoryListResponse,
+  type SpeechServiceStatusResponse,
   type SpeechArtifactListResponse,
   type TaskListResponse,
   type TelegramTestMessageRequest,
@@ -61,6 +62,7 @@ import {
   ensureSpeechStoragePath,
   resolveManagedSpeechStoragePath,
 } from "./lib/speech-storage.js";
+import { getSpeechServiceStatus } from "./lib/speech-health.js";
 import { createVoicePreview, processWebSpeechTurn } from "./lib/web-speech.js";
 
 export async function buildServer() {
@@ -293,6 +295,21 @@ export async function buildServer() {
     }
   });
 
+  app.get("/runtime/speech/status", async (_, reply) => {
+    try {
+      const response: SpeechServiceStatusResponse = await getSpeechServiceStatus(config);
+      return response;
+    } catch (error) {
+      logger.error("runtime.speech.status_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load speech service status.",
+      });
+    }
+  });
+
   app.get<{
     Querystring: {
       mimeType?: string;
@@ -435,6 +452,12 @@ export async function buildServer() {
         });
       }
 
+      if (!upload.mimetype?.startsWith("audio/")) {
+        return reply.status(400).send({
+          error: "Voice samples must be uploaded as audio files.",
+        });
+      }
+
       const extension =
         upload.filename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "wav";
       const storageKey = createSpeechStorageKey(
@@ -443,6 +466,13 @@ export async function buildServer() {
       );
       const storagePath = await ensureSpeechStoragePath(storageKey);
       const audioBuffer = await upload.toBuffer();
+
+      if (audioBuffer.byteLength > 15 * 1024 * 1024) {
+        return reply.status(400).send({
+          error: "Voice samples must be 15 MB or smaller.",
+        });
+      }
+
       await writeFile(storagePath, audioBuffer);
 
       const sampleArtifactId = await createSpeechArtifact({
@@ -531,6 +561,20 @@ export async function buildServer() {
         });
       }
 
+      if (!upload.mimetype?.startsWith("audio/")) {
+        return reply.status(400).send({
+          error: "Web speech turns must be uploaded as audio files.",
+        });
+      }
+
+      const audioBuffer = await upload.toBuffer();
+
+      if (audioBuffer.byteLength > 20 * 1024 * 1024) {
+        return reply.status(400).send({
+          error: "Web speech audio must be 20 MB or smaller.",
+        });
+      }
+
       const conversationField = upload.fields.conversationId;
       const conversationId =
         conversationField &&
@@ -540,7 +584,7 @@ export async function buildServer() {
           ? conversationField.value.trim()
           : null;
       const response: WebSpeechTurnResponse = await processWebSpeechTurn({
-        audio: await upload.toBuffer(),
+        audio: audioBuffer,
         config,
         conversationId,
         dbClient: infrastructure.dbClient,

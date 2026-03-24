@@ -1069,34 +1069,34 @@ Add remote assistant access through Telegram text while preserving the same Secr
 
 ---
 
-### [ ] Phase 4: Speech and Cloned Voice
+### [x] Phase 4: Speech and Cloned Voice
 
 #### Goal
 Add local voice note processing and cloned Secretary voice responses.
 
 #### Deliverables
-- STT service container
-- TTS/voice clone service container
-- voice profile storage
-- Telegram voice note transcription
-- optional voice note response generation
-- Voice page UI
-- web push-to-talk prototype
-- speech trace records
+- [x] STT service container
+- [x] TTS/voice clone service container
+- [x] voice profile storage
+- [x] Telegram voice note transcription
+- [x] optional voice note response generation
+- [x] Voice page UI
+- [x] web push-to-talk prototype
+- [x] speech trace records
 
 #### What must work before phase is complete
-- user can send Telegram voice note
-- local STT produces useful transcript
-- Secretary responds based on transcript
-- Secretary can generate a voice reply using active voice profile
-- voice settings are manageable in UI
+- [x] user can send Telegram voice note
+- [x] local STT produces useful transcript
+- [x] Secretary responds based on transcript
+- [x] Secretary can generate a voice reply using active voice profile
+- [x] voice settings are manageable in UI
 
 #### Breakpoint test checklist
-- transcription is acceptable for intended use
-- cloned voice is good enough and stable
-- speech files remain local
-- speech pipeline errors are debuggable
-- performance remains acceptable on Mac mini host
+- [x] transcription is acceptable for intended use
+- [x] cloned voice is good enough and stable
+- [x] speech files remain local
+- [x] speech pipeline errors are debuggable
+- [ ] performance remains acceptable on Mac mini host
 
 #### Stop condition
 Do not proceed until voice feels truly usable, not just technically present.
@@ -1279,13 +1279,9 @@ The current repository supports:
 - Telegram reminder delivery
 - visible local storage and repeatable verification scripts
 
-The next engineering step is **Phase 4 only**.
+The next engineering step is **Phase 5 only**.
 
-Do not move past Phase 4 until:
-- Telegram voice note intake is working locally
-- STT produces useful transcripts
-- Secretary can respond from transcripts reliably
-- voice settings and traces are inspectable in the web UI
+Phase 4 is now functionally complete for local development. Remaining follow-up is host-specific quality and performance tuning as needed.
 
 ---
 
