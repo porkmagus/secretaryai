@@ -989,7 +989,7 @@ Establish the repository, core services, persistence, and basic Secretary web ch
 - [x] logs show end-to-end request path
 
 #### Breakpoint test checklist
-- [ ] install from clean environment succeeds
+- [x] install from clean environment succeeds
 - [x] DB schema initializes cleanly
 - [x] chat request/response persists correctly
 - [x] app survives restart without data loss
@@ -997,7 +997,7 @@ Establish the repository, core services, persistence, and basic Secretary web ch
 
 #### Stop condition
 - [x] persistent local web chat is working
-- [ ] clean-install verification is complete
+- [x] clean-install verification is complete
 
 ---
 
