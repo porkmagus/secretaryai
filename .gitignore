@@ -1,0 +1,20 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.local
+.env.*.local
+*.log
+
+# Generated artifacts
+drizzle/
+runtime/postgres/data/*
+runtime/redis/data/*
+!runtime/postgres/.gitkeep
+!runtime/redis/.gitkeep
+!runtime/README.md
+
+# OS / editor
+.DS_Store
+Thumbs.db

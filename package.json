@@ -1,0 +1,25 @@
+{
+  "name": "secretary-first-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:packages": "npm run build --workspace @secretary/config && npm run build --workspace @secretary/core-runtime && npm run build --workspace @secretary/db && npm run build --workspace @secretary/observability",
+    "build": "npm run build:packages && npm run build --workspace @secretary/web && npm run build --workspace @secretary/worker",
+    "db:migrate": "npm run migrate --workspace @secretary/db",
+    "dev:web": "npm run dev --workspace @secretary/web",
+    "dev:worker": "npm run dev --workspace @secretary/worker",
+    "lint": "npm run lint --workspaces --if-present",
+    "phase1:verify": "node scripts/phase1/verify.mjs",
+    "stack:down": "node scripts/setup/compose-runner.mjs down",
+    "stack:up": "npm run storage:prepare && node scripts/setup/compose-runner.mjs up -d",
+    "storage:prepare": "node scripts/setup/prepare-storage.mjs",
+    "typecheck": "npm run typecheck --workspace @secretary/config && npm run typecheck --workspace @secretary/core-runtime && npm run typecheck --workspace @secretary/db && npm run typecheck --workspace @secretary/observability && npm run build:packages && npm run typecheck --workspace @secretary/web && npm run typecheck --workspace @secretary/worker"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

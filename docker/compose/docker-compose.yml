@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: secretary-postgres
+    environment:
+      POSTGRES_DB: secretary
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /pgdata/data
+    ports:
+      - "5432:5432"
+    volumes:
+      - ../../runtime/postgres:/pgdata
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: secretary-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ../../runtime/redis/data:/data

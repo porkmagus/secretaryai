@@ -1,4 +1,4 @@
-# Secretary-First Personal Assistant System Design
+# HamCult - Secretary-First Personal Assistant System Design
 
 ## 1. Executive Summary
 
@@ -960,47 +960,48 @@ Onboarding should guide the user through:
 
 This project should be built in controlled phases. Each phase ends in a stop-and-test checkpoint before the next phase begins.
 
-### Phase 1: Foundation and Local Core
+### [x] Phase 1: Foundation and Local Core
 
 #### Goal
 Establish the repository, core services, persistence, and basic Secretary web chat without external channels or voice.
 
 #### Deliverables
-- monorepo scaffold
-- Docker Compose for core services
-- Postgres + pgvector running
-- Redis running
-- Next.js app running
-- Fastify worker running
-- initial schema and migrations
-- basic Secretary runtime skeleton
-- Desk page with simple chat
-- conversation/message persistence
-- first memory tables
-- basic structured logging
+- [x] monorepo scaffold
+- [x] Docker Compose for core services
+- [x] Postgres + pgvector running
+- [x] Redis running
+- [x] Next.js app running
+- [x] Fastify worker running
+- [x] initial schema and migrations
+- [x] basic Secretary runtime skeleton
+- [x] Desk page with simple chat
+- [x] conversation/message persistence
+- [x] first memory tables
+- [x] basic structured logging
 
 #### What must work before phase is complete
-- `docker compose up` starts core system successfully
-- web UI loads reliably
-- user can send a message in web chat
-- Secretary returns a stub or simple reply
-- conversation is saved to database
-- memory candidate job can be enqueued and observed
-- logs show end-to-end request path
+- [x] compose-based core stack starts successfully
+- [x] web UI loads reliably
+- [x] user can send a message in web chat
+- [x] Secretary returns a simple reply
+- [x] conversation is saved to database
+- [x] memory candidate job can be enqueued and observed
+- [x] logs show end-to-end request path
 
 #### Breakpoint test checklist
-- install from clean environment succeeds
-- DB schema initializes cleanly
-- chat request/response persists correctly
-- app survives restart without data loss
-- core storage paths are visible and organized
+- [ ] install from clean environment succeeds
+- [x] DB schema initializes cleanly
+- [x] chat request/response persists correctly
+- [x] app survives restart without data loss
+- [ ] core storage paths are visible and organized
 
 #### Stop condition
-Do not proceed until the system can be installed cleanly and support persistent local web chat.
+- [x] persistent local web chat is working
+- [ ] clean-install verification is complete
 
 ---
 
-### Phase 2: Memory and Secretary Intelligence Loop
+### [ ] Phase 2: Memory and Secretary Intelligence Loop
 
 #### Goal
 Turn the app from a persistent chat shell into an actual secretary core with retrieval-based memory and internal task flow.
@@ -1035,7 +1036,7 @@ Do not proceed until the memory system feels durable, inspectable, and clearly b
 
 ---
 
-### Phase 3: Telegram Integration
+### [ ] Phase 3: Telegram Integration
 
 #### Goal
 Add remote assistant access through Telegram text while preserving the same Secretary behavior and local data model.
@@ -1068,7 +1069,7 @@ Do not proceed until Telegram text feels stable enough for everyday remote use.
 
 ---
 
-### Phase 4: Speech and Cloned Voice
+### [ ] Phase 4: Speech and Cloned Voice
 
 #### Goal
 Add local voice note processing and cloned Secretary voice responses.
@@ -1102,7 +1103,7 @@ Do not proceed until voice feels truly usable, not just technically present.
 
 ---
 
-### Phase 5: Tools, Permissions, and Action Layer
+### [ ] Phase 5: Tools, Permissions, and Action Layer
 
 #### Goal
 Allow the Secretary to do work safely through tools and approval policies.
@@ -1137,7 +1138,7 @@ Do not proceed until tool execution is safe, reviewable, and understandable.
 
 ---
 
-### Phase 6: Polish, Onboarding, and Optional Expansion
+### [ ] Phase 6: Polish, Onboarding, and Optional Expansion
 
 #### Goal
 Refine the product into a clean daily-use assistant with strong setup and admin experience.
