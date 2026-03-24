@@ -61,6 +61,20 @@ export type ConversationHistoryResponse = {
   messages: ConversationHistoryMessage[];
 };
 
+export type ConversationListItem = {
+  id: string;
+  title: string | null;
+  status: string;
+  channelType: string;
+  lastMessageAt: string;
+  messageCount: number;
+  lastMessagePreview: string | null;
+};
+
+export type ConversationListResponse = {
+  conversations: ConversationListItem[];
+};
+
 export type RuntimeContextMessage = {
   role: "user" | "assistant" | "system" | "tool" | "specialist";
   text: string;

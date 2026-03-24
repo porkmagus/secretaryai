@@ -3,10 +3,12 @@
   --bg: #0b1020;
   --panel: rgba(17, 24, 39, 0.82);
   --panel-strong: rgba(15, 23, 42, 0.96);
+  --panel-soft: rgba(10, 18, 34, 0.72);
   --text: #e5eefc;
   --muted: #9fb2d2;
   --accent: #7dd3fc;
   --accent-strong: #38bdf8;
+  --accent-soft: rgba(125, 211, 252, 0.14);
   --border: rgba(125, 211, 252, 0.18);
   --success: #86efac;
   --shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
@@ -25,7 +27,7 @@ body {
     radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 28%),
     linear-gradient(180deg, #07111f 0%, #08101c 38%, #020617 100%);
   color: var(--text);
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Bahnschrift", "Aptos", "Segoe UI", system-ui, sans-serif;
 }
 
 body {
@@ -34,6 +36,30 @@ body {
 
 a {
   color: inherit;
+}
+
+a:hover {
+  color: var(--accent);
+}
+
+::selection {
+  background: rgba(125, 211, 252, 0.28);
+  color: #f8fbff;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.75);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(125, 211, 252, 0.22);
+  border-radius: 999px;
+  border: 2px solid rgba(2, 6, 23, 0.75);
 }
 
 main {

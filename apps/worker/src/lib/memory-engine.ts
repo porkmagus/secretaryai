@@ -274,6 +274,39 @@ function toTaskRecord(record: typeof tasks.$inferSelect): TaskRecord {
   };
 }
 
+async function ensureMemoryLink(params: {
+  dbClient: DbClient;
+  memoryEntryId: string;
+  linkType: string;
+  linkedEntityType: string;
+  linkedEntityId: string;
+}) {
+  const existing = await params.dbClient.db.query.memoryLinks.findFirst({
+    where: and(
+      eq(memoryLinks.memoryEntryId, params.memoryEntryId),
+      eq(memoryLinks.linkType, params.linkType),
+      eq(memoryLinks.linkedEntityType, params.linkedEntityType),
+      eq(memoryLinks.linkedEntityId, params.linkedEntityId),
+    ),
+  });
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const id = createMessageId();
+
+  await params.dbClient.db.insert(memoryLinks).values({
+    id,
+    memoryEntryId: params.memoryEntryId,
+    linkType: params.linkType,
+    linkedEntityType: params.linkedEntityType,
+    linkedEntityId: params.linkedEntityId,
+  });
+
+  return id;
+}
+
 export async function listMemories(
   dbClient: DbClient,
   filters: {
@@ -525,22 +558,20 @@ export async function processMemoryCandidateJob(params: {
       });
     }
 
-    await dbClient.db.insert(memoryLinks).values([
-      {
-        id: createMessageId(),
-        memoryEntryId: memoryId,
-        linkType: "source",
-        linkedEntityType: "conversation",
-        linkedEntityId: payload.conversationId,
-      },
-      {
-        id: createMessageId(),
-        memoryEntryId: memoryId,
-        linkType: "source",
-        linkedEntityType: "message",
-        linkedEntityId: payload.messageId,
-      },
-    ]);
+    await ensureMemoryLink({
+      dbClient,
+      memoryEntryId: memoryId,
+      linkType: "source",
+      linkedEntityType: "conversation",
+      linkedEntityId: payload.conversationId,
+    });
+    await ensureMemoryLink({
+      dbClient,
+      memoryEntryId: memoryId,
+      linkType: "source",
+      linkedEntityType: "message",
+      linkedEntityId: payload.messageId,
+    });
 
     await dbClient.db.insert(activityTraces).values({
       id: createMessageId(),
@@ -563,32 +594,57 @@ export async function processMemoryCandidateJob(params: {
   const taskCandidate = extractTaskCandidate(payload.text);
 
   if (taskCandidate) {
-    const taskId = createMessageId();
-    await dbClient.db.insert(tasks).values({
-      id: taskId,
-      userId: payload.userId,
-      conversationId: payload.conversationId,
-      title: taskCandidate.title,
-      detail: taskCandidate.detail,
-      status: "open",
-      sourceKind: "conversation",
-      sourceRef: payload.messageId,
+    const existingTask = await dbClient.db.query.tasks.findFirst({
+      where: and(
+        eq(tasks.userId, payload.userId),
+        eq(tasks.title, taskCandidate.title),
+        or(eq(tasks.status, "open"), eq(tasks.status, "in_progress")),
+      ),
+      orderBy: desc(tasks.createdAt),
     });
 
-    await dbClient.db.insert(activityTraces).values({
-      id: createMessageId(),
-      traceType: "task",
-      parentTraceId: payload.traceId,
-      conversationId: payload.conversationId,
-      jobId,
-      eventName: "task.created",
-      payloadJson: {
-        taskId,
+    if (existingTask) {
+      createdTaskIds.push(existingTask.id);
+      await dbClient.db.insert(activityTraces).values({
+        id: createMessageId(),
+        traceType: "task",
+        parentTraceId: payload.traceId,
+        conversationId: payload.conversationId,
+        jobId,
+        eventName: "task.reused",
+        payloadJson: {
+          taskId: existingTask.id,
+          title: existingTask.title,
+        },
+      });
+    } else {
+      const taskId = createMessageId();
+      await dbClient.db.insert(tasks).values({
+        id: taskId,
+        userId: payload.userId,
+        conversationId: payload.conversationId,
         title: taskCandidate.title,
-      },
-    });
+        detail: taskCandidate.detail,
+        status: "open",
+        sourceKind: "conversation",
+        sourceRef: payload.messageId,
+      });
 
-    createdTaskIds.push(taskId);
+      await dbClient.db.insert(activityTraces).values({
+        id: createMessageId(),
+        traceType: "task",
+        parentTraceId: payload.traceId,
+        conversationId: payload.conversationId,
+        jobId,
+        eventName: "task.created",
+        payloadJson: {
+          taskId,
+          title: taskCandidate.title,
+        },
+      });
+
+      createdTaskIds.push(taskId);
+    }
   }
 
   const finishedAt = new Date();

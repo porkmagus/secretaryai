@@ -2,6 +2,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
+  type ConversationListResponse,
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
   type MemoryListResponse,
@@ -14,6 +15,7 @@ import { createInfrastructure } from "./lib/infrastructure.js";
 import {
   createQueuedMemoryJob,
   getConversationMessages,
+  listRecentConversations,
   markMemoryJobEnqueueFailed,
   persistChatTurn,
 } from "./lib/chat-persistence.js";
@@ -87,6 +89,24 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load conversation history.",
+      });
+    }
+  });
+
+  app.get("/runtime/conversations", async (_, reply) => {
+    try {
+      const response: ConversationListResponse = await listRecentConversations(
+        infrastructure.dbClient,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.conversations.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load conversations.",
       });
     }
   });

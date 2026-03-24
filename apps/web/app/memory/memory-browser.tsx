@@ -6,6 +6,7 @@ import type {
   MemoryType,
   TaskRecord,
 } from "@secretary/core-runtime";
+import { formatTimestamp } from "../lib/presenters";
 
 type MemoryApiResponse = {
   memories: MemoryRecord[];
@@ -127,11 +128,18 @@ export function MemoryBrowser() {
   const summary = useMemo(() => {
     const pinned = memories.filter((memory) => memory.pinned).length;
     const suppressed = memories.filter((memory) => memory.suppressed).length;
+    const byType = memoryTypes
+      .filter((memoryType) => memoryType !== "all")
+      .map((memoryType) => ({
+        type: memoryType,
+        count: memories.filter((memory) => memory.memoryType === memoryType).length,
+      }));
 
     return {
       total: memories.length,
       pinned,
       suppressed,
+      byType,
     };
   }, [memories]);
 
@@ -270,6 +278,54 @@ export function MemoryBrowser() {
               alignContent: "start",
             }}
           >
+            <section
+              style={{
+                display: "grid",
+                gap: 14,
+                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              }}
+            >
+              <article
+                style={{
+                  padding: 18,
+                  borderRadius: 22,
+                  border: "1px solid var(--border)",
+                  background: "var(--panel-strong)",
+                }}
+              >
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Memories</p>
+                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>
+                  {summary.total}
+                </p>
+              </article>
+              <article
+                style={{
+                  padding: 18,
+                  borderRadius: 22,
+                  border: "1px solid var(--border)",
+                  background: "var(--panel-strong)",
+                }}
+              >
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Pinned</p>
+                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>
+                  {summary.pinned}
+                </p>
+              </article>
+              <article
+                style={{
+                  padding: 18,
+                  borderRadius: 22,
+                  border: "1px solid var(--border)",
+                  background: "var(--panel-strong)",
+                }}
+              >
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Suppressed</p>
+                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>
+                  {summary.suppressed}
+                </p>
+              </article>
+            </section>
+
             <article
               style={{
                 padding: 20,
@@ -402,7 +458,8 @@ export function MemoryBrowser() {
                     >
                       <span>importance {memory.importanceScore}</span>
                       <span>confidence {memory.confidenceScore}</span>
-                      <span>updated {new Date(memory.updatedAt).toLocaleString()}</span>
+                      <span>updated {formatTimestamp(memory.updatedAt)}</span>
+                      <span>last accessed {formatTimestamp(memory.lastAccessedAt)}</span>
                     </div>
                   </div>
 
@@ -551,6 +608,21 @@ export function MemoryBrowser() {
                       suppressed
                     </label>
                     <span>source: {memory.sourceRef ?? "n/a"}</span>
+                    {memory.tags.map((tag) => (
+                      <span
+                        key={`${memory.id}-${tag}`}
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: "rgba(56, 189, 248, 0.1)",
+                          color: "var(--accent)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    ))}
                   </div>
 
                   <div
@@ -626,9 +698,39 @@ export function MemoryBrowser() {
                       <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
                         {task.detail ?? "No extra detail."}
                       </p>
+                      <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                        {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
+                      </p>
                     </article>
                   ))
                 )}
+              </div>
+            </article>
+
+            <article
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                background: "var(--panel-strong)",
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>Type Mix</h2>
+              <div style={{ display: "grid", gap: 10 }}>
+                {summary.byType.map((entry) => (
+                  <div
+                    key={entry.type}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      color: "var(--muted)",
+                    }}
+                  >
+                    <span>{entry.type}</span>
+                    <strong style={{ color: "var(--text)" }}>{entry.count}</strong>
+                  </div>
+                ))}
               </div>
             </article>
           </aside>

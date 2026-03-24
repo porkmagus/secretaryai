@@ -4,10 +4,13 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import type {
   ActivityTraceResponse,
   ConversationHistoryResponse,
+  ConversationListItem,
+  ConversationListResponse,
   ResearchSpecialistResult,
   RuntimeMemoryContextItem,
   RuntimeTaskContextItem,
 } from "@secretary/core-runtime";
+import { formatTimestamp, formatTracePayload, snippet } from "./lib/presenters";
 
 type DeskMessage = {
   id: string;
@@ -38,6 +41,7 @@ const starterMessages: DeskMessage[] = [
 export function DeskShell() {
   const [messages, setMessages] = useState<DeskMessage[]>(starterMessages);
   const [input, setInput] = useState("");
+  const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const [isSending, setIsSending] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -49,7 +53,30 @@ export function DeskShell() {
     null,
   );
   const [activity, setActivity] = useState<ActivityTraceResponse["traces"]>([]);
+  const [sidebarError, setSidebarError] = useState<string | null>(null);
   const hasLoadedHistory = useRef<string | null>(null);
+
+  async function loadConversations() {
+    try {
+      const response = await fetch("/api/conversations", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Request failed");
+      }
+
+      const data = (await response.json()) as ConversationListResponse;
+      setConversations(data.conversations);
+      setSidebarError(null);
+    } catch {
+      setSidebarError("Recent conversations are unavailable.");
+    }
+  }
+
+  useEffect(() => {
+    void loadConversations();
+  }, []);
 
   useEffect(() => {
     if (!conversationId || hasLoadedHistory.current === conversationId) {
@@ -141,6 +168,29 @@ export function DeskShell() {
     };
   }, [conversationId, lastTraceId]);
 
+  function resetComposerState() {
+    setMemoryContext([]);
+    setTaskContext([]);
+    setResearchContext(null);
+    setLastTraceId(null);
+  }
+
+  function startFreshConversation() {
+    setConversationId(undefined);
+    setMessages(starterMessages);
+    setActivity([]);
+    setError(null);
+    hasLoadedHistory.current = null;
+    resetComposerState();
+  }
+
+  async function openConversation(nextConversationId: string) {
+    setConversationId(nextConversationId);
+    setError(null);
+    hasLoadedHistory.current = null;
+    resetComposerState();
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -193,6 +243,7 @@ export function DeskShell() {
           text: data.outputText,
         },
       ]);
+      void loadConversations();
     } catch {
       setError("The Desk could not reach the worker. Check the worker process and try again.");
     } finally {
@@ -244,7 +295,7 @@ export function DeskShell() {
               lineHeight: 1,
             }}
           >
-            Phase 2 Secretary Loop
+            Desk, Memory, and Runtime Context
           </h1>
           <p
             style={{
@@ -266,9 +317,128 @@ export function DeskShell() {
           style={{
             display: "grid",
             gap: 20,
-            gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 0.9fr)",
+            gridTemplateColumns: "minmax(250px, 0.8fr) minmax(0, 1.9fr) minmax(280px, 0.95fr)",
           }}
         >
+          <aside
+            style={{
+              display: "grid",
+              gap: 16,
+              alignContent: "start",
+            }}
+          >
+            <article
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                background: "var(--panel-strong)",
+                display: "grid",
+                gap: 12,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <h2 style={{ margin: 0 }}>Conversations</h2>
+                <button
+                  type="button"
+                  onClick={startFreshConversation}
+                  style={{
+                    border: "1px solid rgba(125, 211, 252, 0.2)",
+                    borderRadius: 999,
+                    padding: "8px 12px",
+                    background: "rgba(56, 189, 248, 0.08)",
+                    color: "var(--text)",
+                    font: "inherit",
+                    cursor: "pointer",
+                  }}
+                >
+                  New
+                </button>
+              </div>
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
+                {sidebarError ?? `${conversations.length} recent threads`}
+              </p>
+              <div style={{ display: "grid", gap: 10 }}>
+                {conversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => void openConversation(conversation.id)}
+                    style={{
+                      textAlign: "left",
+                      borderRadius: 18,
+                      border:
+                        conversationId === conversation.id
+                          ? "1px solid rgba(125, 211, 252, 0.42)"
+                          : "1px solid rgba(148, 163, 184, 0.14)",
+                      background:
+                        conversationId === conversation.id
+                          ? "rgba(56, 189, 248, 0.12)"
+                          : "rgba(2, 6, 23, 0.62)",
+                      color: "var(--text)",
+                      padding: 14,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                      {conversation.title ?? "Untitled conversation"}
+                    </p>
+                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                      {snippet(conversation.lastMessagePreview)}
+                    </p>
+                    <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                      {conversation.channelType} · {conversation.messageCount} messages
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </article>
+
+            <article
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                background: "var(--panel-strong)",
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <h2 style={{ margin: 0 }}>Quick Prompts</h2>
+              {[
+                "Remember that I prefer short project updates.",
+                "What do you remember about my preferences?",
+                "Remind me to review the checkpoint tomorrow.",
+                "Compare Docker and Podman for this repo.",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => setInput(prompt)}
+                  style={{
+                    textAlign: "left",
+                    borderRadius: 16,
+                    border: "1px solid rgba(148, 163, 184, 0.14)",
+                    background: "rgba(2, 6, 23, 0.62)",
+                    color: "var(--text)",
+                    padding: 12,
+                    cursor: "pointer",
+                    font: "inherit",
+                  }}
+                >
+                  {prompt}
+                </button>
+              ))}
+            </article>
+          </aside>
+
           <div
             style={{
               padding: 20,
@@ -477,9 +647,20 @@ export function DeskShell() {
               <div style={{ display: "grid", gap: 12 }}>
                 {taskContext.length > 0 ? (
                   taskContext.map((task) => (
-                    <p key={task.id} style={{ margin: 0, color: "var(--muted)" }}>
-                      {task.title}
-                    </p>
+                    <article
+                      key={task.id}
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        border: "1px solid rgba(148, 163, 184, 0.14)",
+                        background: "rgba(2, 6, 23, 0.65)",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{task.title}</p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                        {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
+                      </p>
+                    </article>
                   ))
                 ) : (
                   <p style={{ margin: 0, color: "var(--muted)" }}>
@@ -534,8 +715,11 @@ export function DeskShell() {
                       <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
                         {trace.eventName}
                       </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                        {JSON.stringify(trace.payload)}
+                      <p style={{ margin: "0 0 4px", color: "var(--muted)", fontSize: 13 }}>
+                        {formatTimestamp(trace.createdAt)}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
+                        {formatTracePayload(trace.payload)}
                       </p>
                     </article>
                   ))

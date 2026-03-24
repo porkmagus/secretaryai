@@ -3,8 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Secretary Desk",
-  description: "Secretary Desk with persistent memory and internal specialist flow.",
+  title: "Secretary Workspace",
+  description: "Desk, memory, and runtime activity surfaces for the Secretary-first assistant.",
 };
 
 export default function RootLayout({
@@ -60,6 +60,9 @@ export default function RootLayout({
               </Link>
               <Link href="/memory" style={{ textDecoration: "none" }}>
                 Memory
+              </Link>
+              <Link href="/activity" style={{ textDecoration: "none" }}>
+                Activity
               </Link>
             </div>
           </div>

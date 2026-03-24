@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import {
   activityTraces,
   conversations,
@@ -308,4 +308,41 @@ export async function getConversationMessages(
     orderBy: asc(messages.createdAt),
     limit: 100,
   });
+}
+
+export async function listRecentConversations(dbClient: DbClient) {
+  const conversationRows = await dbClient.db.query.conversations.findMany({
+    orderBy: desc(conversations.lastMessageAt),
+    limit: 20,
+  });
+
+  const conversationsWithSummary = await Promise.all(
+    conversationRows.map(async (conversation) => {
+      const storedMessages = await dbClient.db.query.messages.findMany({
+        where: eq(messages.conversationId, conversation.id),
+        orderBy: desc(messages.createdAt),
+        limit: 1,
+      });
+      const messageCountRows = await dbClient.db
+        .select({
+          value: messages.id,
+        })
+        .from(messages)
+        .where(eq(messages.conversationId, conversation.id));
+
+      return {
+        id: conversation.id,
+        title: conversation.title,
+        status: conversation.status,
+        channelType: conversation.channelType,
+        lastMessageAt: conversation.lastMessageAt.toISOString(),
+        messageCount: messageCountRows.length,
+        lastMessagePreview: storedMessages[0]?.contentText.slice(0, 140) ?? null,
+      };
+    }),
+  );
+
+  return {
+    conversations: conversationsWithSummary,
+  };
 }

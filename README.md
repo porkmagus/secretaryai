@@ -1,6 +1,6 @@
 # HamCult - Secretary-First Personal Assistant
 
-This repository contains the Phase 1 scaffold for a self-hosted, single-user Secretary-first assistant system.
+This repository contains a polished Phase 1 and Phase 2 checkpoint for a self-hosted, single-user Secretary-first assistant system.
 
 ## Workspace Layout
 
@@ -19,10 +19,16 @@ This repository contains the Phase 1 scaffold for a self-hosted, single-user Sec
 2. Copy `.env.example` to `.env`
 3. Create visible runtime storage folders with `npm run storage:prepare`
 4. Start local services with `npm run stack:up`
-5. Apply the Phase 1 schema with `npm run db:migrate`
+5. Apply the current schema with `npm run db:migrate`
 6. Run the apps in separate terminals:
    - `npm run dev:web`
    - `npm run dev:worker`
+
+Primary local surfaces:
+
+- `/`: Desk chat with recent conversations, runtime context, and trace previews
+- `/memory`: memory browser/editor with pin and suppress controls
+- `/activity`: runtime activity and trace inspection console
 
 ## Phase 1 Verification
 
@@ -67,11 +73,13 @@ This initial scaffold now includes:
 
 - a web Desk shell and thin API proxy
 - a worker runtime with health checks
-- Drizzle schema plus a first SQL migration
+- Drizzle schema plus Phase 1 and Phase 2 migrations
 - persisted conversation, message, job, and trace wiring in the worker
 - deterministic Secretary replies that use conversation, memory, task, and research context
 - memory extraction and retrieval through BullMQ-backed worker processing
 - Memory page UI with search, edit, pin, and suppress controls
+- Activity page UI for recent conversation trace inspection
+- recent conversation browser in the Desk
 - reminder/task hooks created from memory processing
 - automated Phase 1 and Phase 2 verification flows
 
