@@ -8,6 +8,7 @@ import type {
   SettingsImportResponse,
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
+import { AppPage, PageHero } from "../lib/ui";
 
 type PersonaDraft = {
   behaviorRulesText: string;
@@ -169,56 +170,21 @@ export function PersonaConsole() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", padding: "32px 18px 48px" }}>
-      <section
-        style={{
-          width: "min(1220px, 100%)",
-          margin: "0 auto",
-          display: "grid",
-          gap: 20,
-        }}
-      >
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              color: "var(--accent)",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            Persona Settings
+    <AppPage>
+      <PageHero
+        eyebrow="Persona Settings"
+        title="Shape how the Secretary sounds and behaves"
+        description={
+          <p>
+            Keep the Secretary identity editable, choose the attached voice profile,
+            and move settings in and out as a clean JSON snapshot without hand-editing
+            the database.
           </p>
-          <h1
-            style={{
-              margin: "12px 0 10px",
-              fontSize: "clamp(2.1rem, 4vw, 4rem)",
-              lineHeight: 1,
-            }}
-          >
-            Shape how the Secretary sounds and behaves
-          </h1>
-          <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6, maxWidth: 760 }}>
-            Keep the Secretary identity editable, choose the attached voice profile, and
-            move settings in and out as a clean JSON snapshot without hand-editing the
-            database.
-          </p>
-          <p style={{ margin: "12px 0 0", color: "var(--muted)", fontSize: 14 }}>
-            {error ?? status ?? "Load, tune, export, or import the current settings."}
-          </p>
-        </header>
+        }
+        meta={<p>{error ?? status ?? "Load, tune, export, or import the current settings."}</p>}
+      />
 
-        <section
+      <section
           style={{
             display: "grid",
             gap: 20,
@@ -247,8 +213,8 @@ export function PersonaConsole() {
                 }
                 style={{
                   borderRadius: 12,
-                  border: "1px solid rgba(148, 163, 184, 0.18)",
-                  background: "rgba(2, 6, 23, 0.75)",
+                  border: "1px solid rgba(64, 89, 112, 0.16)",
+                  background: "rgba(255, 255, 255, 0.76)",
                   color: "var(--text)",
                   padding: "10px 12px",
                   font: "inherit",
@@ -273,8 +239,8 @@ export function PersonaConsole() {
                   }
                   style={{
                     borderRadius: 12,
-                    border: "1px solid rgba(148, 163, 184, 0.18)",
-                    background: "rgba(2, 6, 23, 0.75)",
+                    border: "1px solid rgba(64, 89, 112, 0.16)",
+                    background: "rgba(255, 255, 255, 0.76)",
                     color: "var(--text)",
                     padding: "10px 12px",
                     font: "inherit",
@@ -292,8 +258,8 @@ export function PersonaConsole() {
                   }
                   style={{
                     borderRadius: 12,
-                    border: "1px solid rgba(148, 163, 184, 0.18)",
-                    background: "rgba(2, 6, 23, 0.75)",
+                    border: "1px solid rgba(64, 89, 112, 0.16)",
+                    background: "rgba(255, 255, 255, 0.76)",
                     color: "var(--text)",
                     padding: "10px 12px",
                     font: "inherit",
@@ -321,8 +287,8 @@ export function PersonaConsole() {
                 rows={8}
                 style={{
                   borderRadius: 16,
-                  border: "1px solid rgba(148, 163, 184, 0.18)",
-                  background: "rgba(2, 6, 23, 0.75)",
+                  border: "1px solid rgba(64, 89, 112, 0.16)",
+                  background: "rgba(255, 255, 255, 0.76)",
                   color: "var(--text)",
                   padding: 16,
                   font: "inherit",
@@ -346,8 +312,8 @@ export function PersonaConsole() {
                 rows={6}
                 style={{
                   borderRadius: 16,
-                  border: "1px solid rgba(148, 163, 184, 0.18)",
-                  background: "rgba(2, 6, 23, 0.75)",
+                  border: "1px solid rgba(64, 89, 112, 0.16)",
+                  background: "rgba(255, 255, 255, 0.76)",
                   color: "var(--text)",
                   padding: 16,
                   font: "inherit",
@@ -367,7 +333,7 @@ export function PersonaConsole() {
                   font: "inherit",
                   fontWeight: 700,
                   cursor: isSaving ? "wait" : "pointer",
-                  color: "#03111f",
+                  color: "#f6fffd",
                   background:
                     "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
                 }}
@@ -405,7 +371,7 @@ export function PersonaConsole() {
                 font: "inherit",
                 fontWeight: 700,
                 cursor: isExporting ? "wait" : "pointer",
-                color: "#03111f",
+                color: "#f6fffd",
                 background:
                   "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
               }}
@@ -422,8 +388,8 @@ export function PersonaConsole() {
                 rows={14}
                 style={{
                   borderRadius: 16,
-                  border: "1px solid rgba(148, 163, 184, 0.18)",
-                  background: "rgba(2, 6, 23, 0.75)",
+                  border: "1px solid rgba(64, 89, 112, 0.16)",
+                  background: "rgba(255, 255, 255, 0.76)",
                   color: "var(--text)",
                   padding: 16,
                   font: "inherit",
@@ -437,22 +403,21 @@ export function PersonaConsole() {
                 onClick={() => void importSettings()}
                 disabled={isImporting || importJson.trim().length === 0}
                 style={{
-                  border: "1px solid rgba(125, 211, 252, 0.24)",
+                  border: "1px solid rgba(15, 118, 110, 0.2)",
                   borderRadius: 999,
                   padding: "12px 18px",
                   font: "inherit",
                   cursor:
                     isImporting || importJson.trim().length === 0 ? "not-allowed" : "pointer",
                   color: "var(--text)",
-                  background: "rgba(56, 189, 248, 0.08)",
+                  background: "rgba(15, 118, 110, 0.08)",
                 }}
               >
                 {isImporting ? "Importing..." : "Import settings"}
               </button>
             </div>
           </article>
-        </section>
       </section>
-    </main>
+    </AppPage>
   );
 }

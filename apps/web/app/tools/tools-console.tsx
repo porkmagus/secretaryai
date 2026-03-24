@@ -9,6 +9,7 @@ import type {
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
+import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
 
 type EditableTool = {
@@ -47,32 +48,32 @@ function approvalModeHint(mode: ToolApprovalMode) {
 function executionTone(execution: ToolExecutionRecord) {
   if (execution.approvalState === "pending") {
     return {
-      background: "rgba(217, 119, 6, 0.16)",
-      border: "rgba(251, 191, 36, 0.28)",
-      text: "#fde68a",
+      background: "var(--warning-soft-bg)",
+      border: "var(--warning-soft-border)",
+      text: "var(--warning-soft-text)",
     };
   }
 
   if (execution.executionStatus === "failed") {
     return {
-      background: "rgba(127, 29, 29, 0.24)",
-      border: "rgba(248, 113, 113, 0.28)",
-      text: "#fecaca",
+      background: "var(--danger-soft-bg)",
+      border: "var(--danger-soft-border)",
+      text: "var(--danger-soft-text)",
     };
   }
 
   if (execution.executionStatus === "denied") {
     return {
-      background: "rgba(88, 28, 135, 0.18)",
-      border: "rgba(216, 180, 254, 0.28)",
-      text: "#e9d5ff",
+      background: "var(--plum-soft-bg)",
+      border: "var(--plum-soft-border)",
+      text: "var(--plum-soft-text)",
     };
   }
 
   return {
-    background: "rgba(5, 46, 22, 0.24)",
-    border: "rgba(134, 239, 172, 0.24)",
-    text: "#bbf7d0",
+    background: "var(--success-soft-bg)",
+    border: "var(--success-soft-border)",
+    text: "var(--success-soft-text)",
   };
 }
 
@@ -279,92 +280,50 @@ export function ToolsConsole() {
   ).length;
 
   return (
-    <main style={{ minHeight: "100vh", padding: "32px 18px 48px" }}>
-      <section
-        style={{
-          width: "min(1280px, 100%)",
-          margin: "0 auto",
-          display: "grid",
-          gap: 20,
-        }}
-      >
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              color: "var(--accent)",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            Tools Console
-          </p>
-          <h1
-            style={{
-              margin: "12px 0 10px",
-              fontSize: "clamp(2.1rem, 4vw, 4rem)",
-              lineHeight: 1,
-            }}
-          >
-            Phase 5 Tools, Policies, and Audit
-          </h1>
-          <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6, maxWidth: 780 }}>
+    <AppPage width="1280px">
+      <PageHero
+        eyebrow="Tools Console"
+        title="Tools, policies, and audit"
+        description={
+          <p>
             Review which tools run automatically, which require approval, and exactly
             what happened when the Secretary tried to take action.
           </p>
-          <p style={{ margin: "12px 0 0", color: "var(--muted)", fontSize: 14 }}>
+        }
+        meta={
+          <p>
             {error ??
               statusMessage ??
               (isLoading
                 ? "Loading tool registry..."
                 : `${tools.length} tools · ${executions.length} recent executions · ${dirtyToolIds.length} unsaved policies`)}
           </p>
-        </header>
+        }
+      />
 
-        <section
-          style={{
-            display: "grid",
-            gap: 16,
-            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          }}
-        >
+      {(error || statusMessage) ? (
+        <NoticeBanner tone={error ? "error" : "success"}>
+          {error ?? statusMessage}
+        </NoticeBanner>
+      ) : null}
+
+      <StatGrid>
           {[
             { label: "Pending approvals", value: pending.length, note: "Needs review before execution" },
             { label: "Completed actions", value: completedCount, note: "Successful runs in the recent audit window" },
             { label: "Recent failures", value: recentFailures, note: "Safe failures that need inspection if unexpected" },
             { label: "Policy changes", value: dirtyToolIds.length, note: "Tool cards with unsaved edits" },
           ].map((stat) => (
-            <article
+            <StatCard
               key={stat.label}
-              style={{
-                padding: 18,
-                borderRadius: 22,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-                display: "grid",
-                gap: 6,
-              }}
-            >
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{stat.label}</p>
-              <p style={{ margin: 0, fontSize: 32, fontWeight: 800 }}>{stat.value}</p>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                {stat.note}
-              </p>
-            </article>
+              label={stat.label}
+              value={stat.value}
+              detail={stat.note}
+            />
           ))}
-        </section>
+      </StatGrid>
 
-        <section
+      <section
           style={{
             display: "grid",
             gap: 20,
@@ -382,18 +341,9 @@ export function ToolsConsole() {
                 draft.approvalMode !== tool.approvalMode || draft.enabled !== tool.enabled;
 
               return (
-                <article
+                <SurfaceCard
                   key={tool.id}
-                  style={{
-                    padding: 20,
-                    borderRadius: 24,
-                    border: isDirty
-                      ? "1px solid rgba(125, 211, 252, 0.32)"
-                      : "1px solid var(--border)",
-                    background: "var(--panel-strong)",
-                    display: "grid",
-                    gap: 14,
-                  }}
+                  className="stack-md"
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
                     <div>
@@ -440,8 +390,8 @@ export function ToolsConsole() {
                       }
                       style={{
                         borderRadius: 12,
-                        border: "1px solid rgba(148, 163, 184, 0.18)",
-                        background: "rgba(2, 6, 23, 0.75)",
+                        border: "1px solid rgba(64, 89, 112, 0.16)",
+                        background: "rgba(255, 255, 255, 0.76)",
                         color: "var(--text)",
                         padding: "10px 12px",
                         font: "inherit",
@@ -495,38 +445,19 @@ export function ToolsConsole() {
                       type="button"
                       onClick={() => void saveTool(tool)}
                       disabled={savingToolId === tool.id}
-                      style={{
-                        border: "none",
-                        borderRadius: 999,
-                        padding: "10px 16px",
-                        font: "inherit",
-                        fontWeight: 700,
-                        cursor: savingToolId === tool.id ? "wait" : "pointer",
-                        color: "#03111f",
-                        background:
-                          "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
-                        opacity: isDirty || savingToolId === tool.id ? 1 : 0.84,
-                      }}
+                      className="button-primary"
+                      style={{ opacity: isDirty || savingToolId === tool.id ? 1 : 0.84 }}
                     >
                       {savingToolId === tool.id ? "Saving..." : isDirty ? "Save Policy" : "Policy Saved"}
                     </button>
                   </div>
-                </article>
+                </SurfaceCard>
               );
             })}
           </div>
 
           <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-                display: "grid",
-                gap: 12,
-              }}
-            >
+            <SurfaceCard title="Pending approvals" className="stack-md">
               <div
                 style={{
                   display: "flex",
@@ -536,20 +467,7 @@ export function ToolsConsole() {
                   flexWrap: "wrap",
                 }}
               >
-                <h2 style={{ margin: 0 }}>Pending Approvals</h2>
-                <button
-                  type="button"
-                  onClick={() => void load()}
-                  style={{
-                    border: "1px solid rgba(125, 211, 252, 0.2)",
-                    borderRadius: 999,
-                    padding: "8px 12px",
-                    background: "rgba(56, 189, 248, 0.08)",
-                    color: "var(--text)",
-                    font: "inherit",
-                    cursor: "pointer",
-                  }}
-                >
+                <button type="button" onClick={() => void load()} className="button-secondary">
                   Refresh
                 </button>
               </div>
@@ -564,8 +482,8 @@ export function ToolsConsole() {
                     style={{
                       padding: 14,
                       borderRadius: 16,
-                      border: "1px solid rgba(148, 163, 184, 0.14)",
-                      background: "rgba(2, 6, 23, 0.65)",
+                      border: "1px solid rgba(64, 89, 112, 0.12)",
+                      background: "rgba(255, 255, 255, 0.68)",
                       display: "grid",
                       gap: 10,
                     }}
@@ -584,17 +502,7 @@ export function ToolsConsole() {
                         type="button"
                         onClick={() => void decide(execution.id, true)}
                         disabled={decisionId === execution.id}
-                        style={{
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "10px 14px",
-                          font: "inherit",
-                          fontWeight: 700,
-                          cursor: decisionId === execution.id ? "wait" : "pointer",
-                          color: "#03111f",
-                          background:
-                            "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
-                        }}
+                        className="button-primary"
                       >
                         {decisionId === execution.id ? "Working..." : "Approve"}
                       </button>
@@ -602,15 +510,7 @@ export function ToolsConsole() {
                         type="button"
                         onClick={() => void decide(execution.id, false)}
                         disabled={decisionId === execution.id}
-                        style={{
-                          border: "1px solid rgba(248, 113, 113, 0.32)",
-                          borderRadius: 999,
-                          padding: "10px 14px",
-                          font: "inherit",
-                          cursor: decisionId === execution.id ? "wait" : "pointer",
-                          color: "var(--text)",
-                          background: "rgba(127, 29, 29, 0.24)",
-                        }}
+                        className="button-danger"
                       >
                         Deny
                       </button>
@@ -618,20 +518,10 @@ export function ToolsConsole() {
                   </article>
                 ))
               )}
-            </article>
+            </SurfaceCard>
 
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-                display: "grid",
-                gap: 14,
-              }}
-            >
+            <SurfaceCard title="Recent executions" className="stack-md">
               <div style={{ display: "grid", gap: 10 }}>
-                <h2 style={{ margin: 0 }}>Recent Executions</h2>
                 <div
                   style={{
                     display: "grid",
@@ -643,26 +533,10 @@ export function ToolsConsole() {
                     value={filterText}
                     onChange={(event) => setFilterText(event.target.value)}
                     placeholder="Search tool, summary, request, or error"
-                    style={{
-                      borderRadius: 12,
-                      border: "1px solid rgba(148, 163, 184, 0.18)",
-                      background: "rgba(2, 6, 23, 0.75)",
-                      color: "var(--text)",
-                      padding: "10px 12px",
-                      font: "inherit",
-                    }}
                   />
                   <select
                     value={filterToolKey}
                     onChange={(event) => setFilterToolKey(event.target.value)}
-                    style={{
-                      borderRadius: 12,
-                      border: "1px solid rgba(148, 163, 184, 0.18)",
-                      background: "rgba(2, 6, 23, 0.75)",
-                      color: "var(--text)",
-                      padding: "10px 12px",
-                      font: "inherit",
-                    }}
                   >
                     <option value="all">All tools</option>
                     {tools.map((tool) => (
@@ -674,14 +548,6 @@ export function ToolsConsole() {
                   <select
                     value={filterState}
                     onChange={(event) => setFilterState(event.target.value as ExecutionFilter)}
-                    style={{
-                      borderRadius: 12,
-                      border: "1px solid rgba(148, 163, 184, 0.18)",
-                      background: "rgba(2, 6, 23, 0.75)",
-                      color: "var(--text)",
-                      padding: "10px 12px",
-                      font: "inherit",
-                    }}
                   >
                     <option value="all">All states</option>
                     <option value="pending">Pending approval</option>
@@ -706,8 +572,8 @@ export function ToolsConsole() {
                       style={{
                         padding: 14,
                         borderRadius: 16,
-                        border: "1px solid rgba(148, 163, 184, 0.14)",
-                        background: "rgba(2, 6, 23, 0.65)",
+                        border: "1px solid rgba(64, 89, 112, 0.12)",
+                        background: "rgba(255, 255, 255, 0.68)",
                         display: "grid",
                         gap: 10,
                       }}
@@ -768,7 +634,7 @@ export function ToolsConsole() {
                       ) : null}
 
                       {execution.errorText ? (
-                        <p style={{ margin: 0, color: "#fca5a5", fontSize: 13, lineHeight: 1.5 }}>
+                        <p style={{ margin: 0, color: "var(--danger)", fontSize: 13, lineHeight: 1.5 }}>
                           {execution.errorText}
                         </p>
                       ) : null}
@@ -776,10 +642,9 @@ export function ToolsConsole() {
                   );
                 })
               )}
-            </article>
+            </SurfaceCard>
           </div>
         </section>
-      </section>
-    </main>
+    </AppPage>
   );
 }

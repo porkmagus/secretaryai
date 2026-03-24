@@ -20,13 +20,14 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
 1. Install dependencies with `npm install`
 2. Copy `.env.example` to `.env`
 3. Add your real `TELEGRAM_BOT_TOKEN` only in `.env` if you want to exercise the live Telegram path
-4. Create visible runtime storage folders with `npm run storage:prepare`
-5. Start local services with `npm run stack:up`
-6. Apply the current schema with `npm run db:migrate`
-7. Prepare the local speech services once with:
+4. Optional but recommended: set `APP_AUTH_PASSWORD` and `APP_SESSION_SECRET` in `.env` to enable the single-user sign-in gate
+5. Create visible runtime storage folders with `npm run storage:prepare`
+6. Start local services with `npm run stack:up`
+7. Apply the current schema with `npm run db:migrate`
+8. Prepare the local speech services once with:
    - `npm run stt:setup`
    - `npm run tts:setup`
-8. Run the apps in separate terminals:
+9. Run the apps in separate terminals:
    - `npm run dev:web`
    - `npm run dev:worker`
    - `npm run dev:stt`
@@ -43,6 +44,7 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
 Primary local surfaces:
 
 - `/`: Desk chat with recent conversations, runtime context, and trace previews
+- `/login`: optional single-user sign-in gate when auth is enabled
 - `/onboarding`: guided setup checklist for daily-use readiness
 - `/health`: dependency, storage, and runtime health dashboard
 - `/persona`: Secretary identity editor plus settings export/import
@@ -220,6 +222,7 @@ The Phase 5 verifier checks:
 
 Phase 6 is now complete for local development. The current checkpoint includes:
 
+- optional single-user sign-in gate for the web app and web-facing APIs
 - `/onboarding` for a guided setup and readiness checklist
 - `/health` for dependency, speech, Telegram, storage, and state visibility
 - `/persona` for Secretary identity editing and voice attachment

@@ -13,6 +13,7 @@ import type {
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
+import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type VoicePageState = {
@@ -43,8 +44,8 @@ const panel = { border: "1px solid var(--border)", borderRadius: 20, background:
 const input = {
   width: "100%",
   borderRadius: 12,
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  background: "rgba(2, 6, 23, 0.75)",
+  border: "1px solid rgba(64, 89, 112, 0.16)",
+  background: "rgba(255, 255, 255, 0.76)",
   color: "var(--text)",
   padding: "10px 12px",
   font: "inherit",
@@ -55,7 +56,7 @@ const primaryButton = {
   padding: "10px 16px",
   font: "inherit",
   fontWeight: 700,
-  color: "#03111f",
+  color: "#f6fffd",
   background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
 } as const;
 const ghostButton = {
@@ -64,7 +65,7 @@ const ghostButton = {
   padding: "10px 16px",
   font: "inherit",
   color: "var(--text)",
-  background: "rgba(2, 6, 23, 0.56)",
+  background: "rgba(255, 255, 255, 0.68)",
 } as const;
 
 function isAudioMime(mimeType: string | null) {
@@ -91,11 +92,11 @@ function draftFromProfile(profile: VoiceProfileRecord): EditableProfile {
 function toneColor(tone: "info" | "success" | "warning" | "error") {
   switch (tone) {
     case "success":
-      return "#34d399";
+      return "var(--success-soft-text)";
     case "warning":
-      return "#f59e0b";
+      return "var(--warning-soft-text)";
     case "error":
-      return "#f87171";
+      return "var(--danger-soft-text)";
     default:
       return "var(--muted)";
   }
@@ -449,60 +450,89 @@ export function VoiceConsole() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", padding: "32px 18px 48px" }}>
-      <section style={{ width: "min(1240px, 100%)", margin: "0 auto", display: "grid", gap: 20 }}>
-        <header style={{ ...panel, background: "var(--panel)", borderRadius: 28, display: "grid", gap: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-            <div>
-              <p style={{ margin: 0, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontSize: 12, fontWeight: 700 }}>
-                Voice Console
-              </p>
-              <h1 style={{ margin: "12px 0 10px", fontSize: "clamp(2.1rem, 4vw, 4rem)", lineHeight: 1 }}>
-                Phase 4 Speech and Cloned Voice
-              </h1>
-              <p style={{ margin: 0, color: "var(--muted)", maxWidth: 760, lineHeight: 1.6 }}>
-                Manage cloned voice profiles, preview speech output, and run browser push-to-talk through the same local speech pipeline as Telegram voice notes.
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <Link href="/channels" style={{ ...ghostButton, textDecoration: "none" }}>Channels</Link>
-              <Link href="/activity" style={{ ...ghostButton, textDecoration: "none" }}>Activity</Link>
-              <button type="button" onClick={() => void refresh(selectedConversationId)} style={{ ...primaryButton, cursor: "pointer" }}>
-                {isLoading ? "Refreshing..." : "Refresh"}
-              </button>
-            </div>
-          </div>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Profiles</p><p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>{summary.profiles}</p></div>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Samples</p><p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>{summary.samples}</p></div>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Transcripts</p><p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>{summary.transcripts}</p></div>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>TTS Outputs</p><p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>{summary.tts}</p></div>
-          </div>
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>STT</p><p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 700, color: speechStatus?.stt.healthStatus === "ok" ? "#34d399" : speechStatus?.stt.healthStatus === "degraded" ? "#f59e0b" : "var(--text)" }}>{speechStatus?.stt.healthStatus ?? "loading"}</p><p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12 }}>{speechStatus?.stt.summary ?? "Checking..."}</p></div>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>TTS</p><p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 700, color: speechStatus?.tts.healthStatus === "ok" ? "#34d399" : speechStatus?.tts.healthStatus === "degraded" ? "#f59e0b" : "var(--text)" }}>{speechStatus?.tts.healthStatus ?? "loading"}</p><p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12 }}>{speechStatus?.tts.summary ?? "Checking..."}</p></div>
-            <div style={panel}><p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>ffmpeg</p><p style={{ margin: "8px 0 0", fontSize: 20, fontWeight: 700, color: speechStatus?.ffmpeg.available ? "#34d399" : "#f59e0b" }}>{speechStatus?.ffmpeg.available ? "ready" : "fallback"}</p><p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12 }}>{speechStatus?.ffmpeg.summary ?? "Checking..."}</p></div>
-          </div>
-          <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-            {error ?? (isLoading ? "Loading voice workspace..." : activeProfile ? `Active profile: ${activeProfile.name} via ${activeProfile.engineId}.` : "No voice profile found yet.")}
+    <AppPage width="1240px">
+      <PageHero
+        eyebrow="Voice Console"
+        title="Speech, cloning, and push-to-talk"
+        description={
+          <p>
+            Manage cloned voice profiles, preview speech output, and run browser
+            push-to-talk through the same local speech pipeline as Telegram voice notes.
           </p>
-          {notice ? (
-            <p style={{ margin: 0, color: toneColor(notice.tone), fontSize: 14, fontWeight: 600 }}>
-              {notice.text}
-            </p>
-          ) : null}
-          {readinessNotes.length > 0 ? (
-            <div style={{ display: "grid", gap: 8 }}>
-              {readinessNotes.map((note) => (
-                <p key={note.text} style={{ margin: 0, color: toneColor(note.tone), fontSize: 14 }}>
-                  {note.text}
-                </p>
-              ))}
-            </div>
-          ) : null}
-        </header>
+        }
+        meta={
+          <p>
+            {error ??
+              (isLoading
+                ? "Loading voice workspace..."
+                : activeProfile
+                  ? `Active profile: ${activeProfile.name} via ${activeProfile.engineId}.`
+                  : "No voice profile found yet.")}
+          </p>
+        }
+        actions={
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Link href="/channels" style={{ ...ghostButton, textDecoration: "none" }}>Channels</Link>
+            <Link href="/activity" style={{ ...ghostButton, textDecoration: "none" }}>Activity</Link>
+            <button type="button" onClick={() => void refresh(selectedConversationId)} style={{ ...primaryButton, cursor: "pointer" }}>
+              {isLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+        }
+      />
 
-        <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.5fr) minmax(320px, 0.95fr)" }}>
+      <StatGrid>
+        <StatCard label="Profiles" value={summary.profiles} detail="Named Secretary voice presets" />
+        <StatCard label="Samples" value={summary.samples} detail="Profiles with uploaded reference audio" />
+        <StatCard label="Transcripts" value={summary.transcripts} detail="Speech-to-text artifacts" />
+        <StatCard label="TTS outputs" value={summary.tts} detail="Generated previews and replies" tone="soft" />
+      </StatGrid>
+
+      <section className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+        <StatCard
+          label="STT"
+          value={speechStatus?.stt.healthStatus ?? "loading"}
+          detail={speechStatus?.stt.summary ?? "Checking speech-to-text..."}
+        />
+        <StatCard
+          label="TTS"
+          value={speechStatus?.tts.healthStatus ?? "loading"}
+          detail={speechStatus?.tts.summary ?? "Checking voice synthesis..."}
+        />
+        <StatCard
+          label="ffmpeg"
+          value={speechStatus?.ffmpeg.available ? "ready" : "fallback"}
+          detail={speechStatus?.ffmpeg.summary ?? "Checking audio conversion..."}
+        />
+      </section>
+
+      {notice ? (
+        <NoticeBanner
+          tone={
+            notice.tone === "warning"
+              ? "warning"
+              : notice.tone === "error"
+                ? "error"
+                : notice.tone === "success"
+                  ? "success"
+                  : "info"
+          }
+        >
+          {notice.text}
+        </NoticeBanner>
+      ) : null}
+
+      {readinessNotes.length > 0 ? (
+        <div className="stack-sm">
+          {readinessNotes.map((note) => (
+            <NoticeBanner key={note.text} tone={note.tone === "warning" ? "warning" : "info"}>
+              {note.text}
+            </NoticeBanner>
+          ))}
+        </div>
+      ) : null}
+
+      <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.5fr) minmax(320px, 0.95fr)" }}>
           <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
             <article style={{ ...panel, display: "grid", gap: 12 }}>
               <h2 style={{ margin: 0 }}>Active Voice</h2>
@@ -669,7 +699,6 @@ export function VoiceConsole() {
             </article>
           </aside>
         </section>
-      </section>
-    </main>
+    </AppPage>
   );
 }

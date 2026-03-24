@@ -3,26 +3,27 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { OnboardingStatusResponse } from "@secretary/core-runtime";
+import { AppPage, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 
 function stepTone(status: OnboardingStatusResponse["steps"][number]["status"]) {
   switch (status) {
     case "complete":
       return {
-        badge: "#bbf7d0",
-        border: "rgba(134, 239, 172, 0.24)",
-        background: "rgba(5, 46, 22, 0.24)",
+        badge: "var(--success-soft-text)",
+        border: "var(--success-soft-border)",
+        background: "var(--success-soft-bg)",
       };
     case "attention":
       return {
-        badge: "#fde68a",
-        border: "rgba(251, 191, 36, 0.28)",
-        background: "rgba(120, 53, 15, 0.18)",
+        badge: "var(--warning-soft-text)",
+        border: "var(--warning-soft-border)",
+        background: "var(--warning-soft-bg)",
       };
     default:
       return {
-        badge: "#cbd5e1",
-        border: "rgba(148, 163, 184, 0.2)",
-        background: "rgba(15, 23, 42, 0.72)",
+        badge: "var(--neutral-soft-text)",
+        border: "var(--neutral-soft-border)",
+        background: "var(--neutral-soft-bg)",
       };
   }
 }
@@ -62,103 +63,46 @@ export function OnboardingConsole() {
   }, []);
 
   return (
-    <main style={{ minHeight: "100vh", padding: "32px 18px 48px" }}>
-      <section
-        style={{
-          width: "min(1180px, 100%)",
-          margin: "0 auto",
-          display: "grid",
-          gap: 20,
-        }}
-      >
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              color: "var(--accent)",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            Onboarding
+    <AppPage width="1180px">
+      <PageHero
+        eyebrow="Onboarding"
+        title="Finish the daily-use setup"
+        description={
+          <p>
+            This page keeps the practical startup sequence visible: make sure the
+            stack is healthy, shape the Secretary persona, wire channels, review
+            tools, and confirm the voice path is actually usable.
           </p>
-          <h1
-            style={{
-              margin: "12px 0 10px",
-              fontSize: "clamp(2.1rem, 4vw, 4rem)",
-              lineHeight: 1,
-            }}
-          >
-            Finish the daily-use setup
-          </h1>
-          <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6, maxWidth: 760 }}>
-            This page keeps the practical startup sequence visible: make sure the stack is
-            healthy, shape the Secretary persona, wire channels, review tools, and confirm
-            the voice path is actually usable.
-          </p>
-          <p style={{ margin: "12px 0 0", color: "var(--muted)", fontSize: 14 }}>
+        }
+        meta={
+          <p>
             {error ??
               (data
                 ? `${data.completedSteps} of ${data.totalSteps} onboarding steps are complete.`
                 : "Loading onboarding state...")}
           </p>
-        </header>
+        }
+      />
 
-        <section
-          style={{
-            display: "grid",
-            gap: 16,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
-          {[
-            { label: "Health", value: data ? `${data.completedSteps}/${data.totalSteps}` : "..." },
-            { label: "Primary channels", value: "Web + Telegram" },
-            { label: "Voice path", value: "Local STT + TTS" },
-            { label: "Next habit", value: "Back up before risky changes" },
-          ].map((item) => (
-            <article
-              key={item.label}
-              style={{
-                padding: 18,
-                borderRadius: 22,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-                display: "grid",
-                gap: 6,
-              }}
-            >
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{item.label}</p>
-              <p style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>{item.value}</p>
-            </article>
-          ))}
-        </section>
+      <StatGrid>
+        <StatCard
+          label="Health"
+          value={data ? `${data.completedSteps}/${data.totalSteps}` : "..."}
+          detail="Readiness across the current local install"
+        />
+        <StatCard label="Primary channels" value="Web + Telegram" detail="Desk and bot are active entry points" />
+        <StatCard label="Voice path" value="Local STT + TTS" detail="Speech stays inside the local stack" />
+        <StatCard label="Next habit" value="Backup first" detail="Snapshot before risky changes or imports" tone="soft" />
+      </StatGrid>
 
-        <section style={{ display: "grid", gap: 16 }}>
+      <section className="stack-md">
           {(data?.steps ?? []).map((step) => {
             const tone = stepTone(step.status);
 
             return (
-              <article
+              <SurfaceCard
                 key={step.id}
-                style={{
-                  padding: 20,
-                  borderRadius: 24,
-                  border: `1px solid ${tone.border}`,
-                  background: "var(--panel-strong)",
-                  display: "grid",
-                  gap: 10,
-                }}
+                className="stack-sm"
               >
                 <div
                   style={{
@@ -211,11 +155,10 @@ export function OnboardingConsole() {
                 >
                   Open {step.href}
                 </Link>
-              </article>
+              </SurfaceCard>
             );
           })}
-        </section>
       </section>
-    </main>
+    </AppPage>
   );
 }

@@ -12,6 +12,7 @@ import type {
   TelegramSyncWebhookResponse,
   TelegramTestMessageResponse,
 } from "@secretary/core-runtime";
+import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type DraftState = {
@@ -29,13 +30,13 @@ type PageState = {
 function statusTone(status: string | null | undefined) {
   switch (status) {
     case "ok":
-      return { label: "healthy", color: "#86efac", border: "rgba(74, 222, 128, 0.28)" };
+      return { label: "healthy", color: "var(--success-soft-text)", border: "var(--success-soft-border)" };
     case "degraded":
-      return { label: "needs attention", color: "#fde68a", border: "rgba(251, 191, 36, 0.28)" };
+      return { label: "needs attention", color: "var(--warning-soft-text)", border: "var(--warning-soft-border)" };
     case "disabled":
-      return { label: "disabled", color: "#cbd5e1", border: "rgba(148, 163, 184, 0.24)" };
+      return { label: "disabled", color: "var(--neutral-soft-text)", border: "var(--neutral-soft-border)" };
     default:
-      return { label: status ?? "not configured", color: "#fca5a5", border: "rgba(248, 113, 113, 0.24)" };
+      return { label: status ?? "not configured", color: "var(--danger-soft-text)", border: "var(--danger-soft-border)" };
   }
 }
 
@@ -44,7 +45,7 @@ function describeReminder(task: TaskRecord) {
     return {
       label: "failed",
       detail: task.lastDeliveryError,
-      color: "#fca5a5",
+      color: "var(--danger-soft-text)",
     };
   }
 
@@ -52,7 +53,7 @@ function describeReminder(task: TaskRecord) {
     return {
       label: "delivered",
       detail: `Delivered ${formatTimestamp(task.deliveredAt)}`,
-      color: "#86efac",
+      color: "var(--success-soft-text)",
     };
   }
 
@@ -60,14 +61,14 @@ function describeReminder(task: TaskRecord) {
     return {
       label: "scheduled",
       detail: `Due ${formatTimestamp(task.reminderAt)}`,
-      color: "#7dd3fc",
+      color: "var(--accent)",
     };
   }
 
   return {
     label: "queued",
     detail: "Waiting for a reminder timestamp.",
-    color: "#cbd5e1",
+    color: "var(--neutral-soft-text)",
   };
 }
 
@@ -272,77 +273,47 @@ export function TelegramSettings() {
   ];
 
   return (
-    <main style={{ minHeight: "100vh", padding: "32px 18px 48px" }}>
-      <section style={{ width: "min(1220px, 100%)", margin: "0 auto", display: "grid", gap: 20 }}>
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-            display: "grid",
-            gap: 18,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-            <div>
-              <p style={{ margin: 0, color: "var(--accent)", letterSpacing: "0.12em", textTransform: "uppercase", fontSize: 12, fontWeight: 700 }}>
-                Channels
-              </p>
-              <h1 style={{ margin: "12px 0 10px", fontSize: "clamp(2.1rem, 4vw, 4rem)", lineHeight: 1 }}>
-                Telegram Integration
-              </h1>
-              <p style={{ margin: 0, maxWidth: 780, color: "var(--muted)", fontSize: 17, lineHeight: 1.6 }}>
-                Operate the live Telegram channel, verify webhook health, test outbound delivery,
-                and keep an eye on routed chats and reminder delivery from one surface.
-              </p>
-            </div>
-
-            <div
-              style={{
-                padding: "12px 16px",
-                borderRadius: 18,
-                border: `1px solid ${tone.border}`,
-                background: "rgba(2, 6, 23, 0.55)",
-                minWidth: 220,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: tone.color, fontWeight: 700 }}>
-                Telegram status
-              </p>
-              <p style={{ margin: "8px 0 0", fontSize: 22, fontWeight: 700 }}>
-                {isLoading ? "Loading..." : tone.label}
-              </p>
-            </div>
+    <AppPage>
+      <PageHero
+        eyebrow="Channels"
+        title="Telegram integration"
+        description={
+          <p>
+            Operate the live Telegram channel, verify webhook health, test outbound
+            delivery, and keep an eye on routed chats and reminder delivery from one surface.
+          </p>
+        }
+        meta={
+          <p>
+            {error ?? notice ?? (isLoading ? "Loading Telegram workspace..." : state.telegram?.healthSummary ?? "Telegram integration ready.")}
+          </p>
+        }
+        actions={
+          <div className="pill" style={{ borderColor: tone.border, color: tone.color, minWidth: 220, justifyContent: "center" }}>
+            Telegram status: {isLoading ? "loading" : tone.label}
           </div>
+        }
+      />
 
-          <section style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
-            {[
-              { label: "Health", value: state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown") },
-              { label: "Telegram Conversations", value: String(state.telegram?.conversationCount ?? 0) },
-              { label: "Telegram Messages", value: String(state.telegram?.messageCount ?? 0) },
-              { label: "Due Reminders", value: String(state.telegram?.dueReminderCount ?? 0) },
-            ].map((card) => (
-              <article key={card.label} style={{ padding: 18, borderRadius: 22, border: "1px solid var(--border)", background: "var(--panel-strong)" }}>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{card.label}</p>
-                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>{card.value}</p>
-              </article>
-            ))}
-          </section>
-        </header>
+      <StatGrid>
+        {[
+          { label: "Health", value: state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown") },
+          { label: "Telegram conversations", value: String(state.telegram?.conversationCount ?? 0) },
+          { label: "Telegram messages", value: String(state.telegram?.messageCount ?? 0) },
+          { label: "Due reminders", value: String(state.telegram?.dueReminderCount ?? 0) },
+        ].map((card) => (
+          <StatCard key={card.label} label={card.label} value={card.value} detail="Current integration snapshot" />
+        ))}
+      </StatGrid>
 
-        <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.95fr)" }}>
+      {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
+      {!error && notice ? <NoticeBanner tone="info">{notice}</NoticeBanner> : null}
+
+      <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.95fr)" }}>
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-            <article style={{ padding: 22, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 16 }}>
+            <SurfaceCard title="Integration settings" description={<p>{state.telegram?.healthSummary ?? "Loading Telegram integration health..."}</p>} className="stack-md">
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                <div>
-                  <h2 style={{ margin: 0 }}>Integration Settings</h2>
-                  <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
-                    {state.telegram?.healthSummary ?? "Loading Telegram integration health..."}
-                  </p>
-                </div>
-                <button type="button" onClick={() => void refresh()} style={{ borderRadius: 999, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.68)", color: "var(--text)", padding: "10px 16px", font: "inherit", cursor: "pointer" }}>
+                <button type="button" onClick={() => void refresh()} className="button-secondary">
                   Refresh
                 </button>
               </div>
@@ -358,7 +329,6 @@ export function TelegramSettings() {
                   value={draft.webhookUrl}
                   onChange={(event) => setDraft((current) => ({ ...current, webhookUrl: event.target.value }))}
                   placeholder="https://your-worker-host.example.com"
-                  style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.75)", color: "var(--text)", padding: "12px 14px", font: "inherit" }}
                 />
               </label>
 
@@ -368,63 +338,54 @@ export function TelegramSettings() {
                   value={draft.defaultChatId}
                   onChange={(event) => setDraft((current) => ({ ...current, defaultChatId: event.target.value }))}
                   placeholder="123456789"
-                  style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.75)", color: "var(--text)", padding: "12px 14px", font: "inherit" }}
                 />
               </label>
 
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => void saveSettings()} disabled={isSaving} style={{ border: "none", borderRadius: 999, padding: "12px 18px", font: "inherit", fontWeight: 700, cursor: isSaving ? "wait" : "pointer", color: "#03111f", background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)", opacity: isSaving ? 0.7 : 1 }}>
+                <button type="button" onClick={() => void saveSettings()} disabled={isSaving} className="button-primary" style={{ opacity: isSaving ? 0.7 : 1 }}>
                   {isSaving ? "Saving..." : "Save Settings"}
                 </button>
-                <button type="button" onClick={() => void syncWebhook()} disabled={isSyncing} style={{ borderRadius: 999, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.68)", color: "var(--text)", padding: "12px 18px", font: "inherit", cursor: isSyncing ? "wait" : "pointer", opacity: isSyncing ? 0.7 : 1 }}>
+                <button type="button" onClick={() => void syncWebhook()} disabled={isSyncing} className="button-secondary" style={{ opacity: isSyncing ? 0.7 : 1 }}>
                   {isSyncing ? "Syncing..." : "Sync Webhook"}
                 </button>
-                <button type="button" onClick={() => void dispatchReminders()} disabled={isDispatching} style={{ borderRadius: 999, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.68)", color: "var(--text)", padding: "12px 18px", font: "inherit", cursor: isDispatching ? "wait" : "pointer", opacity: isDispatching ? 0.7 : 1 }}>
+                <button type="button" onClick={() => void dispatchReminders()} disabled={isDispatching} className="button-secondary" style={{ opacity: isDispatching ? 0.7 : 1 }}>
                   {isDispatching ? "Dispatching..." : "Deliver Due Reminders"}
                 </button>
               </div>
 
-              <div style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(148, 163, 184, 0.14)", background: "rgba(2, 6, 23, 0.55)", color: error ? "#fca5a5" : "var(--muted)" }}>
+              <div className="notice-banner notice-banner--info">
                 {error ?? notice ?? "The bot token stays in your local environment. This page only manages runtime state and webhook-facing configuration."}
               </div>
-            </article>
+            </SurfaceCard>
 
-            <article style={{ padding: 22, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 14 }}>
-              <h2 style={{ margin: 0 }}>Outbound Test</h2>
-              <p style={{ margin: 0, color: "var(--muted)" }}>
-                Send a real Telegram message without waiting for an inbound webhook event.
-              </p>
+            <SurfaceCard title="Outbound test" description={<p>Send a real Telegram message without waiting for an inbound webhook event.</p>} className="stack-md">
               <input
                 value={testChatId}
                 onChange={(event) => setTestChatId(event.target.value)}
                 placeholder="Test chat id"
-                style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.75)", color: "var(--text)", padding: "12px 14px", font: "inherit" }}
               />
               <textarea
                 value={testText}
                 onChange={(event) => setTestText(event.target.value)}
                 rows={3}
                 placeholder="Optional custom test message"
-                style={{ width: "100%", resize: "vertical", borderRadius: 14, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.75)", color: "var(--text)", padding: "12px 14px", font: "inherit" }}
               />
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => void sendTestMessage()} disabled={isTesting} style={{ borderRadius: 999, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.68)", color: "var(--text)", padding: "12px 18px", font: "inherit", cursor: isTesting ? "wait" : "pointer", opacity: isTesting ? 0.7 : 1 }}>
+                <button type="button" onClick={() => void sendTestMessage()} disabled={isTesting} className="button-secondary" style={{ opacity: isTesting ? 0.7 : 1 }}>
                   {isTesting ? "Sending..." : "Send Test Message"}
                 </button>
-                <button type="button" onClick={() => setTestText("Secretary test: live outbound Telegram delivery is working from the Channels page.")} style={{ borderRadius: 999, border: "1px solid rgba(148, 163, 184, 0.18)", background: "rgba(2, 6, 23, 0.68)", color: "var(--text)", padding: "12px 18px", font: "inherit", cursor: "pointer" }}>
+                <button type="button" onClick={() => setTestText("Secretary test: live outbound Telegram delivery is working from the Channels page.")} className="button-secondary">
                   Fill Sample
                 </button>
               </div>
-            </article>
+            </SurfaceCard>
 
-            <article style={{ padding: 22, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 14 }}>
+            <SurfaceCard
+              title="Recent Telegram conversations"
+              description={<p>Quick visibility into chats already routed into the shared memory core.</p>}
+              className="stack-md"
+            >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                <div>
-                  <h2 style={{ margin: 0 }}>Recent Telegram Conversations</h2>
-                  <p style={{ margin: "6px 0 0", color: "var(--muted)" }}>
-                    Quick visibility into chats already routed into the shared memory core.
-                  </p>
-                </div>
                 <Link href="/activity" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 700 }}>
                   Open Activity
                 </Link>
@@ -434,10 +395,10 @@ export function TelegramSettings() {
                 <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram conversations have been recorded yet.</p>
               ) : (
                 telegramConversations.map((conversation) => (
-                  <article key={conversation.id} style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(148, 163, 184, 0.14)", background: "rgba(2, 6, 23, 0.62)", display: "grid", gap: 8 }}>
+                  <article key={conversation.id} style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(64, 89, 112, 0.12)", background: "rgba(255, 255, 255, 0.68)", display: "grid", gap: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                       <p style={{ margin: 0, fontWeight: 700 }}>{conversation.title ?? "Telegram conversation"}</p>
-                      <span style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(56, 189, 248, 0.1)", color: "var(--accent)", fontSize: 12, fontWeight: 700 }}>
+                      <span style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(15, 118, 110, 0.08)", color: "var(--accent)", fontSize: 12, fontWeight: 700 }}>
                         {conversation.messageCount} messages
                       </span>
                     </div>
@@ -450,24 +411,22 @@ export function TelegramSettings() {
                   </article>
                 ))
               )}
-            </article>
+            </SurfaceCard>
           </div>
 
           <aside style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <article style={{ padding: 20, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 10 }}>
-              <h2 style={{ margin: 0 }}>Readiness Checklist</h2>
+            <SurfaceCard title="Readiness checklist" className="stack-sm">
               {readiness.map((entry) => (
                 <div key={entry.label} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--muted)" }}>
                   <span>{entry.label}</span>
-                  <strong style={{ color: entry.done ? "#86efac" : "#fca5a5" }}>
+                  <strong style={{ color: entry.done ? "var(--success)" : "var(--danger)" }}>
                     {entry.done ? "ready" : "missing"}
                   </strong>
                 </div>
               ))}
-            </article>
+            </SurfaceCard>
 
-            <article style={{ padding: 20, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 10 }}>
-              <h2 style={{ margin: 0 }}>Current Bot State</h2>
+            <SurfaceCard title="Current bot state" className="stack-sm">
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 Bot user: <strong style={{ color: "var(--text)" }}>{state.telegram?.botUser?.displayName ?? "not resolved yet"}</strong>
               </p>
@@ -480,10 +439,9 @@ export function TelegramSettings() {
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 Last check: <strong style={{ color: "var(--text)" }}>{formatTimestamp(state.telegram?.lastCheckedAt ?? null)}</strong>
               </p>
-            </article>
+            </SurfaceCard>
 
-            <article style={{ padding: 20, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 10 }}>
-              <h2 style={{ margin: 0 }}>Webhook</h2>
+            <SurfaceCard title="Webhook" className="stack-sm">
               <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
                 Saved target: {state.telegram?.desiredWebhookUrl ?? "not set"}
               </p>
@@ -491,14 +449,13 @@ export function TelegramSettings() {
                 Healthy target: {state.telegram?.webhookUrl ?? "not synced"}
               </p>
               {state.telegram?.lastError ? (
-                <p style={{ margin: 0, color: "#fca5a5", lineHeight: 1.6 }}>
+                <p style={{ margin: 0, color: "var(--danger)", lineHeight: 1.6 }}>
                   Last Telegram error: {state.telegram.lastError}
                 </p>
               ) : null}
-            </article>
+            </SurfaceCard>
 
-            <article style={{ padding: 20, borderRadius: 24, border: "1px solid var(--border)", background: "var(--panel-strong)", display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Reminder Delivery Queue</h2>
+            <SurfaceCard title="Reminder delivery queue" className="stack-md">
               {telegramTasks.length === 0 ? (
                 <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram reminder tasks are visible yet.</p>
               ) : (
@@ -506,7 +463,7 @@ export function TelegramSettings() {
                   const reminder = describeReminder(task);
 
                   return (
-                    <article key={task.id} style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(148, 163, 184, 0.14)", background: "rgba(2, 6, 23, 0.62)", display: "grid", gap: 8 }}>
+                    <article key={task.id} style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(64, 89, 112, 0.12)", background: "rgba(255, 255, 255, 0.68)", display: "grid", gap: 8 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                         <p style={{ margin: 0, fontWeight: 700 }}>{task.title}</p>
                         <span style={{ color: reminder.color, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -524,10 +481,9 @@ export function TelegramSettings() {
                   );
                 })
               )}
-            </article>
+            </SurfaceCard>
           </aside>
         </section>
-      </section>
-    </main>
+    </AppPage>
   );
 }

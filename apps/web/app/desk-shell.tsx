@@ -14,6 +14,7 @@ import type {
   ToolExecutionListResponse,
   ToolExecutionRecord,
 } from "@secretary/core-runtime";
+import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid } from "./lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "./lib/presenters";
 
 type DeskMessage = {
@@ -325,68 +326,50 @@ export function DeskShell() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "32px 18px 48px",
-      }}
-    >
-      <section
-        style={{
-          width: "min(1100px, 100%)",
-          margin: "0 auto",
-          display: "grid",
-          gap: 20,
-        }}
-      >
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-            backdropFilter: "blur(18px)",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              color: "var(--accent)",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            Secretary Desk
-          </p>
-          <h1
-            style={{
-              margin: "12px 0 10px",
-              fontSize: "clamp(2.1rem, 4vw, 4.2rem)",
-              lineHeight: 1,
-            }}
-          >
-            Desk, Memory, and Runtime Context
-          </h1>
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 720,
-              color: "var(--muted)",
-              fontSize: 18,
-              lineHeight: 1.6,
-            }}
-          >
+    <AppPage width="1100px">
+      <PageHero
+        eyebrow="Secretary Desk"
+        title="Conversation, memory, and runtime context"
+        description={
+          <p>
             This Desk routes browser messages through a thin Next.js API layer to
             the Fastify worker. The runtime remains deterministic, but it now
-            retrieves stored memory, tracks extracted reminder hooks, and can run
-            internal specialists plus approval-gated tools before composing a reply.
+            retrieves stored memory, tracks reminder hooks, and can run internal
+            specialists plus approval-gated tools before composing a reply.
           </p>
-        </header>
+        }
+        meta={
+          <p>
+            {error ??
+              (isSending
+                ? "Sending through the worker..."
+                : isRefreshing
+                  ? "Refreshing saved history..."
+                  : "Ready for the next turn.")}
+          </p>
+        }
+        actions={
+          <button type="button" className="button-primary" onClick={startFreshConversation}>
+            New conversation
+          </button>
+        }
+      />
 
-        <section
+      <StatGrid>
+        <StatCard label="Threads" value={conversations.length} detail="Recent saved conversations" />
+        <StatCard label="Pending approvals" value={pendingApprovals.length} detail="Actions waiting on you" />
+        <StatCard label="Memory hits" value={memoryContext.length} detail="Active memory items in the latest turn" />
+        <StatCard
+          label="Runtime traces"
+          value={activity.length}
+          detail={conversationId ? "Recent events for the active thread" : "Start a thread to inspect traces"}
+          tone="soft"
+        />
+      </StatGrid>
+
+      {error ? <NoticeBanner tone="warning">{error}</NoticeBanner> : null}
+
+      <section
           style={{
             display: "grid",
             gap: 20,
@@ -422,15 +405,7 @@ export function DeskShell() {
                 <button
                   type="button"
                   onClick={startFreshConversation}
-                  style={{
-                    border: "1px solid rgba(125, 211, 252, 0.2)",
-                    borderRadius: 999,
-                    padding: "8px 12px",
-                    background: "rgba(56, 189, 248, 0.08)",
-                    color: "var(--text)",
-                    font: "inherit",
-                    cursor: "pointer",
-                  }}
+                  className="button-secondary"
                 >
                   New
                 </button>
@@ -449,12 +424,12 @@ export function DeskShell() {
                       borderRadius: 18,
                       border:
                         conversationId === conversation.id
-                          ? "1px solid rgba(125, 211, 252, 0.42)"
-                          : "1px solid rgba(148, 163, 184, 0.14)",
+                          ? "1px solid rgba(15, 118, 110, 0.26)"
+                          : "1px solid rgba(64, 89, 112, 0.12)",
                       background:
                         conversationId === conversation.id
-                          ? "rgba(56, 189, 248, 0.12)"
-                          : "rgba(2, 6, 23, 0.62)",
+                          ? "rgba(15, 118, 110, 0.08)"
+                          : "rgba(255, 255, 255, 0.68)",
                       color: "var(--text)",
                       padding: 14,
                       cursor: "pointer",
@@ -498,8 +473,8 @@ export function DeskShell() {
                   style={{
                     textAlign: "left",
                     borderRadius: 16,
-                    border: "1px solid rgba(148, 163, 184, 0.14)",
-                    background: "rgba(2, 6, 23, 0.62)",
+                    border: "1px solid rgba(64, 89, 112, 0.12)",
+                    background: "rgba(255, 255, 255, 0.68)",
                     color: "var(--text)",
                     padding: 12,
                     cursor: "pointer",
@@ -541,12 +516,12 @@ export function DeskShell() {
                     borderRadius: 18,
                     background:
                       message.role === "user"
-                        ? "rgba(56, 189, 248, 0.15)"
-                        : "rgba(15, 23, 42, 0.95)",
+                        ? "rgba(15, 118, 110, 0.12)"
+                        : "rgba(255, 252, 247, 0.92)",
                     border:
                       message.role === "user"
-                        ? "1px solid rgba(125, 211, 252, 0.25)"
-                        : "1px solid rgba(148, 163, 184, 0.12)",
+                        ? "1px solid rgba(15, 118, 110, 0.18)"
+                        : "1px solid rgba(64, 89, 112, 0.12)",
                   }}
                 >
                   <p
@@ -577,11 +552,7 @@ export function DeskShell() {
                   width: "100%",
                   resize: "vertical",
                   borderRadius: 18,
-                  border: "1px solid rgba(148, 163, 184, 0.18)",
-                  background: "rgba(2, 6, 23, 0.75)",
-                  color: "var(--text)",
                   padding: 16,
-                  font: "inherit",
                 }}
               />
               <div
@@ -604,18 +575,7 @@ export function DeskShell() {
                 <button
                   type="submit"
                   disabled={isSending || input.trim().length === 0}
-                  style={{
-                    border: "none",
-                    borderRadius: 999,
-                    padding: "12px 18px",
-                    font: "inherit",
-                    fontWeight: 700,
-                    cursor: isSending ? "wait" : "pointer",
-                    color: "#03111f",
-                    background:
-                      "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
-                    opacity: isSending || input.trim().length === 0 ? 0.7 : 1,
-                  }}
+                  className="button-primary"
                 >
                   {isSending ? "Sending..." : "Send Message"}
                 </button>
@@ -726,17 +686,7 @@ export function DeskShell() {
                           type="button"
                           onClick={() => void decideApproval(execution.id, true)}
                           disabled={approvalBusyId === execution.id}
-                          style={{
-                            border: "none",
-                            borderRadius: 999,
-                            padding: "10px 14px",
-                            font: "inherit",
-                            fontWeight: 700,
-                            cursor: approvalBusyId === execution.id ? "wait" : "pointer",
-                            color: "#03111f",
-                            background:
-                              "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
-                          }}
+                          className="button-primary"
                         >
                           {approvalBusyId === execution.id ? "Working..." : "Approve"}
                         </button>
@@ -744,15 +694,7 @@ export function DeskShell() {
                           type="button"
                           onClick={() => void decideApproval(execution.id, false)}
                           disabled={approvalBusyId === execution.id}
-                          style={{
-                            border: "1px solid rgba(248, 113, 113, 0.32)",
-                            borderRadius: 999,
-                            padding: "10px 14px",
-                            font: "inherit",
-                            cursor: approvalBusyId === execution.id ? "wait" : "pointer",
-                            color: "var(--text)",
-                            background: "rgba(127, 29, 29, 0.24)",
-                          }}
+                          className="button-danger"
                         >
                           Deny
                         </button>
@@ -903,8 +845,7 @@ export function DeskShell() {
               </div>
             </article>
           </aside>
-        </section>
       </section>
-    </main>
+    </AppPage>
   );
 }

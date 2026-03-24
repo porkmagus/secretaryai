@@ -6,6 +6,7 @@ import type {
   MemoryType,
   TaskRecord,
 } from "@secretary/core-runtime";
+import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 import { formatTimestamp } from "../lib/presenters";
 
 type MemoryApiResponse = {
@@ -206,65 +207,29 @@ export function MemoryBrowser() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: "32px 18px 48px",
-      }}
-    >
-      <section
-        style={{
-          width: "min(1220px, 100%)",
-          margin: "0 auto",
-          display: "grid",
-          gap: 20,
-        }}
-      >
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              color: "var(--accent)",
-              letterSpacing: "0.12em",
-              textTransform: "uppercase",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            Memory Console
-          </p>
-          <h1
-            style={{
-              margin: "12px 0 10px",
-              fontSize: "clamp(2.1rem, 4vw, 4rem)",
-              lineHeight: 1,
-            }}
-          >
-            Phase 2 Memory and Context
-          </h1>
-          <p
-            style={{
-              margin: 0,
-              maxWidth: 760,
-              color: "var(--muted)",
-              fontSize: 17,
-              lineHeight: 1.6,
-            }}
-          >
+    <AppPage>
+      <PageHero
+        eyebrow="Memory Console"
+        title="Memory and context"
+        description={
+          <p>
             Inspect long-term memory, pin what must always matter, suppress bad entries,
             and keep an eye on reminder hooks created by the Memory Specialist.
           </p>
-        </header>
+        }
+        meta={
+          <p>
+            {error ??
+              (isLoading
+                ? "Loading memory state..."
+                : `${summary.total} memories loaded, ${summary.pinned} pinned, ${summary.suppressed} suppressed.`)}
+          </p>
+        }
+      />
 
-        <section
+      {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
+
+      <section
           style={{
             display: "grid",
             gap: 20,
@@ -278,64 +243,13 @@ export function MemoryBrowser() {
               alignContent: "start",
             }}
           >
-            <section
-              style={{
-                display: "grid",
-                gap: 14,
-                gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-              }}
-            >
-              <article
-                style={{
-                  padding: 18,
-                  borderRadius: 22,
-                  border: "1px solid var(--border)",
-                  background: "var(--panel-strong)",
-                }}
-              >
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Memories</p>
-                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>
-                  {summary.total}
-                </p>
-              </article>
-              <article
-                style={{
-                  padding: 18,
-                  borderRadius: 22,
-                  border: "1px solid var(--border)",
-                  background: "var(--panel-strong)",
-                }}
-              >
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Pinned</p>
-                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>
-                  {summary.pinned}
-                </p>
-              </article>
-              <article
-                style={{
-                  padding: 18,
-                  borderRadius: 22,
-                  border: "1px solid var(--border)",
-                  background: "var(--panel-strong)",
-                }}
-              >
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Suppressed</p>
-                <p style={{ margin: "8px 0 0", fontSize: 28, fontWeight: 700 }}>
-                  {summary.suppressed}
-                </p>
-              </article>
-            </section>
+            <StatGrid>
+              <StatCard label="Memories" value={summary.total} detail="Current long-term memory entries" />
+              <StatCard label="Pinned" value={summary.pinned} detail="Always-important memory items" />
+              <StatCard label="Suppressed" value={summary.suppressed} detail="Entries hidden from normal recall" />
+            </StatGrid>
 
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-                display: "grid",
-                gap: 14,
-              }}
-            >
+            <SurfaceCard className="stack-md">
               <div
                 style={{
                   display: "grid",
@@ -344,36 +258,19 @@ export function MemoryBrowser() {
                   alignItems: "center",
                 }}
               >
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search memory text, summaries, or tags"
-                  style={{
-                    width: "100%",
-                    borderRadius: 14,
-                    border: "1px solid rgba(148, 163, 184, 0.18)",
-                    background: "rgba(2, 6, 23, 0.75)",
-                    color: "var(--text)",
-                    padding: "12px 14px",
-                    font: "inherit",
-                  }}
-                />
-                <select
-                  value={typeFilter}
-                  onChange={(event) =>
-                    setTypeFilter(event.target.value as MemoryType | "all")
-                  }
-                  style={{
-                    borderRadius: 14,
-                    border: "1px solid rgba(148, 163, 184, 0.18)",
-                    background: "rgba(2, 6, 23, 0.75)",
-                    color: "var(--text)",
-                    padding: "12px 14px",
-                    font: "inherit",
-                  }}
-                >
-                  {memoryTypes.map((memoryType) => (
-                    <option key={memoryType} value={memoryType}>
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search memory text, summaries, or tags"
+                  />
+                  <select
+                    value={typeFilter}
+                    onChange={(event) =>
+                      setTypeFilter(event.target.value as MemoryType | "all")
+                    }
+                  >
+                    {memoryTypes.map((memoryType) => (
+                      <option key={memoryType} value={memoryType}>
                       {memoryType}
                     </option>
                   ))}
@@ -401,7 +298,7 @@ export function MemoryBrowser() {
                     ? "Loading memory state..."
                     : `${summary.total} memories loaded, ${summary.pinned} pinned, ${summary.suppressed} suppressed.`)}
               </p>
-            </article>
+            </SurfaceCard>
 
             {memories.map((memory) => {
               const draft = drafts[memory.id];
@@ -482,15 +379,6 @@ export function MemoryBrowser() {
                         }))
                       }
                       placeholder="Title"
-                      style={{
-                        width: "100%",
-                        borderRadius: 14,
-                        border: "1px solid rgba(148, 163, 184, 0.18)",
-                        background: "rgba(2, 6, 23, 0.75)",
-                        color: "var(--text)",
-                        padding: "12px 14px",
-                        font: "inherit",
-                      }}
                     />
                     <input
                       value={draft.tags}
@@ -504,15 +392,6 @@ export function MemoryBrowser() {
                         }))
                       }
                       placeholder="tags, comma, separated"
-                      style={{
-                        width: "100%",
-                        borderRadius: 14,
-                        border: "1px solid rgba(148, 163, 184, 0.18)",
-                        background: "rgba(2, 6, 23, 0.75)",
-                        color: "var(--text)",
-                        padding: "12px 14px",
-                        font: "inherit",
-                      }}
                     />
                   </div>
 
@@ -529,16 +408,6 @@ export function MemoryBrowser() {
                     }
                     rows={2}
                     placeholder="Summary"
-                    style={{
-                      width: "100%",
-                      resize: "vertical",
-                      borderRadius: 14,
-                      border: "1px solid rgba(148, 163, 184, 0.18)",
-                      background: "rgba(2, 6, 23, 0.75)",
-                      color: "var(--text)",
-                      padding: "12px 14px",
-                      font: "inherit",
-                    }}
                   />
 
                   <textarea
@@ -554,16 +423,6 @@ export function MemoryBrowser() {
                     }
                     rows={4}
                     placeholder="Memory content"
-                    style={{
-                      width: "100%",
-                      resize: "vertical",
-                      borderRadius: 14,
-                      border: "1px solid rgba(148, 163, 184, 0.18)",
-                      background: "rgba(2, 6, 23, 0.75)",
-                      color: "var(--text)",
-                      padding: "12px 14px",
-                      font: "inherit",
-                    }}
                   />
 
                   <div
@@ -614,7 +473,7 @@ export function MemoryBrowser() {
                         style={{
                           padding: "4px 8px",
                           borderRadius: 999,
-                          background: "rgba(56, 189, 248, 0.1)",
+                          background: "rgba(15, 118, 110, 0.08)",
                           color: "var(--accent)",
                           fontSize: 12,
                           fontWeight: 700,
@@ -641,18 +500,8 @@ export function MemoryBrowser() {
                       type="button"
                       onClick={() => void saveMemory(memory.id)}
                       disabled={savingId === memory.id}
-                      style={{
-                        border: "none",
-                        borderRadius: 999,
-                        padding: "12px 18px",
-                        font: "inherit",
-                        fontWeight: 700,
-                        cursor: savingId === memory.id ? "wait" : "pointer",
-                        color: "#03111f",
-                        background:
-                          "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
-                        opacity: savingId === memory.id ? 0.7 : 1,
-                      }}
+                      className="button-primary"
+                      style={{ opacity: savingId === memory.id ? 0.7 : 1 }}
                     >
                       {savingId === memory.id ? "Saving..." : "Save Memory"}
                     </button>
@@ -669,15 +518,7 @@ export function MemoryBrowser() {
               alignContent: "start",
             }}
           >
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Reminder Hooks</h2>
+            <SurfaceCard title="Reminder hooks" className="stack-md">
               <div style={{ display: "grid", gap: 12 }}>
                 {tasks.length === 0 ? (
                   <p style={{ margin: 0, color: "var(--muted)" }}>
@@ -690,8 +531,8 @@ export function MemoryBrowser() {
                       style={{
                         padding: 14,
                         borderRadius: 16,
-                        border: "1px solid rgba(148, 163, 184, 0.14)",
-                        background: "rgba(2, 6, 23, 0.65)",
+                        border: "1px solid rgba(64, 89, 112, 0.12)",
+                        background: "rgba(255, 255, 255, 0.68)",
                       }}
                     >
                       <p style={{ margin: "0 0 6px", fontWeight: 700 }}>{task.title}</p>
@@ -705,17 +546,9 @@ export function MemoryBrowser() {
                   ))
                 )}
               </div>
-            </article>
+            </SurfaceCard>
 
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Type Mix</h2>
+            <SurfaceCard title="Type mix" className="stack-sm">
               <div style={{ display: "grid", gap: 10 }}>
                 {summary.byType.map((entry) => (
                   <div
@@ -732,10 +565,9 @@ export function MemoryBrowser() {
                   </div>
                 ))}
               </div>
-            </article>
+            </SurfaceCard>
           </aside>
         </section>
-      </section>
-    </main>
+    </AppPage>
   );
 }

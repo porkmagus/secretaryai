@@ -2,26 +2,27 @@
 
 import { useEffect, useState } from "react";
 import type { SystemHealthResponse } from "@secretary/core-runtime";
+import { AppPage, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 
 function statusTone(status: string) {
   switch (status) {
     case "ok":
       return {
-        badge: "#bbf7d0",
-        border: "rgba(134, 239, 172, 0.24)",
-        background: "rgba(5, 46, 22, 0.24)",
+        badge: "var(--success-soft-text)",
+        border: "var(--success-soft-border)",
+        background: "var(--success-soft-bg)",
       };
     case "not_configured":
       return {
-        badge: "#cbd5e1",
-        border: "rgba(148, 163, 184, 0.2)",
-        background: "rgba(15, 23, 42, 0.72)",
+        badge: "var(--neutral-soft-text)",
+        border: "var(--neutral-soft-border)",
+        background: "var(--neutral-soft-bg)",
       };
     default:
       return {
-        badge: "#fde68a",
-        border: "rgba(251, 191, 36, 0.28)",
-        background: "rgba(120, 53, 15, 0.18)",
+        badge: "var(--warning-soft-text)",
+        border: "var(--warning-soft-border)",
+        background: "var(--warning-soft-bg)",
       };
   }
 }
@@ -51,113 +52,46 @@ export function HealthConsole() {
   }, []);
 
   return (
-    <main style={{ minHeight: "100vh", padding: "32px 18px 48px" }}>
-      <section
-        style={{
-          width: "min(1220px, 100%)",
-          margin: "0 auto",
-          display: "grid",
-          gap: 20,
-        }}
-      >
-        <header
-          style={{
-            padding: 28,
-            borderRadius: 28,
-            border: "1px solid var(--border)",
-            background: "var(--panel)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 16,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <div>
-              <p
-                style={{
-                  margin: 0,
-                  color: "var(--accent)",
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              >
-                Health Dashboard
-              </p>
-              <h1
-                style={{
-                  margin: "12px 0 10px",
-                  fontSize: "clamp(2.1rem, 4vw, 4rem)",
-                  lineHeight: 1,
-                }}
-              >
-                Local system health and storage
-              </h1>
-              <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6, maxWidth: 760 }}>
-                Short, useful operator state: dependency health, speech and Telegram
-                readiness, visible storage paths, and a quick sense of how much state the
-                Secretary is carrying.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => void load()}
-              style={{
-                border: "1px solid rgba(125, 211, 252, 0.2)",
-                borderRadius: 999,
-                padding: "10px 14px",
-                background: "rgba(56, 189, 248, 0.08)",
-                color: "var(--text)",
-                font: "inherit",
-                cursor: "pointer",
-              }}
-            >
-              Refresh
-            </button>
-          </div>
-          <p style={{ margin: "12px 0 0", color: "var(--muted)", fontSize: 14 }}>
+    <AppPage>
+      <PageHero
+        eyebrow="Health Dashboard"
+        title="Local system health and storage"
+        description={
+          <p>
+            Short, useful operator state: dependency health, speech and Telegram
+            readiness, visible storage paths, and a quick sense of how much state the
+            Secretary is carrying.
+          </p>
+        }
+        meta={
+          <p>
             {error ??
               (data
                 ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
                 : "Loading system health...")}
           </p>
-        </header>
+        }
+        actions={
+          <button type="button" className="button-secondary" onClick={() => void load()}>
+            Refresh
+          </button>
+        }
+      />
 
-        <section
-          style={{
-            display: "grid",
-            gap: 16,
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
+      <StatGrid>
           {data
             ? Object.entries(data.stats).map(([key, value]) => (
-                <article
+                <StatCard
                   key={key}
-                  style={{
-                    padding: 18,
-                    borderRadius: 22,
-                    border: "1px solid var(--border)",
-                    background: "var(--panel-strong)",
-                    display: "grid",
-                    gap: 6,
-                  }}
-                >
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{key}</p>
-                  <p style={{ margin: 0, fontSize: 32, fontWeight: 800 }}>{value}</p>
-                </article>
+                  label={key}
+                  value={value}
+                  detail="Current runtime snapshot"
+                />
               ))
             : null}
-        </section>
+      </StatGrid>
 
-        <section
+      <section
           style={{
             display: "grid",
             gap: 16,
@@ -169,16 +103,9 @@ export function HealthConsole() {
                 const tone = statusTone(service.status);
 
                 return (
-                  <article
+                  <SurfaceCard
                     key={key}
-                    style={{
-                      padding: 18,
-                      borderRadius: 22,
-                      border: `1px solid ${tone.border}`,
-                      background: "var(--panel-strong)",
-                      display: "grid",
-                      gap: 10,
-                    }}
+                    className="stack-sm"
                   >
                     <div
                       style={{
@@ -206,13 +133,13 @@ export function HealthConsole() {
                     <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
                       {service.summary}
                     </p>
-                  </article>
+                  </SurfaceCard>
                 );
               })
             : null}
-        </section>
+      </section>
 
-        <section
+      <section
           style={{
             display: "grid",
             gap: 20,
@@ -236,8 +163,8 @@ export function HealthConsole() {
                 style={{
                   padding: 12,
                   borderRadius: 14,
-                  border: "1px solid rgba(148, 163, 184, 0.14)",
-                  background: "rgba(2, 6, 23, 0.65)",
+                  border: "1px solid rgba(64, 89, 112, 0.12)",
+                  background: "rgba(255, 255, 255, 0.66)",
                 }}
               >
                 <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{entry.label}</p>
@@ -272,7 +199,6 @@ export function HealthConsole() {
             ))}
           </article>
         </section>
-      </section>
-    </main>
+    </AppPage>
   );
 }

@@ -191,12 +191,39 @@ async function fetchJson(url, init) {
   return payload;
 }
 
+async function login(webBaseUrl) {
+  const response = await fetch(`${webBaseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      password: env.APP_AUTH_PASSWORD,
+      next: "/onboarding",
+    }),
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Login failed: ${JSON.stringify(payload)}`);
+  }
+
+  const cookie = response.headers.get("set-cookie");
+  if (!cookie) {
+    throw new Error("Login did not return a session cookie.");
+  }
+
+  return cookie.split(";")[0];
+}
+
 const workerPort = await allocatePort();
 const webPort = await allocatePort();
 const backupDir = resolve(root, "runtime", "backups", "phase6-verify");
 const env = {
   NODE_ENV: "development",
   APP_BASE_URL: `http://127.0.0.1:${webPort}`,
+  APP_AUTH_PASSWORD: "phase6-passphrase",
+  APP_SESSION_SECRET: "phase6-session-secret",
   WORKER_BASE_URL: `http://127.0.0.1:${workerPort}`,
   WEB_PORT: String(webPort),
   WORKER_PORT: String(workerPort),
@@ -220,29 +247,68 @@ const worker = startProcess(nodeCommand, ["apps/worker/dist/index.js"], env);
 const web = startWebProcess(webPort, {
   WORKER_BASE_URL: env.WORKER_BASE_URL,
   DEFAULT_USER_ID: env.DEFAULT_USER_ID,
+  APP_AUTH_PASSWORD: env.APP_AUTH_PASSWORD,
+  APP_SESSION_SECRET: env.APP_SESSION_SECRET,
 });
 
 try {
   await waitForUrl(`http://127.0.0.1:${workerPort}/health/live`, "worker");
-  await waitForUrl(`http://127.0.0.1:${webPort}/onboarding`, "onboarding page");
-  await waitForUrl(`http://127.0.0.1:${webPort}/health`, "health page");
-  await waitForUrl(`http://127.0.0.1:${webPort}/persona`, "persona page");
+  await delay(1500);
 
-  const health = await fetchJson(`http://127.0.0.1:${webPort}/api/system/health`);
+  const anonymousHealth = await fetch(`http://127.0.0.1:${webPort}/api/system/health`);
+  if (anonymousHealth.status !== 401) {
+    throw new Error(`Expected anonymous API access to be blocked. Got ${anonymousHealth.status}`);
+  }
+
+  const sessionCookie = await login(`http://127.0.0.1:${webPort}`);
+  const authHeaders = { cookie: sessionCookie };
+
+  const onboardingPage = await fetch(`http://127.0.0.1:${webPort}/onboarding`, {
+    headers: authHeaders,
+    redirect: "manual",
+  });
+  if (!onboardingPage.ok) {
+    throw new Error(`Authenticated onboarding page failed with ${onboardingPage.status}`);
+  }
+
+  const healthPage = await fetch(`http://127.0.0.1:${webPort}/health`, {
+    headers: authHeaders,
+    redirect: "manual",
+  });
+  if (!healthPage.ok) {
+    throw new Error(`Authenticated health page failed with ${healthPage.status}`);
+  }
+
+  const personaPage = await fetch(`http://127.0.0.1:${webPort}/persona`, {
+    headers: authHeaders,
+    redirect: "manual",
+  });
+  if (!personaPage.ok) {
+    throw new Error(`Authenticated persona page failed with ${personaPage.status}`);
+  }
+
+  const health = await fetchJson(`http://127.0.0.1:${webPort}/api/system/health`, {
+    headers: authHeaders,
+  });
   if (!health.storage.some((entry) => entry.label === "Backups" && entry.exists)) {
     throw new Error(`Expected visible backups storage. Got: ${JSON.stringify(health.storage)}`);
   }
 
-  const onboarding = await fetchJson(`http://127.0.0.1:${webPort}/api/onboarding`);
+  const onboarding = await fetchJson(`http://127.0.0.1:${webPort}/api/onboarding`, {
+    headers: authHeaders,
+  });
   if (!Array.isArray(onboarding.steps) || onboarding.steps.length < 5) {
     throw new Error(`Expected onboarding steps. Got: ${JSON.stringify(onboarding)}`);
   }
 
-  const originalPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`);
+  const originalPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
+    headers: authHeaders,
+  });
   const patchedPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify({
       name: "Secretary Prime",
@@ -256,12 +322,15 @@ try {
     throw new Error(`Persona patch did not stick: ${JSON.stringify(patchedPersona)}`);
   }
 
-  const exported = await fetchJson(`http://127.0.0.1:${webPort}/api/export/settings`);
+  const exported = await fetchJson(`http://127.0.0.1:${webPort}/api/export/settings`, {
+    headers: authHeaders,
+  });
 
   await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify({
       name: "Temporary Divergence",
@@ -275,6 +344,7 @@ try {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify({ snapshot: exported.snapshot }),
   });
@@ -293,6 +363,7 @@ try {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
     },
     body: JSON.stringify({
       name: "Needs Restore",
@@ -308,7 +379,9 @@ try {
     DATABASE_URL: databaseUrl,
   });
 
-  const restoredPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`);
+  const restoredPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
+    headers: authHeaders,
+  });
   if (restoredPersona.persona.name !== "Secretary Prime") {
     throw new Error(`Backup restore did not restore persona state: ${JSON.stringify(restoredPersona)}`);
   }
@@ -316,6 +389,7 @@ try {
   console.log(
     JSON.stringify(
       {
+        authProtected: true,
         onboardingSteps: onboarding.steps.length,
         personaNameBefore: originalPersona.persona.name,
         personaNameAfterImport: imported.persona.name,
