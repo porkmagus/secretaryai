@@ -993,7 +993,7 @@ Establish the repository, core services, persistence, and basic Secretary web ch
 - [x] DB schema initializes cleanly
 - [x] chat request/response persists correctly
 - [x] app survives restart without data loss
-- [ ] core storage paths are visible and organized
+- [x] core storage paths are visible and organized
 
 #### Stop condition
 - [x] persistent local web chat is working
