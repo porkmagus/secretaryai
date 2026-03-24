@@ -54,6 +54,14 @@ export type TelegramSendMessageResult = {
   message_id: number;
 };
 
+export type TelegramSendVoiceResult = {
+  message_id: number;
+};
+
+export type TelegramSendAudioResult = {
+  message_id: number;
+};
+
 export type NormalizedTelegramInboundMessage = {
   updateId: string;
   messageId: string;
@@ -193,6 +201,21 @@ export function createTelegramClient(options: {
     return payload.result;
   }
 
+  async function callMultipartMethod<T>(method: string, body: FormData) {
+    const response = await fetch(`${baseUrl}/${method}`, {
+      method: "POST",
+      body,
+    });
+
+    const payload = (await response.json()) as TelegramMethodResponse<T>;
+
+    if (!response.ok || !payload.ok || payload.result === undefined) {
+      throw new Error(payload.description ?? `Telegram ${method} failed with ${response.status}`);
+    }
+
+    return payload.result;
+  }
+
   return {
     async getMe() {
       return callMethod<TelegramUser>("getMe");
@@ -235,6 +258,46 @@ export function createTelegramClient(options: {
       }
 
       return sentMessageIds;
+    },
+    async sendVoice(params: {
+      audio: Buffer;
+      chatId: string;
+      filename?: string;
+      mimeType?: string;
+    }) {
+      const audioBytes = params.audio.buffer.slice(
+        params.audio.byteOffset,
+        params.audio.byteOffset + params.audio.byteLength,
+      ) as ArrayBuffer;
+      const form = new FormData();
+      form.set("chat_id", params.chatId);
+      form.set(
+        "voice",
+        new Blob([audioBytes], { type: params.mimeType ?? "audio/ogg" }),
+        params.filename ?? "voice.ogg",
+      );
+
+      return callMultipartMethod<TelegramSendVoiceResult>("sendVoice", form);
+    },
+    async sendAudio(params: {
+      audio: Buffer;
+      chatId: string;
+      filename?: string;
+      mimeType?: string;
+    }) {
+      const audioBytes = params.audio.buffer.slice(
+        params.audio.byteOffset,
+        params.audio.byteOffset + params.audio.byteLength,
+      ) as ArrayBuffer;
+      const form = new FormData();
+      form.set("chat_id", params.chatId);
+      form.set(
+        "audio",
+        new Blob([audioBytes], { type: params.mimeType ?? "audio/wav" }),
+        params.filename ?? "reply.wav",
+      );
+
+      return callMultipartMethod<TelegramSendAudioResult>("sendAudio", form);
     },
     async downloadFile(filePath: string) {
       const response = await fetch(`${fileBaseUrl}/${filePath.replace(/^\/+/g, "")}`, {

@@ -7,8 +7,10 @@ import {
 } from "@secretary/db";
 import {
   createMessageId,
+  type CreateVoiceProfileRequest,
   type SpeechArtifactListResponse,
   type SpeechArtifactRecord,
+  type UpdateVoiceProfileRequest,
   type VoiceProfileListResponse,
   type VoiceProfileRecord,
 } from "@secretary/core-runtime";
@@ -65,12 +67,12 @@ export async function ensureDefaultVoiceProfile(dbClient: DbClient) {
   await dbClient.db.insert(voiceProfiles).values({
     id,
     name: "Secretary Default Voice",
-    engineId: "local-placeholder",
+    engineId: "chatterbox",
     sampleStorageKey: null,
     sampleMimeType: null,
     sampleDurationMs: null,
     qualityPreset: "balanced",
-    speakingStyle: "calm and warm",
+    speakingStyle: "warm and clear",
     isActive: true,
   });
 
@@ -94,6 +96,111 @@ export async function listVoiceProfiles(
   };
 }
 
+export async function getActiveVoiceProfile(dbClient: DbClient) {
+  await ensureDefaultVoiceProfile(dbClient);
+
+  return dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.isActive, true),
+  });
+}
+
+export async function getVoiceProfileById(dbClient: DbClient, profileId: string) {
+  return dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.id, profileId),
+  });
+}
+
+export async function createVoiceProfile(
+  dbClient: DbClient,
+  request: CreateVoiceProfileRequest,
+) {
+  const id = createMessageId();
+
+  if (request.isActive) {
+    await dbClient.db.update(voiceProfiles).set({
+      isActive: false,
+      updatedAt: new Date(),
+    });
+  }
+
+  await dbClient.db.insert(voiceProfiles).values({
+    id,
+    name: request.name,
+    engineId: request.engineId,
+    sampleStorageKey: null,
+    sampleMimeType: null,
+    sampleDurationMs: null,
+    qualityPreset: request.qualityPreset ?? null,
+    speakingStyle: request.speakingStyle ?? null,
+    isActive: request.isActive ?? false,
+  });
+
+  return dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.id, id),
+  });
+}
+
+export async function updateVoiceProfile(
+  dbClient: DbClient,
+  profileId: string,
+  request: UpdateVoiceProfileRequest,
+) {
+  const existing = await dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.id, profileId),
+  });
+
+  if (!existing) {
+    return null;
+  }
+
+  if (request.isActive) {
+    await dbClient.db.update(voiceProfiles).set({
+      isActive: false,
+      updatedAt: new Date(),
+    });
+  }
+
+  await dbClient.db
+    .update(voiceProfiles)
+    .set({
+      name: request.name ?? existing.name,
+      engineId: request.engineId ?? existing.engineId,
+      qualityPreset:
+        request.qualityPreset !== undefined ? request.qualityPreset : existing.qualityPreset,
+      speakingStyle:
+        request.speakingStyle !== undefined ? request.speakingStyle : existing.speakingStyle,
+      isActive: request.isActive ?? existing.isActive,
+      updatedAt: new Date(),
+    })
+    .where(eq(voiceProfiles.id, profileId));
+
+  return dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.id, profileId),
+  });
+}
+
+export async function attachVoiceProfileSample(params: {
+  dbClient: DbClient;
+  profileId: string;
+  durationMs?: number | null;
+  mimeType?: string | null;
+  sampleStorageKey: string;
+}) {
+  await params.dbClient.db
+    .update(voiceProfiles)
+    .set({
+      sampleStorageKey: params.sampleStorageKey,
+      sampleMimeType: params.mimeType ?? null,
+      sampleDurationMs: params.durationMs ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(voiceProfiles.id, params.profileId));
+
+  return params.dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.id, params.profileId),
+  });
+}
+
 export async function listSpeechArtifacts(
   dbClient: DbClient,
   conversationId?: string,
@@ -107,6 +214,12 @@ export async function listSpeechArtifacts(
   return {
     artifacts: records.map(toSpeechArtifactRecord),
   };
+}
+
+export async function getSpeechArtifactById(dbClient: DbClient, artifactId: string) {
+  return dbClient.db.query.speechArtifacts.findFirst({
+    where: eq(speechArtifacts.id, artifactId),
+  });
 }
 
 export async function recordSpeechTrace(params: {

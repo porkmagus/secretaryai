@@ -1,7 +1,10 @@
+import { readFile, writeFile } from "node:fs/promises";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
+  type CreateVoiceProfileRequest,
   type ConversationListResponse,
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
@@ -9,9 +12,13 @@ import {
   type SpeechArtifactListResponse,
   type TaskListResponse,
   type TelegramTestMessageRequest,
+  type UpdateVoiceProfileRequest,
   type UpdateTelegramIntegrationRequest,
   type UpdateMemoryRequest,
+  type VoicePreviewRequest,
+  type VoicePreviewResponse,
   type VoiceProfileListResponse,
+  type WebSpeechTurnResponse,
   createTraceId,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
@@ -40,9 +47,21 @@ import {
   updateTelegramIntegrationSettings,
 } from "./lib/telegram-integration.js";
 import {
+  attachVoiceProfileSample,
+  createSpeechArtifact,
+  createVoiceProfile,
+  getVoiceProfileById,
   listSpeechArtifacts,
   listVoiceProfiles,
+  recordSpeechTrace,
+  updateVoiceProfile,
 } from "./lib/speech-runtime.js";
+import {
+  createSpeechStorageKey,
+  ensureSpeechStoragePath,
+  resolveManagedSpeechStoragePath,
+} from "./lib/speech-storage.js";
+import { createVoicePreview, processWebSpeechTurn } from "./lib/web-speech.js";
 
 export async function buildServer() {
   const config = loadAppConfig(process.env);
@@ -53,6 +72,7 @@ export async function buildServer() {
   await app.register(cors, {
     origin: true,
   });
+  await app.register(multipart);
 
   app.get("/health/live", async () => ({
     ok: true,
@@ -273,6 +293,40 @@ export async function buildServer() {
     }
   });
 
+  app.get<{
+    Querystring: {
+      mimeType?: string;
+      storageKey: string;
+    };
+  }>("/runtime/speech/file", async (request, reply) => {
+    try {
+      const storageKey = request.query.storageKey?.trim();
+
+      if (!storageKey) {
+        return reply.status(400).send({
+          error: "storageKey is required.",
+        });
+      }
+
+      const filePath = resolveManagedSpeechStoragePath(storageKey);
+      const fileBuffer = await readFile(filePath);
+      reply.header(
+        "Content-Type",
+        request.query.mimeType?.trim() || "application/octet-stream",
+      );
+
+      return reply.send(fileBuffer);
+    } catch (error) {
+      logger.error("runtime.speech.file_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(404).send({
+        error: "Unable to load speech file.",
+      });
+    }
+  });
+
   app.get("/runtime/voice/profiles", async (_, reply) => {
     try {
       const response: VoiceProfileListResponse = await listVoiceProfiles(
@@ -287,6 +341,225 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load voice profiles.",
+      });
+    }
+  });
+
+  app.post<{ Body: CreateVoiceProfileRequest }>("/runtime/voice/profiles", async (request, reply) => {
+    try {
+      const name = request.body.name?.trim();
+      const engineId = request.body.engineId?.trim();
+
+      if (!name || !engineId) {
+        return reply.status(400).send({
+          error: "Voice profile name and engineId are required.",
+        });
+      }
+
+      const profile = await createVoiceProfile(infrastructure.dbClient, {
+        ...request.body,
+        engineId,
+        name,
+      });
+
+      return {
+        profile,
+      };
+    } catch (error) {
+      logger.error("runtime.voice.profile_create_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to create voice profile.",
+      });
+    }
+  });
+
+  app.patch<{
+    Params: {
+      profileId: string;
+    };
+    Body: UpdateVoiceProfileRequest;
+  }>("/runtime/voice/profiles/:profileId", async (request, reply) => {
+    try {
+      const profile = await updateVoiceProfile(
+        infrastructure.dbClient,
+        request.params.profileId,
+        request.body,
+      );
+
+      if (!profile) {
+        return reply.status(404).send({
+          error: "Voice profile not found.",
+        });
+      }
+
+      return {
+        profile,
+      };
+    } catch (error) {
+      logger.error("runtime.voice.profile_update_failed", {
+        error: error instanceof Error ? error.message : error,
+        profileId: request.params.profileId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update voice profile.",
+      });
+    }
+  });
+
+  app.post<{
+    Params: {
+      profileId: string;
+    };
+  }>("/runtime/voice/profiles/:profileId/sample", async (request, reply) => {
+    try {
+      const profile = await getVoiceProfileById(
+        infrastructure.dbClient,
+        request.params.profileId,
+      );
+
+      if (!profile) {
+        return reply.status(404).send({
+          error: "Voice profile not found.",
+        });
+      }
+
+      const upload = await request.file();
+
+      if (!upload) {
+        return reply.status(400).send({
+          error: "Sample audio file is required.",
+        });
+      }
+
+      const extension =
+        upload.filename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "wav";
+      const storageKey = createSpeechStorageKey(
+        "profile",
+        `${Date.now()}-${request.params.profileId}.${extension}`,
+      );
+      const storagePath = await ensureSpeechStoragePath(storageKey);
+      const audioBuffer = await upload.toBuffer();
+      await writeFile(storagePath, audioBuffer);
+
+      const sampleArtifactId = await createSpeechArtifact({
+        dbClient: infrastructure.dbClient,
+        conversationId: null,
+        messageId: null,
+        artifactKind: "voice_sample",
+        status: "stored",
+        storageKey,
+        mimeType: upload.mimetype,
+        durationMs: null,
+        transcriptText: null,
+        sourceChannel: "web",
+        sourceRef: request.params.profileId,
+        metadataJson: {
+          filename: upload.filename,
+          voiceProfileId: request.params.profileId,
+        },
+      });
+
+      const updatedProfile = await attachVoiceProfileSample({
+        dbClient: infrastructure.dbClient,
+        profileId: request.params.profileId,
+        sampleStorageKey: storageKey,
+        mimeType: upload.mimetype,
+      });
+
+      await recordSpeechTrace({
+        dbClient: infrastructure.dbClient,
+        conversationId: null,
+        eventName: "speech.voice_sample.stored",
+        payload: {
+          artifactId: sampleArtifactId,
+          profileId: request.params.profileId,
+          storageKey,
+        },
+      });
+
+      return {
+        artifactId: sampleArtifactId,
+        profile: updatedProfile,
+      };
+    } catch (error) {
+      logger.error("runtime.voice.profile_sample_failed", {
+        error: error instanceof Error ? error.message : error,
+        profileId: request.params.profileId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to upload voice sample.",
+      });
+    }
+  });
+
+  app.post<{ Body: VoicePreviewRequest }>("/runtime/voice/preview", async (request, reply) => {
+    try {
+      const preview = await createVoicePreview({
+        config,
+        dbClient: infrastructure.dbClient,
+        request: request.body,
+      });
+
+      reply.header("Content-Type", preview.mimeType);
+      reply.header("X-Secretary-Artifact-Id", preview.artifactId);
+
+      return reply.send(preview.audio);
+    } catch (error) {
+      logger.error("runtime.voice.preview_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error:
+          error instanceof Error ? error.message : "Unable to generate voice preview.",
+      });
+    }
+  });
+
+  app.post("/runtime/speech/web-turn", async (request, reply) => {
+    try {
+      const upload = await request.file();
+
+      if (!upload) {
+        return reply.status(400).send({
+          error: "Audio upload is required.",
+        });
+      }
+
+      const conversationField = upload.fields.conversationId;
+      const conversationId =
+        conversationField &&
+        "value" in conversationField &&
+        typeof conversationField.value === "string" &&
+        conversationField.value.trim().length > 0
+          ? conversationField.value.trim()
+          : null;
+      const response: WebSpeechTurnResponse = await processWebSpeechTurn({
+        audio: await upload.toBuffer(),
+        config,
+        conversationId,
+        dbClient: infrastructure.dbClient,
+        defaultPersonaId: config.defaultPersonaId,
+        defaultUserId: config.defaultUserId,
+        memoryQueue: infrastructure.memoryQueue,
+        mimeType: upload.mimetype,
+        originalFilename: upload.filename,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.speech.web_turn_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error:
+          error instanceof Error ? error.message : "Unable to process web audio turn.",
       });
     }
   });

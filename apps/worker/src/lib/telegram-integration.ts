@@ -41,6 +41,7 @@ import {
   ensureSpeechStoragePath,
 } from "./speech-storage.js";
 import { transcribeAudioFile } from "./stt-service.js";
+import { createTelegramVoiceReply } from "./voice-replies.js";
 
 const telegramIntegrationId = "telegram";
 
@@ -839,6 +840,63 @@ export async function handleTelegramWebhookUpdate(params: {
       sentMessageIds,
     },
   });
+
+  if (normalized.voice) {
+    try {
+      const voiceReply = await createTelegramVoiceReply({
+        assistantMessageId: persistedTurn.response.messageId,
+        config: params.config,
+        conversationId: persistedTurn.response.conversationId,
+        dbClient: params.infrastructure.dbClient,
+        parentTraceId: traceId,
+        replyText,
+      });
+
+      if (voiceReply) {
+        const voiceResult =
+          voiceReply.deliveryKind === "voice"
+            ? await client.sendVoice({
+                audio: voiceReply.audio,
+                chatId: normalized.chatId,
+                filename: voiceReply.filename,
+                mimeType: voiceReply.mimeType,
+              })
+            : await client.sendAudio({
+                audio: voiceReply.audio,
+                chatId: normalized.chatId,
+                filename: voiceReply.filename,
+                mimeType: voiceReply.mimeType,
+              });
+
+        await recordTelegramTrace({
+          dbClient: params.infrastructure.dbClient,
+          conversationId: persistedTurn.response.conversationId,
+          parentTraceId: traceId,
+          eventName:
+            voiceReply.deliveryKind === "voice"
+              ? "telegram.voice_reply.sent"
+              : "telegram.audio_reply.sent",
+          payload: {
+            artifactId: voiceReply.artifactId,
+            chatId: normalized.chatId,
+            deliveryKind: voiceReply.deliveryKind,
+            sentMessageId: String(voiceResult.message_id),
+          },
+        });
+      }
+    } catch (error) {
+      await recordSpeechTrace({
+        dbClient: params.infrastructure.dbClient,
+        conversationId: persistedTurn.response.conversationId,
+        parentTraceId: traceId,
+        eventName: "speech.tts.failed",
+        payload: {
+          error: error instanceof Error ? error.message : String(error),
+          messageId: persistedTurn.response.messageId,
+        },
+      });
+    }
+  }
 
   return {
     ignored: false,

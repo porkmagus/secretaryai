@@ -189,6 +189,8 @@ function startFakeTelegramApi(port, token, sampleAudioBuffer) {
   const state = {
     nextMessageId: 9000,
     sentMessages: [],
+    sentAudioReplies: [],
+    sentVoices: [],
     webhookSecret: null,
     webhookUrl: "",
   };
@@ -212,8 +214,15 @@ function startFakeTelegramApi(port, token, sampleAudioBuffer) {
       chunks.push(Buffer.from(chunk));
     }
 
-    const rawBody = Buffer.concat(chunks).toString("utf8");
-    const body = rawBody ? JSON.parse(rawBody) : {};
+    const rawBuffer = Buffer.concat(chunks);
+    const rawBody = rawBuffer.toString("utf8");
+    const contentType = request.headers["content-type"] ?? "";
+    const body =
+      typeof contentType === "string" && contentType.includes("application/json")
+        ? rawBody
+          ? JSON.parse(rawBody)
+          : {}
+        : {};
     const method = requestUrl.pathname.replace(`/bot${token}/`, "");
 
     response.setHeader("Content-Type", "application/json");
@@ -275,6 +284,44 @@ function startFakeTelegramApi(port, token, sampleAudioBuffer) {
           }),
         );
         return;
+      case "sendVoice": {
+        state.nextMessageId += 1;
+        const chatIdMatch = rawBody.match(/\r\n\r\n([0-9-]+)\r\n/);
+
+        state.sentVoices.push({
+          chatId: chatIdMatch?.[1] ?? "unknown",
+          messageId: String(state.nextMessageId),
+          size: rawBuffer.length,
+        });
+        response.end(
+          JSON.stringify({
+            ok: true,
+            result: {
+              message_id: state.nextMessageId,
+            },
+          }),
+        );
+        return;
+      }
+      case "sendAudio": {
+        state.nextMessageId += 1;
+        const chatIdMatch = rawBody.match(/\r\n\r\n([0-9-]+)\r\n/);
+
+        state.sentAudioReplies.push({
+          chatId: chatIdMatch?.[1] ?? "unknown",
+          messageId: String(state.nextMessageId),
+          size: rawBuffer.length,
+        });
+        response.end(
+          JSON.stringify({
+            ok: true,
+            result: {
+              message_id: state.nextMessageId,
+            },
+          }),
+        );
+        return;
+      }
       case "getFile":
         response.end(
           JSON.stringify({
@@ -365,6 +412,32 @@ async function waitForSpeechArtifact(webPort) {
   throw new Error("Timed out waiting for transcribed Telegram voice artifact.");
 }
 
+async function waitForTtsArtifact(webPort, conversationId) {
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    const response = await fetch(`http://127.0.0.1:${webPort}/api/speech/artifacts`, {
+      cache: "no-store",
+    });
+
+    if (response.ok) {
+      const payload = await response.json();
+      const artifact = payload.artifacts?.find(
+        (entry) =>
+          entry.conversationId === conversationId &&
+          entry.artifactKind === "tts_output" &&
+          entry.status === "synthesized",
+      );
+
+      if (artifact) {
+        return artifact;
+      }
+    }
+
+    await delay(1000);
+  }
+
+  throw new Error("Timed out waiting for synthesized TTS artifact.");
+}
+
 async function ensureSampleAudio() {
   if (process.platform !== "win32") {
     throw new Error("Phase 4 voice verification currently expects Windows speech synthesis.");
@@ -422,6 +495,25 @@ async function ensureSttService() {
   }
 }
 
+async function ensureTtsService() {
+  const ttsPort = 5002;
+
+  try {
+    await waitForUrl(`http://127.0.0.1:${ttsPort}/health/ready`, "tts service", 3000);
+    return { process: null, reused: true, port: ttsPort };
+  } catch {
+    const ttsProcess = startProcess(nodeCommand, ["scripts/speech/run-tts.mjs"], {
+      TTS_PORT: String(ttsPort),
+      TTS_DEVICE: "cpu",
+      TTS_DEFAULT_ENGINE: "chatterbox",
+      TTS_DEFAULT_LANGUAGE: "en",
+    });
+
+    await waitForUrl(`http://127.0.0.1:${ttsPort}/health/ready`, "tts service", 600000);
+    return { process: ttsProcess, reused: false, port: ttsPort };
+  }
+}
+
 const fakeTelegramPort = await allocatePort();
 const workerPort = await allocatePort();
 const webPort = await allocatePort();
@@ -440,6 +532,7 @@ await runCommand(npmCommand, ["run", "db:migrate"], {
 
 const sampleAudioBuffer = await ensureSampleAudio();
 const sttService = await ensureSttService();
+const ttsService = await ensureTtsService();
 const fakeTelegram = await startFakeTelegramApi(fakeTelegramPort, telegramToken, sampleAudioBuffer);
 
 const env = {
@@ -459,6 +552,7 @@ const env = {
   TELEGRAM_WEBHOOK_URL: `http://127.0.0.1:${workerPort}`,
   TELEGRAM_DEFAULT_CHAT_ID: defaultChatId,
   STT_BASE_URL: `http://127.0.0.1:${sttPort}`,
+  TTS_BASE_URL: `http://127.0.0.1:${ttsService.port}`,
 };
 
 const worker = startProcess(nodeCommand, ["apps/worker/dist/index.js"], env);
@@ -516,6 +610,7 @@ try {
   }
 
   const artifact = await waitForSpeechArtifact(webPort);
+  const ttsArtifact = await waitForTtsArtifact(webPort, artifact.conversationId);
   const historyResponse = await fetch(
     `http://127.0.0.1:${webPort}/api/conversations/${artifact.conversationId}`,
     { cache: "no-store" },
@@ -537,6 +632,13 @@ try {
     throw new Error(`Expected assistant reply to be based on STT transcript. Got: ${assistantReply}`);
   }
 
+  if (
+    fakeTelegram.state.sentVoices.length < 1 &&
+    fakeTelegram.state.sentAudioReplies.length < 1
+  ) {
+    throw new Error("Expected Telegram voice-note flow to send a synthesized audio reply.");
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -545,6 +647,10 @@ try {
         transcriptText: artifact.transcriptText,
         assistantReply,
         reusedSttService: sttService.reused,
+        reusedTtsService: ttsService.reused,
+        sentAudioReplies: fakeTelegram.state.sentAudioReplies.length,
+        sentVoices: fakeTelegram.state.sentVoices.length,
+        ttsArtifactId: ttsArtifact.id,
       },
       null,
       2,
@@ -557,6 +663,7 @@ try {
         error: error instanceof Error ? error.message : String(error),
         fakeTelegramState: fakeTelegram.state,
         sttLogs: sttService.process?.logs?.(),
+        ttsLogs: ttsService.process?.logs?.(),
         workerLogs: worker.logs(),
         webLogs: web.logs(),
       },
@@ -572,5 +679,8 @@ try {
   await fakeTelegram.close();
   if (sttService.process) {
     await killTree(sttService.process.child);
+  }
+  if (ttsService.process) {
+    await killTree(ttsService.process.child);
   }
 }

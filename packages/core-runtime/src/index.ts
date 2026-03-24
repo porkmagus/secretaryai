@@ -112,6 +112,38 @@ export type SpeechArtifactListResponse = {
   artifacts: SpeechArtifactRecord[];
 };
 
+export type CreateVoiceProfileRequest = {
+  name: string;
+  engineId: string;
+  qualityPreset?: string | null;
+  speakingStyle?: string | null;
+  isActive?: boolean;
+};
+
+export type UpdateVoiceProfileRequest = {
+  name?: string;
+  engineId?: string;
+  qualityPreset?: string | null;
+  speakingStyle?: string | null;
+  isActive?: boolean;
+};
+
+export type VoicePreviewRequest = {
+  text: string;
+  profileId?: string | null;
+};
+
+export type VoicePreviewResponse = {
+  artifactId: string;
+  mimeType: string;
+};
+
+export type WebSpeechTurnResponse = {
+  artifactId: string;
+  transcriptText: string;
+  reply: RuntimeChatResponse;
+};
+
 export type ConversationHistoryMessage = {
   id: string;
   role: "user" | "assistant" | "system" | "tool" | "specialist";

@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 
 const runtimeRoot = resolve(process.cwd(), "runtime");
 const speechRoot = join(runtimeRoot, "speech");
@@ -48,6 +48,17 @@ export function createSpeechStorageKey(kind: "telegram" | "web" | "tts" | "profi
 
 export function resolveSpeechStoragePath(storageKey: string) {
   return resolve(runtimeRoot, storageKey);
+}
+
+export function resolveManagedSpeechStoragePath(storageKey: string) {
+  const path = resolveSpeechStoragePath(storageKey);
+  const normalizedSpeechRoot = `${resolve(speechRoot)}${sep}`;
+
+  if (!path.startsWith(normalizedSpeechRoot)) {
+    throw new Error("Invalid speech storage key.");
+  }
+
+  return path;
 }
 
 export async function ensureSpeechStoragePath(storageKey: string) {

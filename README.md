@@ -1,6 +1,6 @@
 # HamCult - Secretary-First Personal Assistant
 
-This repository contains a polished Phase 1 through Phase 3 checkpoint plus an active Phase 4 voice foundation build for a self-hosted, single-user Secretary-first assistant system.
+This repository contains a polished Phase 1 through Phase 3 checkpoint plus an active Phase 4 local voice pipeline build for a self-hosted, single-user Secretary-first assistant system.
 
 ## Workspace Layout
 
@@ -11,6 +11,7 @@ This repository contains a polished Phase 1 through Phase 3 checkpoint plus an a
 - `packages/db`: database schema and migration home
 - `packages/observability`: logger and trace helpers
 - `services/stt-faster-whisper`: local CPU-first STT service for Phase 4 voice intake
+- `services/tts-chatterbox`: local Chatterbox TTS service for Phase 4 voice replies
 - `docker/compose`: local infrastructure definitions
 - `docs/adr`: architectural decision records
 
@@ -22,11 +23,14 @@ This repository contains a polished Phase 1 through Phase 3 checkpoint plus an a
 4. Create visible runtime storage folders with `npm run storage:prepare`
 5. Start local services with `npm run stack:up`
 6. Apply the current schema with `npm run db:migrate`
-7. Prepare the local speech service once with `npm run stt:setup`
+7. Prepare the local speech services once with:
+   - `npm run stt:setup`
+   - `npm run tts:setup`
 8. Run the apps in separate terminals:
    - `npm run dev:web`
    - `npm run dev:worker`
    - `npm run dev:stt`
+   - `npm run dev:tts`
 
 ## Current Baseline
 
@@ -107,8 +111,11 @@ Phase 4 is in progress. The current checkpoint now includes:
 - seeded voice profiles and speech artifact tables
 - Telegram voice-note intake that stores inbound audio locally
 - a local STT hook through `STT_BASE_URL`
+- a local Chatterbox TTS hook through `TTS_BASE_URL`
 - `/voice` UI for voice profile and speech artifact inspection
 - a repo-native CPU speech service in `services/stt-faster-whisper`
+- a repo-native Chatterbox TTS service in `services/tts-chatterbox`
+- Telegram spoken replies backed by synthesized local TTS artifacts
 
 ### Local STT Setup
 
@@ -118,6 +125,7 @@ The current Phase 4 build uses a local `faster-whisper` service, which the desig
 2. Run `npm run stt:setup`
 3. Make sure `.env` contains:
    - `STT_BASE_URL=http://127.0.0.1:5001`
+   - optional `FFMPEG_PATH=C:\Users\Sean\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe` if `ffmpeg` is installed but not visible on `PATH`
    - `STT_PORT=5001`
    - `STT_MODEL_SIZE=base`
    - `STT_DEVICE=cpu`
@@ -129,20 +137,48 @@ The current Phase 4 build uses a local `faster-whisper` service, which the desig
 
 The first ready check will download and load the configured Whisper model into `runtime/speech/models`.
 
+### Local TTS Setup
+
+The current Phase 4 voice-output build uses a local Chatterbox service, which is the newer cloned-voice path we selected for this repo.
+
+1. Make sure Python `3.11` is installed and `py -3.11 --version` works on Windows
+2. Run `npm run tts:setup`
+3. Make sure `.env` contains:
+   - `TTS_BASE_URL=http://127.0.0.1:5002`
+   - optional `FFMPEG_PATH=C:\Users\Sean\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe` for Telegram voice-note style replies on Windows
+   - `TTS_PORT=5002`
+   - `TTS_DEVICE=cpu`
+   - `TTS_DEFAULT_ENGINE=chatterbox`
+   - `TTS_DEFAULT_LANGUAGE=en`
+4. Start the service with `npm run dev:tts`
+5. Confirm it is ready:
+   - `http://127.0.0.1:5002/health/live`
+   - `http://127.0.0.1:5002/health/ready`
+
+The first ready check will download the selected Chatterbox weights into the Python environment cache and keep the default Secretary voice warm for later replies.
+
+If `ffmpeg` is available in the runtime environment, Telegram replies can be sent as voice-note style Opus audio. If it is not available, the worker falls back to sending a normal playable Telegram audio attachment while still keeping the synthesized WAV artifact locally.
+
 ## Phase 4 Verification
 
-To verify the current Phase 4 foundation checkpoint:
+To verify the current Phase 4 checkpoint:
 
 1. Make sure the core stack is running with `npm run stack:up`
 2. Run `npm run phase4:verify`
+3. Run `npm run phase4:verify:voice`
 
-The current Phase 4 verifier checks:
+The current Phase 4 verifiers check:
 
 - the Phase 4 migration applies
 - the worker seeds a default voice profile
 - the `/voice` page loads
 - voice profile data is available through the web API
 - speech artifacts round-trip through the worker and web API
+- a Telegram voice note is stored locally
+- local STT produces a real transcript
+- the transcript is routed into the Secretary chat flow
+- local Chatterbox TTS produces a persisted `tts_output` artifact
+- Telegram receives a spoken audio reply
 
 ## Live Telegram Test
 
@@ -195,6 +231,7 @@ This current checkpoint now includes:
 - recent conversation browser in the Desk
 - reminder/task hooks created from memory processing
 - Telegram webhook handling, outbound replies, conversation routing, settings, and reminder delivery
-- voice profile seeding, speech artifact persistence, and Telegram voice-note intake foundations
+- voice profile seeding, speech artifact persistence, Telegram voice-note intake, and Telegram spoken reply flow
 - a local CPU-first faster-whisper speech service with repo-native setup scripts
-- automated Phase 1, Phase 2, Phase 3, and Phase 4 foundation verification flows
+- a local Chatterbox TTS service with repo-native setup scripts
+- automated Phase 1, Phase 2, Phase 3, and Phase 4 verification flows

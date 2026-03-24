@@ -20,6 +20,8 @@
     "phase4:verify:voice": "node scripts/phase4/verify-voice-note.mjs",
     "stt:setup": "node scripts/speech/setup-stt.mjs",
     "dev:stt": "node scripts/speech/run-stt.mjs",
+    "tts:setup": "node scripts/speech/setup-tts.mjs",
+    "dev:tts": "node scripts/speech/run-tts.mjs",
     "stack:down": "node scripts/setup/compose-runner.mjs down",
     "stack:up": "npm run storage:prepare && node scripts/setup/compose-runner.mjs up -d",
     "storage:prepare": "node scripts/setup/prepare-storage.mjs",
