@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "npm run build --workspace @secretary/config && npm run build --workspace @secretary/core-runtime && npm run build --workspace @secretary/db && npm run build --workspace @secretary/observability",
-    "pretypecheck": "npm run build --workspace @secretary/config && npm run build --workspace @secretary/core-runtime && npm run build --workspace @secretary/db && npm run build --workspace @secretary/observability",
+    "predev": "npm run build --workspace @secretary/config && npm run build --workspace @secretary/core-runtime && npm run build --workspace @secretary/integrations && npm run build --workspace @secretary/db && npm run build --workspace @secretary/observability",
+    "pretypecheck": "npm run build --workspace @secretary/config && npm run build --workspace @secretary/core-runtime && npm run build --workspace @secretary/integrations && npm run build --workspace @secretary/db && npm run build --workspace @secretary/observability",
     "dev": "tsx watch src/index.ts",
     "build": "tsc --project tsconfig.json",
     "start": "node dist/index.js",
@@ -16,15 +16,16 @@
     "@secretary/config": "0.1.0",
     "@secretary/core-runtime": "0.1.0",
     "@secretary/db": "0.1.0",
+    "@secretary/integrations": "0.1.0",
     "@secretary/observability": "0.1.0",
     "bullmq": "^5.56.4",
-    "dotenv": "^16.5.0",
+    "dotenv": "17.3.1",
     "fastify": "^5.3.2"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.12.0",
     "@types/pg": "^8.15.2",
     "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "typescript": "^5.9.3"
   }
 }

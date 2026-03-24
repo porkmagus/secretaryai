@@ -64,6 +64,9 @@ export default function RootLayout({
               <Link href="/activity" style={{ textDecoration: "none" }}>
                 Activity
               </Link>
+              <Link href="/channels" style={{ textDecoration: "none" }}>
+                Channels
+              </Link>
             </div>
           </div>
         </nav>

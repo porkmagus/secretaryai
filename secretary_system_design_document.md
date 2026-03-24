@@ -1036,36 +1036,36 @@ Turn the app from a persistent chat shell into an actual secretary core with ret
 
 ---
 
-### [ ] Phase 3: Telegram Integration
+### [x] Phase 3: Telegram Integration
 
 #### Goal
 Add remote assistant access through Telegram text while preserving the same Secretary behavior and local data model.
 
 #### Deliverables
-- Telegram adapter service/module
-- incoming message handler
-- outbound reply support
-- conversation routing by Telegram chat
-- Telegram integration settings page
-- message traces linked to conversation records
-- remote reminder delivery
+- [x] Telegram adapter service/module
+- [x] incoming message handler
+- [x] outbound reply support
+- [x] conversation routing by Telegram chat
+- [x] Telegram integration settings page
+- [x] message traces linked to conversation records
+- [x] remote reminder delivery
 
 #### What must work before phase is complete
-- Telegram text messages reach the Secretary reliably
-- Secretary replies correctly through Telegram
-- message history is stored locally
-- Telegram and web channels share the same memory core where appropriate
-- integration can be turned on/off cleanly from admin UI or config
+- [x] Telegram text messages reach the Secretary reliably
+- [x] Secretary replies correctly through Telegram
+- [x] message history is stored locally
+- [x] Telegram and web channels share the same memory core where appropriate
+- [x] integration can be turned on/off cleanly from admin UI or config
 
 #### Breakpoint test checklist
-- bot setup is straightforward
-- text roundtrip is reliable
-- multiple Telegram exchanges preserve context
-- user can test integration from onboarding or settings
-- errors are surfaced clearly in UI/logs
+- [x] bot setup is straightforward
+- [x] text roundtrip is reliable
+- [x] multiple Telegram exchanges preserve context
+- [x] user can test integration from onboarding or settings
+- [x] errors are surfaced clearly in UI/logs
 
 #### Stop condition
-Do not proceed until Telegram text feels stable enough for everyday remote use.
+- [x] Telegram text feels stable enough for everyday remote use.
 
 ---
 
@@ -1255,22 +1255,37 @@ Build the system as a **Secretary-first, single-user, self-hosted personal assis
 - editable long-term memory system
 - Docker Compose deployment with explicit bind-mounted persistence
 
+### 18.1 Current Implementation Baseline
+
+As of the Phase 3 checkpoint, the active implementation baseline is:
+- Next.js `16.2.1`
+- React `19.2.4`
+- TypeScript `5.9.3`
+- Drizzle ORM `0.45.1`
+- Zod `4.3.6`
+
 This is the cleanest architecture that satisfies the user’s priorities without overengineering or locking the system into a framework worldview that would conflict with the product’s actual differentiators.
 
 ---
 
-## 19. Immediate Next Engineering Step
+## 19. Current Engineering Checkpoint
 
-Begin with **Phase 1 only**.
+Phases 1, 2, and 3 are complete.
 
-Do not implement Telegram, speech, or tools until the following are true:
-- the repository structure is stable
-- core services come up cleanly
-- local web chat works reliably
-- messages persist correctly
-- memory jobs can be queued and inspected
+The current repository supports:
+- persistent local web chat
+- inspectable memory, task, and activity workflows
+- Telegram text ingress and egress
+- Telegram reminder delivery
+- visible local storage and repeatable verification scripts
 
-Once that checkpoint is passed, move to Phase 2.
+The next engineering step is **Phase 4 only**.
+
+Do not move past Phase 4 until:
+- Telegram voice note intake is working locally
+- STT produces useful transcripts
+- Secretary can respond from transcripts reliably
+- voice settings and traces are inspectable in the web UI
 
 ---
 

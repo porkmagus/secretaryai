@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import {
   activityTraces,
   conversations,
@@ -58,9 +58,24 @@ export async function persistChatTurn({
   request,
   traceId,
 }: PersistTurnParams) {
-  const conversationId = request.conversationId ?? createConversationId();
+  const existingConversationId =
+    request.conversationId ??
+    (request.channel === "telegram" && request.metadata?.telegramChatId
+      ? await findConversationIdByChannelRef(
+          dbClient,
+          request.channel,
+          request.metadata.telegramChatId,
+        )
+      : null);
+  const conversationId = existingConversationId ?? createConversationId();
   const userId = request.userId || defaultUserId;
+  const userDisplayName =
+    request.metadata?.telegramUserDisplayName ?? "Local Owner";
   const userMessageId = createMessageId();
+  const conversationTitle =
+    request.channel === "telegram" && request.metadata?.telegramChatLabel
+      ? `Telegram: ${request.metadata.telegramChatLabel}`
+      : request.message.text.slice(0, 80);
 
   await dbClient.db.transaction(async (tx) => {
     await tx
@@ -95,7 +110,9 @@ export async function persistChatTurn({
         id: conversationId,
         userId,
         channelType: request.channel,
-        title: request.message.text.slice(0, 80),
+        channelRef: request.metadata?.telegramChatId ?? null,
+        channelLabel: request.metadata?.telegramChatLabel ?? null,
+        title: conversationTitle,
         status: "active",
         lastMessageAt: new Date(),
       })
@@ -103,6 +120,8 @@ export async function persistChatTurn({
         target: conversations.id,
         set: {
           channelType: request.channel,
+          channelRef: request.metadata?.telegramChatId ?? null,
+          channelLabel: request.metadata?.telegramChatLabel ?? null,
           lastMessageAt: new Date(),
           updatedAt: new Date(),
         },
@@ -145,17 +164,17 @@ export async function persistChatTurn({
     ? runResearchSpecialist(request.message.text)
     : null;
   const response = createTurnResponse(
-    {
-      ...request,
-      conversationId,
-    },
-    {
-      conversationId,
-      recentMessages: recentMessages.map(toRuntimeContextMessage),
-      userDisplayName: "Local Owner",
-      relevantMemories,
-      activeTasks,
-      researchResult,
+      {
+        ...request,
+        conversationId,
+      },
+      {
+        conversationId,
+        recentMessages: recentMessages.map(toRuntimeContextMessage),
+        userDisplayName,
+        relevantMemories,
+        activeTasks,
+        researchResult,
     },
     traceId,
   );
@@ -231,6 +250,7 @@ export async function persistChatTurn({
     userId,
     source: request.channel,
     text: request.message.text,
+    telegramChatId: request.metadata?.telegramChatId ?? null,
   };
 
   return {
@@ -308,6 +328,35 @@ export async function getConversationMessages(
     orderBy: asc(messages.createdAt),
     limit: 100,
   });
+}
+
+export async function findConversationIdByChannelRef(
+  dbClient: DbClient,
+  channelType: string,
+  channelRef: string,
+) {
+  const conversation = await dbClient.db.query.conversations.findFirst({
+    where: and(
+      eq(conversations.channelType, channelType),
+      eq(conversations.channelRef, channelRef),
+    ),
+    orderBy: desc(conversations.lastMessageAt),
+  });
+
+  return conversation?.id ?? null;
+}
+
+export async function attachExternalMessageIdToMessage(
+  dbClient: DbClient,
+  messageId: string,
+  channelMessageId: string,
+) {
+  await dbClient.db
+    .update(messages)
+    .set({
+      channelMessageId,
+    })
+    .where(eq(messages.id, messageId));
 }
 
 export async function listRecentConversations(dbClient: DbClient) {

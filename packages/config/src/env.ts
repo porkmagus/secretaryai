@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+function emptyStringToUndefined(value: unknown) {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
 const appConfigSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -13,6 +22,28 @@ const appConfigSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   DEFAULT_USER_ID: z.string().min(1),
   DEFAULT_PERSONA_ID: z.string().min(1),
+  TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
+  TELEGRAM_BOT_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  TELEGRAM_WEBHOOK_SECRET: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).max(256).optional(),
+  ),
+  TELEGRAM_WEBHOOK_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  TELEGRAM_DEFAULT_CHAT_ID: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).optional(),
+  ),
+  STT_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  TTS_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
 });
 
 export type AppConfig = {
@@ -23,6 +54,17 @@ export type AppConfig = {
   logLevel: "debug" | "info" | "warn" | "error";
   nodeEnv: "development" | "test" | "production";
   redisUrl: string;
+  speech: {
+    sttBaseUrl: string | null;
+    ttsBaseUrl: string | null;
+  };
+  telegram: {
+    apiBaseUrl: string;
+    botToken: string | null;
+    defaultChatId: string | null;
+    webhookSecret: string | null;
+    webhookUrl: string | null;
+  };
   web: {
     port: number;
   };
@@ -43,6 +85,17 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     logLevel: parsed.LOG_LEVEL,
     nodeEnv: parsed.NODE_ENV,
     redisUrl: parsed.REDIS_URL,
+    speech: {
+      sttBaseUrl: parsed.STT_BASE_URL ?? null,
+      ttsBaseUrl: parsed.TTS_BASE_URL ?? null,
+    },
+    telegram: {
+      apiBaseUrl: parsed.TELEGRAM_API_BASE_URL,
+      botToken: parsed.TELEGRAM_BOT_TOKEN ?? null,
+      defaultChatId: parsed.TELEGRAM_DEFAULT_CHAT_ID ?? null,
+      webhookSecret: parsed.TELEGRAM_WEBHOOK_SECRET ?? null,
+      webhookUrl: parsed.TELEGRAM_WEBHOOK_URL ?? null,
+    },
     web: {
       port: parsed.WEB_PORT,
     },

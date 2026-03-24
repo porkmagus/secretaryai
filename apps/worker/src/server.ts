@@ -7,10 +7,13 @@ import {
   type ConversationHistoryResponse,
   type MemoryListResponse,
   type TaskListResponse,
+  type TelegramTestMessageRequest,
+  type UpdateTelegramIntegrationRequest,
   type UpdateMemoryRequest,
   createTraceId,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
+import type { TelegramUpdate } from "@secretary/integrations";
 import { createInfrastructure } from "./lib/infrastructure.js";
 import {
   createQueuedMemoryJob,
@@ -26,6 +29,14 @@ import {
   listTasksForUser,
   updateMemory,
 } from "./lib/memory-engine.js";
+import {
+  dispatchDueTelegramReminders,
+  getTelegramIntegrationStatus,
+  handleTelegramWebhookUpdate,
+  sendTelegramTestMessage,
+  syncTelegramWebhook,
+  updateTelegramIntegrationSettings,
+} from "./lib/telegram-integration.js";
 
 export async function buildServer() {
   const config = loadAppConfig(process.env);
@@ -229,6 +240,137 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load tasks.",
+      });
+    }
+  });
+
+  app.get("/runtime/integrations/telegram", async (_, reply) => {
+    try {
+      return await getTelegramIntegrationStatus(infrastructure.dbClient, config);
+    } catch (error) {
+      logger.error("runtime.integrations.telegram.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load Telegram integration state.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateTelegramIntegrationRequest }>(
+    "/runtime/integrations/telegram",
+    async (request, reply) => {
+      try {
+        return await updateTelegramIntegrationSettings({
+          dbClient: infrastructure.dbClient,
+          config,
+          patch: request.body,
+        });
+      } catch (error) {
+        logger.error("runtime.integrations.telegram.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to update Telegram integration settings.",
+        });
+      }
+    },
+  );
+
+  app.post("/runtime/integrations/telegram/sync-webhook", async (_, reply) => {
+    try {
+      return await syncTelegramWebhook({
+        dbClient: infrastructure.dbClient,
+        config,
+      });
+    } catch (error) {
+      logger.error("runtime.integrations.telegram.sync_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to sync Telegram webhook.",
+      });
+    }
+  });
+
+  app.post<{ Body: TelegramTestMessageRequest }>(
+    "/runtime/integrations/telegram/test-message",
+    async (request, reply) => {
+      try {
+        return await sendTelegramTestMessage({
+          dbClient: infrastructure.dbClient,
+          config,
+          request: request.body,
+        });
+      } catch (error) {
+        logger.error("runtime.integrations.telegram.test_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to send Telegram test message.",
+        });
+      }
+    },
+  );
+
+  app.post("/runtime/integrations/telegram/deliver-reminders", async (_, reply) => {
+    try {
+      return await dispatchDueTelegramReminders({
+        dbClient: infrastructure.dbClient,
+        config,
+      });
+    } catch (error) {
+      logger.error("runtime.integrations.telegram.reminders_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to deliver Telegram reminders.",
+      });
+    }
+  });
+
+  app.post<{ Body: TelegramUpdate }>("/integrations/telegram/webhook", async (request, reply) => {
+    const expectedSecret = config.telegram.webhookSecret;
+    const receivedSecret = request.headers["x-telegram-bot-api-secret-token"];
+
+    if (expectedSecret && receivedSecret !== expectedSecret) {
+      return reply.status(403).send({
+        error: "Invalid Telegram webhook secret.",
+      });
+    }
+
+    try {
+      const result = await handleTelegramWebhookUpdate({
+        config,
+        infrastructure,
+        update: request.body,
+      });
+
+      return {
+        ok: true,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("integrations.telegram.webhook_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to process Telegram webhook event.",
       });
     }
   });

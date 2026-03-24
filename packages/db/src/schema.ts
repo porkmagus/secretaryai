@@ -42,6 +42,8 @@ export const conversations = pgTable("conversations", {
     .notNull()
     .references(() => users.id),
   channelType: text("channel_type").notNull(),
+  channelRef: text("channel_ref"),
+  channelLabel: text("channel_label"),
   title: text("title"),
   status: text("status").notNull().default("active"),
   lastMessageAt: timestamp("last_message_at", { withTimezone: true })
@@ -110,8 +112,56 @@ export const tasks = pgTable("tasks", {
   status: text("status").notNull().default("open"),
   dueAt: timestamp("due_at", { withTimezone: true }),
   reminderAt: timestamp("reminder_at", { withTimezone: true }),
+  deliveryChannelType: text("delivery_channel_type"),
+  deliveryTargetRef: text("delivery_target_ref"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  lastDeliveryError: text("last_delivery_error"),
   sourceKind: text("source_kind"),
   sourceRef: text("source_ref"),
+  ...timestamps,
+});
+
+export const integrations = pgTable("integrations", {
+  id: text("id").primaryKey(),
+  integrationType: text("integration_type").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+  configJson: jsonb("config_json").$type<Record<string, unknown>>().notNull().default({}),
+  healthStatus: text("health_status").notNull().default("not_configured"),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  lastErrorText: text("last_error_text"),
+  ...timestamps,
+});
+
+export const voiceProfiles = pgTable("voice_profiles", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  engineId: text("engine_id").notNull(),
+  sampleStorageKey: text("sample_storage_key"),
+  sampleMimeType: text("sample_mime_type"),
+  sampleDurationMs: integer("sample_duration_ms"),
+  qualityPreset: text("quality_preset"),
+  speakingStyle: text("speaking_style"),
+  isActive: boolean("is_active").notNull().default(false),
+  ...timestamps,
+});
+
+export const speechArtifacts = pgTable("speech_artifacts", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id").references(() => conversations.id, {
+    onDelete: "cascade",
+  }),
+  messageId: text("message_id").references(() => messages.id, {
+    onDelete: "set null",
+  }),
+  artifactKind: text("artifact_kind").notNull(),
+  status: text("status").notNull(),
+  storageKey: text("storage_key").notNull(),
+  mimeType: text("mime_type"),
+  durationMs: integer("duration_ms"),
+  transcriptText: text("transcript_text"),
+  sourceChannel: text("source_channel").notNull(),
+  sourceRef: text("source_ref"),
+  metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>().notNull().default({}),
   ...timestamps,
 });
 
@@ -164,5 +214,18 @@ export const phaseTwoTables = [
   "tasks",
 ] as const;
 
+export const phaseThreeTables = [
+  ...phaseTwoTables,
+  "integrations",
+] as const;
+
+export const phaseFourTables = [
+  ...phaseThreeTables,
+  "voice_profiles",
+  "speech_artifacts",
+] as const;
+
 export type PhaseOneTable = (typeof phaseOneTables)[number];
 export type PhaseTwoTable = (typeof phaseTwoTables)[number];
+export type PhaseThreeTable = (typeof phaseThreeTables)[number];
+export type PhaseFourTable = (typeof phaseFourTables)[number];

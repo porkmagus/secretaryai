@@ -14,6 +14,8 @@ export type RuntimeChatRequest = {
     requestId?: string;
     sourceMessageId?: string;
     telegramChatId?: string;
+    telegramChatLabel?: string;
+    telegramUserDisplayName?: string;
   };
 };
 
@@ -40,6 +42,20 @@ export type MemoryType =
   | "relationship"
   | "operational";
 
+export type SpeechArtifactKind =
+  | "telegram_voice_note"
+  | "web_recording"
+  | "stt_transcript"
+  | "tts_output"
+  | "voice_sample";
+
+export type SpeechArtifactStatus =
+  | "received"
+  | "stored"
+  | "transcribed"
+  | "synthesized"
+  | "failed";
+
 export type MemoryCandidateJobPayload = {
   conversationId: string;
   messageId: string;
@@ -47,6 +63,53 @@ export type MemoryCandidateJobPayload = {
   userId: string;
   source: "web" | "telegram";
   text: string;
+  telegramChatId?: string | null;
+};
+
+export type SpeechArtifactRecord = {
+  id: string;
+  conversationId: string | null;
+  messageId: string | null;
+  artifactKind: SpeechArtifactKind;
+  status: SpeechArtifactStatus;
+  storageKey: string;
+  mimeType: string | null;
+  durationMs: number | null;
+  transcriptText: string | null;
+  sourceChannel: "telegram" | "web";
+  sourceRef: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VoiceProfileRecord = {
+  id: string;
+  name: string;
+  engineId: string;
+  sampleStorageKey: string | null;
+  sampleMimeType: string | null;
+  sampleDurationMs: number | null;
+  qualityPreset: string | null;
+  speakingStyle: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SpeechArtifactJobPayload = {
+  artifactId: string;
+  conversationId: string;
+  sourceChannel: "telegram" | "web";
+  traceId: string;
+  voiceReplyRequested: boolean;
+};
+
+export type VoiceProfileListResponse = {
+  profiles: VoiceProfileRecord[];
+};
+
+export type SpeechArtifactListResponse = {
+  artifacts: SpeechArtifactRecord[];
 };
 
 export type ConversationHistoryMessage = {
@@ -171,10 +234,71 @@ export type TaskRecord = {
   status: string;
   dueAt: string | null;
   reminderAt: string | null;
+  deliveredAt: string | null;
+  deliveryChannelType: string | null;
+  deliveryTargetRef: string | null;
+  lastDeliveryError: string | null;
 };
 
 export type TaskListResponse = {
   tasks: TaskRecord[];
+};
+
+export type TelegramIntegrationStatusResponse = {
+  integration: {
+    enabled: boolean;
+    envConfigured: boolean;
+    botConfigured: boolean;
+    healthStatus: string;
+    healthSummary: string;
+    lastCheckedAt: string | null;
+    lastError: string | null;
+    webhookUrl: string | null;
+    desiredWebhookUrl: string | null;
+    pendingUpdateCount: number | null;
+    defaultChatId: string | null;
+    botUser:
+      | {
+          id: string;
+          username: string | null;
+          displayName: string;
+        }
+      | null;
+    conversationCount: number;
+    messageCount: number;
+    dueReminderCount: number;
+    deliveredReminderCount: number;
+  };
+};
+
+export type UpdateTelegramIntegrationRequest = {
+  enabled?: boolean;
+  webhookUrl?: string | null;
+  defaultChatId?: string | null;
+};
+
+export type TelegramTestMessageRequest = {
+  chatId?: string | null;
+  text?: string | null;
+};
+
+export type TelegramTestMessageResponse = {
+  ok: boolean;
+  chatId: string;
+  sentMessageIds: string[];
+};
+
+export type TelegramSyncWebhookResponse = {
+  ok: boolean;
+  webhookUrl: string | null;
+};
+
+export type TelegramReminderDispatchResponse = {
+  scanned: number;
+  delivered: number;
+  failed: number;
+  taskIds: string[];
+  errors: string[];
 };
 
 export function createTraceId() {
