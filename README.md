@@ -47,14 +47,32 @@ Live service storage now lands in repo-visible paths:
 - `runtime/postgres/data`: PostgreSQL cluster data
 - `runtime/redis/data`: Redis persistence data
 
+## Phase 2 Verification
+
+To verify the current Phase 2 checkpoint:
+
+1. Make sure the core stack is running with `npm run stack:up`
+2. Run `npm run phase2:verify`
+
+The Phase 2 verifier checks:
+
+- memory extraction writes long-term memory entries
+- pinned memory affects later replies
+- suppressed memory stops affecting later replies
+- reminder hooks appear in task state
+- research-shaped prompts use the internal research specialist
+- activity traces show memory and specialist usage
+
 This initial scaffold now includes:
 
 - a web Desk shell and thin API proxy
 - a worker runtime with health checks
 - Drizzle schema plus a first SQL migration
 - persisted conversation, message, job, and trace wiring in the worker
-- deterministic Secretary replies that use recent conversation context
-- placeholder memory-candidate queueing through BullMQ
-- automated Phase 1 verification for bring-up, chat, history, and restart
+- deterministic Secretary replies that use conversation, memory, task, and research context
+- memory extraction and retrieval through BullMQ-backed worker processing
+- Memory page UI with search, edit, pin, and suppress controls
+- reminder/task hooks created from memory processing
+- automated Phase 1 and Phase 2 verification flows
 
 Telegram, voice, and tool execution are still intentionally out of scope for this stage.

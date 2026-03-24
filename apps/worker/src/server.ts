@@ -2,7 +2,11 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
+  type ActivityTraceResponse,
   type ConversationHistoryResponse,
+  type MemoryListResponse,
+  type TaskListResponse,
+  type UpdateMemoryRequest,
   createTraceId,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
@@ -14,6 +18,12 @@ import {
   persistChatTurn,
 } from "./lib/chat-persistence.js";
 import { createLogger } from "@secretary/observability";
+import {
+  getConversationActivity,
+  listMemories,
+  listTasksForUser,
+  updateMemory,
+} from "./lib/memory-engine.js";
 
 export async function buildServer() {
   const config = loadAppConfig(process.env);
@@ -77,6 +87,128 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load conversation history.",
+      });
+    }
+  });
+
+  app.get<{
+    Querystring: {
+      search?: string;
+      type?: string;
+      includeSuppressed?: string;
+    };
+  }>("/runtime/memories", async (request, reply) => {
+    try {
+      const response: MemoryListResponse = await listMemories(
+        infrastructure.dbClient,
+        {
+          search: request.query.search,
+          memoryType: request.query.type,
+          includeSuppressed: request.query.includeSuppressed === "true",
+        },
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.memories.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load memories.",
+      });
+    }
+  });
+
+  app.patch<{
+    Params: {
+      memoryId: string;
+    };
+    Body: UpdateMemoryRequest;
+  }>("/runtime/memories/:memoryId", async (request, reply) => {
+    try {
+      const updated = await updateMemory(
+        infrastructure.dbClient,
+        request.params.memoryId,
+        request.body,
+      );
+
+      if (!updated) {
+        return reply.status(404).send({
+          error: "Memory entry not found.",
+        });
+      }
+
+      return {
+        memory: {
+          id: updated.id,
+          memoryType: updated.memoryType,
+          title: updated.title,
+          summary: updated.summary,
+          contentText: updated.contentText,
+          importanceScore: updated.importanceScore,
+          confidenceScore: updated.confidenceScore,
+          pinned: updated.pinned,
+          suppressed: updated.suppressed,
+          sourceKind: updated.sourceKind,
+          sourceRef: updated.sourceRef,
+          tags: updated.tags ?? [],
+          lastAccessedAt: updated.lastAccessedAt?.toISOString() ?? null,
+          createdAt: updated.createdAt.toISOString(),
+          updatedAt: updated.updatedAt.toISOString(),
+        },
+      };
+    } catch (error) {
+      logger.error("runtime.memory.update_failed", {
+        error: error instanceof Error ? error.message : error,
+        memoryId: request.params.memoryId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update memory entry.",
+      });
+    }
+  });
+
+  app.get<{
+    Params: {
+      conversationId: string;
+    };
+  }>("/runtime/activity/:conversationId", async (request, reply) => {
+    try {
+      const response: ActivityTraceResponse = await getConversationActivity(
+        infrastructure.dbClient,
+        request.params.conversationId,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.activity.failed", {
+        conversationId: request.params.conversationId,
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load activity traces.",
+      });
+    }
+  });
+
+  app.get("/runtime/tasks", async (_, reply) => {
+    try {
+      const response: TaskListResponse = await listTasksForUser(
+        infrastructure.dbClient,
+        config.defaultUserId,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.tasks.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load tasks.",
       });
     }
   });

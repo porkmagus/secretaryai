@@ -1,9 +1,16 @@
-import { Queue } from "bullmq";
+import { Queue, Worker } from "bullmq";
 import type { MemoryCandidateJobPayload } from "@secretary/core-runtime";
 
 export const memoryCandidateQueueName = "memory.extract_candidates";
 
-export function createMemoryQueue(redisUrl: string) {
+type CreateMemoryQueueOptions = {
+  processCandidate?: (jobId: string, payload: MemoryCandidateJobPayload) => Promise<void>;
+};
+
+export function createMemoryQueue(
+  redisUrl: string,
+  options: CreateMemoryQueueOptions = {},
+) {
   const url = new URL(redisUrl);
   const connection = {
     host: url.hostname,
@@ -24,6 +31,18 @@ export function createMemoryQueue(redisUrl: string) {
   >(memoryCandidateQueueName, {
     connection,
   });
+  const worker = options.processCandidate
+    ? new Worker<MemoryCandidateJobPayload, void, typeof memoryCandidateQueueName>(
+        memoryCandidateQueueName,
+        async (job) => {
+          await options.processCandidate?.(job.id ?? memoryCandidateQueueName, job.data);
+        },
+        {
+          connection,
+          concurrency: 1,
+        },
+      )
+    : null;
 
   void queue.client
     .then((client) => {
@@ -31,8 +50,17 @@ export function createMemoryQueue(redisUrl: string) {
     })
     .catch(() => undefined);
 
+  if (worker) {
+    void worker.client
+      .then((client) => {
+        client.on("error", () => undefined);
+      })
+      .catch(() => undefined);
+  }
+
   return {
     queue,
+    worker,
     async enqueue(jobId: string, payload: MemoryCandidateJobPayload) {
       await queue.add(memoryCandidateQueueName, payload, {
         jobId,
@@ -45,7 +73,10 @@ export function createMemoryQueue(redisUrl: string) {
       await client.ping();
     },
     async close() {
-      await queue.close();
+      await Promise.all([
+        queue.close(),
+        worker?.close(),
+      ]);
     },
   };
 }

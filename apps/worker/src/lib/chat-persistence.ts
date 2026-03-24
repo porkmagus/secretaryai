@@ -16,6 +16,14 @@ import {
   type MemoryCandidateJobPayload,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
+import {
+  getActiveTaskContext,
+  retrieveRelevantMemories,
+} from "./memory-engine.js";
+import {
+  runResearchSpecialist,
+  shouldUseResearchSpecialist,
+} from "./research-specialist.js";
 
 type PersistTurnParams = {
   dbClient: DbClient;
@@ -128,6 +136,14 @@ export async function persistChatTurn({
   });
 
   const recentMessages = await getConversationMessages(dbClient, conversationId);
+  const relevantMemories = await retrieveRelevantMemories(
+    dbClient,
+    request.message.text,
+  );
+  const activeTasks = await getActiveTaskContext(dbClient, userId);
+  const researchResult = shouldUseResearchSpecialist(request.message.text)
+    ? runResearchSpecialist(request.message.text)
+    : null;
   const response = createTurnResponse(
     {
       ...request,
@@ -137,11 +153,40 @@ export async function persistChatTurn({
       conversationId,
       recentMessages: recentMessages.map(toRuntimeContextMessage),
       userDisplayName: "Local Owner",
+      relevantMemories,
+      activeTasks,
+      researchResult,
     },
     traceId,
   );
 
   await dbClient.db.transaction(async (tx) => {
+    if (researchResult) {
+      await tx.insert(activityTraces).values({
+        id: createMessageId(),
+        traceType: "specialist",
+        parentTraceId: traceId,
+        conversationId,
+        jobId: null,
+        eventName: "research.specialist.completed",
+        payloadJson: researchResult,
+      });
+    }
+
+    await tx.insert(activityTraces).values({
+      id: createMessageId(),
+      traceType: "runtime",
+      parentTraceId: traceId,
+      conversationId,
+      jobId: null,
+      eventName: "runtime.chat.context_assembled",
+      payloadJson: {
+        memoryIds: relevantMemories.map((memory) => memory.id),
+        taskIds: activeTasks.map((task) => task.id),
+        researchUsed: Boolean(researchResult),
+      },
+    });
+
     await tx.insert(messages).values({
       id: response.messageId,
       conversationId,
@@ -170,6 +215,9 @@ export async function persistChatTurn({
       payloadJson: {
         assistantMessageId: response.messageId,
         recentContextCount: recentMessages.length,
+        memoryIds: relevantMemories.map((memory) => memory.id),
+        taskIds: activeTasks.map((task) => task.id),
+        researchUsed: Boolean(researchResult),
         outputLength: response.outputText.length,
         traceId,
       },

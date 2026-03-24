@@ -1,7 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
-import type { ConversationHistoryResponse } from "@secretary/core-runtime";
+import type {
+  ActivityTraceResponse,
+  ConversationHistoryResponse,
+  ResearchSpecialistResult,
+  RuntimeMemoryContextItem,
+  RuntimeTaskContextItem,
+} from "@secretary/core-runtime";
 
 type DeskMessage = {
   id: string;
@@ -14,13 +20,18 @@ type ChatApiResponse = {
   messageId: string;
   outputText: string;
   traceId: string;
+  contextSummary?: {
+    memories: RuntimeMemoryContextItem[];
+    tasks: RuntimeTaskContextItem[];
+    research?: ResearchSpecialistResult;
+  };
 };
 
 const starterMessages: DeskMessage[] = [
   {
     id: "assistant-intro",
     role: "assistant",
-    text: "Secretary is online in Phase 1 scaffold mode. Send a message to test the web-to-worker path.",
+    text: "Secretary is online in Phase 2 memory mode. Send a message, ask it to remember something, or try a research-shaped prompt.",
   },
 ];
 
@@ -32,6 +43,12 @@ export function DeskShell() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastTraceId, setLastTraceId] = useState<string | null>(null);
+  const [memoryContext, setMemoryContext] = useState<RuntimeMemoryContextItem[]>([]);
+  const [taskContext, setTaskContext] = useState<RuntimeTaskContextItem[]>([]);
+  const [researchContext, setResearchContext] = useState<ResearchSpecialistResult | null>(
+    null,
+  );
+  const [activity, setActivity] = useState<ActivityTraceResponse["traces"]>([]);
   const hasLoadedHistory = useRef<string | null>(null);
 
   useEffect(() => {
@@ -87,6 +104,43 @@ export function DeskShell() {
     };
   }, [conversationId]);
 
+  useEffect(() => {
+    if (!conversationId) {
+      setActivity([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadActivity() {
+      try {
+        const response = await fetch(`/api/activity/${conversationId}`, {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error("Request failed");
+        }
+
+        const data = (await response.json()) as ActivityTraceResponse;
+
+        if (!cancelled) {
+          setActivity(data.traces.slice(-8).reverse());
+        }
+      } catch {
+        if (!cancelled) {
+          setActivity([]);
+        }
+      }
+    }
+
+    void loadActivity();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, lastTraceId]);
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -128,6 +182,9 @@ export function DeskShell() {
 
       setConversationId(data.conversationId);
       setLastTraceId(data.traceId);
+      setMemoryContext(data.contextSummary?.memories ?? []);
+      setTaskContext(data.contextSummary?.tasks ?? []);
+      setResearchContext(data.contextSummary?.research ?? null);
       setMessages((current) => [
         ...current,
         {
@@ -187,7 +244,7 @@ export function DeskShell() {
               lineHeight: 1,
             }}
           >
-            Phase 1 Web Loop
+            Phase 2 Secretary Loop
           </h1>
           <p
             style={{
@@ -199,9 +256,9 @@ export function DeskShell() {
             }}
           >
             This Desk routes browser messages through a thin Next.js API layer to
-            the Fastify worker. The Phase 1 runtime is deterministic rather than
-            model-driven, but it now reads recent conversation state instead of
-            returning a fixed placeholder reply.
+            the Fastify worker. The runtime remains deterministic, but it now
+            retrieves stored memory, tracks extracted reminder hooks, and can run
+            an internal research specialist before composing a reply.
           </p>
         </header>
 
@@ -378,12 +435,112 @@ export function DeskShell() {
                 background: "var(--panel-strong)",
               }}
             >
-              <h2 style={{ marginTop: 0 }}>Current Scope</h2>
-              <ul style={{ margin: 0, paddingLeft: 18, color: "var(--muted)" }}>
-                <li>Persist conversations and messages in PostgreSQL</li>
-                <li>Queue placeholder memory-candidate jobs after each turn</li>
-                <li>Load saved conversation history back into the Desk</li>
-              </ul>
+              <h2 style={{ marginTop: 0 }}>Memory In Play</h2>
+              <div style={{ display: "grid", gap: 12 }}>
+                {memoryContext.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    No strong memory match on the latest turn.
+                  </p>
+                ) : (
+                  memoryContext.map((memory) => (
+                    <article
+                      key={memory.id}
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        border: "1px solid rgba(148, 163, 184, 0.14)",
+                        background: "rgba(2, 6, 23, 0.65)",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                        {memory.title ?? memory.summary ?? memory.contentText}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                        {memory.memoryType} · importance {memory.importanceScore}
+                        {memory.pinned ? " · pinned" : ""}
+                      </p>
+                    </article>
+                  ))
+                )}
+              </div>
+            </article>
+
+            <article
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                background: "var(--panel-strong)",
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>Tasks and Research</h2>
+              <div style={{ display: "grid", gap: 12 }}>
+                {taskContext.length > 0 ? (
+                  taskContext.map((task) => (
+                    <p key={task.id} style={{ margin: 0, color: "var(--muted)" }}>
+                      {task.title}
+                    </p>
+                  ))
+                ) : (
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    No active reminder hooks in context.
+                  </p>
+                )}
+                {researchContext ? (
+                  <article
+                    style={{
+                      padding: 12,
+                      borderRadius: 14,
+                      border: "1px solid rgba(148, 163, 184, 0.14)",
+                      background: "rgba(2, 6, 23, 0.65)",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                      Research specialist used
+                    </p>
+                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                      {researchContext.summary}
+                    </p>
+                  </article>
+                ) : null}
+              </div>
+            </article>
+
+            <article
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                background: "var(--panel-strong)",
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>Recent Trace Events</h2>
+              <div style={{ display: "grid", gap: 10 }}>
+                {activity.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    No activity trace loaded yet.
+                  </p>
+                ) : (
+                  activity.map((trace) => (
+                    <article
+                      key={trace.id}
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        border: "1px solid rgba(148, 163, 184, 0.14)",
+                        background: "rgba(2, 6, 23, 0.65)",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                        {trace.eventName}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                        {JSON.stringify(trace.payload)}
+                      </p>
+                    </article>
+                  ))
+                )}
+              </div>
             </article>
           </aside>
         </section>

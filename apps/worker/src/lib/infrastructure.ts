@@ -1,10 +1,34 @@
 import { createDbClient } from "@secretary/db";
 import type { AppConfig } from "@secretary/config";
 import { createMemoryQueue } from "./memory-queue.js";
+import {
+  markMemoryCandidateJobFailed,
+  processMemoryCandidateJob,
+} from "./memory-engine.js";
 
 export function createInfrastructure(config: AppConfig) {
   const dbClient = createDbClient(config.databaseUrl);
-  const memoryQueue = createMemoryQueue(config.redisUrl);
+  const memoryQueue = createMemoryQueue(config.redisUrl, {
+    async processCandidate(jobId, payload) {
+      try {
+        await processMemoryCandidateJob({
+          dbClient,
+          payload,
+          jobId,
+        });
+      } catch (error) {
+        await markMemoryCandidateJobFailed({
+          dbClient,
+          jobId,
+          traceId: payload.traceId,
+          conversationId: payload.conversationId,
+          errorText: error instanceof Error ? error.message : "Unknown memory worker error",
+        });
+
+        throw error;
+      }
+    },
+  });
 
   return {
     dbClient,

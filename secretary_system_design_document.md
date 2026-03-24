@@ -1001,38 +1001,38 @@ Establish the repository, core services, persistence, and basic Secretary web ch
 
 ---
 
-### [ ] Phase 2: Memory and Secretary Intelligence Loop
+### [x] Phase 2: Memory and Secretary Intelligence Loop
 
 #### Goal
 Turn the app from a persistent chat shell into an actual secretary core with retrieval-based memory and internal task flow.
 
 #### Deliverables
-- memory retrieval service
-- memory extraction pipeline
-- memory importance scoring
-- Memory page UI
-- memory edit/suppress/pin controls
-- context assembly pipeline
-- first Research Specialist
-- first Memory Specialist
-- task/reminder basic schema and UI hooks
+- [x] memory retrieval service
+- [x] memory extraction pipeline
+- [x] memory importance scoring
+- [x] Memory page UI
+- [x] memory edit/suppress/pin controls
+- [x] context assembly pipeline
+- [x] first Research Specialist
+- [x] first Memory Specialist
+- [x] task/reminder basic schema and UI hooks
 
 #### What must work before phase is complete
-- Secretary retrieves relevant memory during chat
-- memory extraction jobs create useful long-term memory entries
-- pinned memories affect behavior predictably
-- user can inspect and edit memories in UI
-- delegated research task returns structured result to Secretary
+- [x] Secretary retrieves relevant memory during chat
+- [x] memory extraction jobs create useful long-term memory entries
+- [x] pinned memories affect behavior predictably
+- [x] user can inspect and edit memories in UI
+- [x] delegated research task returns structured result to Secretary
 
 #### Breakpoint test checklist
-- repeated conversation shows memory continuity
-- irrelevant memories do not dominate responses
-- user can suppress bad memory entries
-- memory retrieval remains fast enough for interactive use
-- traces show what memory was used for a response
+- [x] repeated conversation shows memory continuity
+- [x] irrelevant memories do not dominate responses
+- [x] user can suppress bad memory entries
+- [x] memory retrieval remains fast enough for interactive use
+- [x] traces show what memory was used for a response
 
 #### Stop condition
-Do not proceed until the memory system feels durable, inspectable, and clearly beneficial.
+- [x] the memory system feels durable, inspectable, and clearly beneficial
 
 ---
 
