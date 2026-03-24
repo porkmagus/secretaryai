@@ -1,6 +1,6 @@
 # HamCult - Secretary-First Personal Assistant
 
-This repository contains a polished Phase 1 through Phase 4 checkpoint for a self-hosted, single-user Secretary-first assistant system.
+This repository contains a polished Phase 1 through Phase 6 checkpoint for a self-hosted, single-user Secretary-first assistant system.
 
 ## Workspace Layout
 
@@ -43,8 +43,12 @@ This repository contains a polished Phase 1 through Phase 4 checkpoint for a sel
 Primary local surfaces:
 
 - `/`: Desk chat with recent conversations, runtime context, and trace previews
+- `/onboarding`: guided setup checklist for daily-use readiness
+- `/health`: dependency, storage, and runtime health dashboard
+- `/persona`: Secretary identity editor plus settings export/import
 - `/memory`: memory browser/editor with pin and suppress controls
 - `/activity`: runtime activity and trace inspection console
+- `/tools`: tool registry, approval queue, and execution audit console
 - `/channels`: Telegram integration setup, health, test send, and reminder dispatch
 - `/voice`: voice profile and speech artifact inspection console
 
@@ -181,6 +185,90 @@ The current Phase 4 verifiers check:
 - local Chatterbox TTS produces a persisted `tts_output` artifact
 - Telegram receives a spoken audio reply
 
+## Phase 5 Tools
+
+Phase 5 is now complete for local development. The current checkpoint includes:
+
+- a seeded tool registry for `web_search`, `file_read`, `shell_command`, and `task_create`
+- per-tool `always_allow` / `ask_first` / `deny` policy controls
+- approval requests in the Desk conversation flow with readable request summaries
+- a dedicated `/tools` page for policy editing, pending approvals, audit inspection, and recent execution filtering
+- execution audit records with request, response, approval state, and timestamps
+- a constrained read-only shell wrapper
+- a basic file read tool scoped to the local workspace with text-only safety limits
+- task creation through the same approval and audit pipeline
+- tool activity traces that make approvals, denials, completion, and failures easier to inspect
+
+## Phase 5 Verification
+
+To verify the current Phase 5 checkpoint:
+
+1. Make sure the core stack is running with `npm run stack:up`
+2. Run `npm run phase5:verify`
+
+The Phase 5 verifier checks:
+
+- the Phase 5 migration applies
+- the `/tools` page loads
+- the tool registry exposes the expected built-in tools
+- a direct web-search tool call executes and is logged
+- an approval-required shell execution can be approved and completed
+- an approval-required file read can be denied safely
+- the resulting audit trail is available through the web API
+
+## Phase 6 Polish
+
+Phase 6 is now complete for local development. The current checkpoint includes:
+
+- `/onboarding` for a guided setup and readiness checklist
+- `/health` for dependency, speech, Telegram, storage, and state visibility
+- `/persona` for Secretary identity editing and voice attachment
+- JSON settings export/import through the web UI
+- repo-native backup and restore scripts
+- visible runtime backup and export directories
+- phase-by-phase operator runbook commands
+- deployment notes that keep the worker/web/speech split understandable
+- groundwork for future adapter expansion through the existing integrations/admin model
+
+## Phase 6 Verification
+
+To verify the current Phase 6 checkpoint:
+
+1. Make sure the core stack is running with `npm run stack:up`
+2. Run `npm run phase6:verify`
+
+The Phase 6 verifier checks:
+
+- `/onboarding`, `/health`, and `/persona` all load
+- system health returns dependency, storage, and state data
+- persona settings can be updated through the web API
+- exported settings can be imported back and restore persona state
+- `npm run backup:create` produces a logical backup bundle
+- `npm run backup:restore` restores that bundle cleanly
+
+## Phase 6 Runbook
+
+Daily operator commands:
+
+- `npm run stack:up`
+- `npm run db:migrate`
+- `npm run backup:create`
+- `npm run export:settings`
+- `npm run phase6:verify`
+
+Restore and import commands:
+
+- `npm run backup:restore -- <backup-directory>`
+- `npm run import:settings -- <settings-json-path>`
+
+Deployment notes:
+
+- run `web`, `worker`, `stt`, and `tts` as separate long-lived processes
+- keep Postgres and Redis on the visible bind-mounted runtime paths
+- use Tailscale or a public tunnel only for the worker when testing Telegram inbound webhooks
+- keep secrets in `.env`, not in tracked example files
+- treat `runtime/backups` and `runtime/exports` as operator-facing working folders
+
 ## Live Telegram Test
 
 To verify the real bot instead of the fake verifier:
@@ -235,4 +323,6 @@ This current checkpoint now includes:
 - voice profile seeding, speech artifact persistence, Telegram voice-note intake, and Telegram spoken reply flow
 - a local CPU-first faster-whisper speech service with repo-native setup scripts
 - a local Chatterbox TTS service with repo-native setup scripts
-- automated Phase 1, Phase 2, Phase 3, and Phase 4 verification flows
+- approval-gated tools with readable audit and policy controls
+- onboarding, health, persona, backup, and export/import operator surfaces
+- automated Phase 1 through Phase 6 verification flows

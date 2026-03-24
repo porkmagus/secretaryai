@@ -24,13 +24,25 @@ export type RuntimeChatResponse = {
   messageId: string;
   outputText: string;
   traceId: string;
+  pendingApproval?: {
+    executionId: string;
+    toolId: string;
+    toolKey: string;
+    toolName: string;
+    summary: string;
+  } | null;
   contextSummary?: {
     memories: RuntimeMemoryContextItem[];
     tasks: RuntimeTaskContextItem[];
     research?: ResearchSpecialistResult;
   };
   actions?: Array<{
-    kind: "memory_candidate_queued" | "research_specialist_used";
+    kind:
+      | "approval_requested"
+      | "memory_candidate_queued"
+      | "research_specialist_used"
+      | "task_created"
+      | "tool_executed";
     payload: Record<string, string>;
   }>;
 };
@@ -132,6 +144,192 @@ export type SpeechServiceStatusResponse = {
       url: string | null;
     };
   };
+};
+
+export type ToolApprovalMode = "always_allow" | "ask_first" | "deny";
+export type ToolApprovalState =
+  | "not_required"
+  | "pending"
+  | "approved"
+  | "denied"
+  | "policy_denied";
+export type ToolExecutionStatus =
+  | "awaiting_approval"
+  | "completed"
+  | "denied"
+  | "failed";
+
+export type ToolRecord = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  approvalMode: ToolApprovalMode;
+  healthStatus: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ToolExecutionRecord = {
+  id: string;
+  toolId: string;
+  toolKey: string;
+  toolName: string;
+  conversationId: string | null;
+  requestedBy: string;
+  executionStatus: ToolExecutionStatus;
+  approvalState: ToolApprovalState;
+  requestJson: Record<string, unknown>;
+  responseJson: Record<string, unknown> | null;
+  summary: string;
+  errorText: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ToolListResponse = {
+  tools: ToolRecord[];
+};
+
+export type ToolExecutionListResponse = {
+  executions: ToolExecutionRecord[];
+};
+
+export type UpdateToolRequest = {
+  approvalMode?: ToolApprovalMode;
+  enabled?: boolean;
+};
+
+export type ToolApprovalDecisionResponse = {
+  execution: ToolExecutionRecord;
+  conversationId: string | null;
+  assistantMessage:
+    | {
+        id: string;
+        text: string;
+      }
+    | null;
+};
+
+export type PersonaSettingsRecord = {
+  id: string;
+  name: string;
+  promptTemplate: string;
+  toneMode: string | null;
+  behaviorRules: string[];
+  voiceProfileId: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PersonaSettingsResponse = {
+  persona: PersonaSettingsRecord;
+  voiceProfiles: VoiceProfileRecord[];
+};
+
+export type UpdatePersonaSettingsRequest = {
+  name?: string;
+  promptTemplate?: string;
+  toneMode?: string | null;
+  behaviorRules?: string[];
+  voiceProfileId?: string | null;
+};
+
+export type SystemHealthResponse = {
+  generatedAt: string;
+  services: {
+    worker: {
+      status: "ok";
+      summary: string;
+    };
+    postgres: {
+      status: "ok" | "degraded";
+      summary: string;
+    };
+    redis: {
+      status: "ok" | "degraded";
+      summary: string;
+    };
+    telegram: {
+      status: "ok" | "degraded" | "not_configured";
+      summary: string;
+    };
+    stt: {
+      status: "ok" | "degraded" | "not_configured";
+      summary: string;
+    };
+    tts: {
+      status: "ok" | "degraded" | "not_configured";
+      summary: string;
+    };
+    ffmpeg: {
+      status: "ok" | "degraded";
+      summary: string;
+    };
+  };
+  storage: Array<{
+    label: string;
+    path: string;
+    exists: boolean;
+  }>;
+  stats: {
+    conversations: number;
+    memories: number;
+    messages: number;
+    tasks: number;
+    toolExecutions: number;
+    voiceProfiles: number;
+  };
+};
+
+export type OnboardingStatusResponse = {
+  generatedAt: string;
+  completedSteps: number;
+  totalSteps: number;
+  steps: Array<{
+    id: string;
+    title: string;
+    status: "complete" | "attention" | "not_started";
+    detail: string;
+    href: string;
+  }>;
+};
+
+export type SettingsExportSnapshot = {
+  userDefaultPersonaId: string | null;
+  personas: PersonaSettingsRecord[];
+  integrations: Array<{
+    id: string;
+    integrationType: string;
+    enabled: boolean;
+    configJson: Record<string, unknown>;
+    healthStatus: string;
+  }>;
+  tools: Array<{
+    id: string;
+    key: string;
+    enabled: boolean;
+    approvalMode: ToolApprovalMode;
+  }>;
+  voiceProfiles: VoiceProfileRecord[];
+};
+
+export type SettingsExportResponse = {
+  exportedAt: string;
+  snapshot: SettingsExportSnapshot;
+};
+
+export type SettingsImportRequest = {
+  snapshot: SettingsExportSnapshot;
+};
+
+export type SettingsImportResponse = {
+  importedAt: string;
+  persona: PersonaSettingsRecord;
 };
 
 export type CreateVoiceProfileRequest = {

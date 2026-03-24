@@ -132,6 +132,38 @@ export const integrations = pgTable("integrations", {
   ...timestamps,
 });
 
+export const tools = pgTable("tools", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  approvalMode: text("approval_mode").notNull().default("ask_first"),
+  configSchemaJson: jsonb("config_schema_json").$type<Record<string, unknown>>().notNull().default({}),
+  healthStatus: text("health_status").notNull().default("ok"),
+  ...timestamps,
+});
+
+export const toolExecutions = pgTable("tool_executions", {
+  id: text("id").primaryKey(),
+  toolId: text("tool_id")
+    .notNull()
+    .references(() => tools.id, { onDelete: "cascade" }),
+  conversationId: text("conversation_id").references(() => conversations.id, {
+    onDelete: "set null",
+  }),
+  requestedBy: text("requested_by").notNull(),
+  executionStatus: text("execution_status").notNull(),
+  approvalState: text("approval_state").notNull(),
+  requestJson: jsonb("request_json").$type<Record<string, unknown>>().notNull(),
+  responseJson: jsonb("response_json").$type<Record<string, unknown> | null>(),
+  summary: text("summary").notNull(),
+  errorText: text("error_text"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  ...timestamps,
+});
+
 export const voiceProfiles = pgTable("voice_profiles", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -225,7 +257,14 @@ export const phaseFourTables = [
   "speech_artifacts",
 ] as const;
 
+export const phaseFiveTables = [
+  ...phaseFourTables,
+  "tools",
+  "tool_executions",
+] as const;
+
 export type PhaseOneTable = (typeof phaseOneTables)[number];
 export type PhaseTwoTable = (typeof phaseTwoTables)[number];
 export type PhaseThreeTable = (typeof phaseThreeTables)[number];
 export type PhaseFourTable = (typeof phaseFourTables)[number];
+export type PhaseFiveTable = (typeof phaseFiveTables)[number];

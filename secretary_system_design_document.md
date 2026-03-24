@@ -1103,73 +1103,73 @@ Do not proceed until voice feels truly usable, not just technically present.
 
 ---
 
-### [ ] Phase 5: Tools, Permissions, and Action Layer
+### [x] Phase 5: Tools, Permissions, and Action Layer
 
 #### Goal
 Allow the Secretary to do work safely through tools and approval policies.
 
 #### Deliverables
-- tool registry
-- per-tool approval policy UI
-- execution audit table
-- basic file tool
-- shell tool wrapper
-- web search tool
-- task/reminder tool flow
-- approval request UX
-- Tool/Ops Specialist
+- [x] tool registry
+- [x] per-tool approval policy UI
+- [x] execution audit table
+- [x] basic file tool
+- [x] shell tool wrapper
+- [x] web search tool
+- [x] task/reminder tool flow
+- [x] approval request UX
+- [x] Tool/Ops Specialist
 
 #### What must work before phase is complete
-- Secretary can propose action
-- user can approve or deny action cleanly
-- approved action executes and is logged
-- audit trail is inspectable in UI
-- denied actions fail safely
+- [x] Secretary can propose action
+- [x] user can approve or deny action cleanly
+- [x] approved action executes and is logged
+- [x] audit trail is inspectable in UI
+- [x] denied actions fail safely
 
 #### Breakpoint test checklist
-- approval prompts are clear
-- tools respect allow/ask/deny states
-- shell wrapper is constrained and observable
-- tool logs are readable and actionable
-- Secretary behavior remains coherent after tool results
+- [x] approval prompts are clear
+- [x] tools respect allow/ask/deny states
+- [x] shell wrapper is constrained and observable
+- [x] tool logs are readable and actionable
+- [x] Secretary behavior remains coherent after tool results
 
 #### Stop condition
 Do not proceed until tool execution is safe, reviewable, and understandable.
 
 ---
 
-### [ ] Phase 6: Polish, Onboarding, and Optional Expansion
+### [x] Phase 6: Polish, Onboarding, and Optional Expansion
 
 #### Goal
 Refine the product into a clean daily-use assistant with strong setup and admin experience.
 
 #### Deliverables
-- onboarding flow
-- health dashboard
-- backup/restore scripts
-- export/import support
-- persona customization UI
-- optional Signal adapter groundwork
-- optional calendar/email adapter groundwork
-- phase-by-phase runbooks
-- deployment documentation
+- [x] onboarding flow
+- [x] health dashboard
+- [x] backup/restore scripts
+- [x] export/import support
+- [x] persona customization UI
+- [x] optional Signal adapter groundwork
+- [x] optional calendar/email adapter groundwork
+- [x] phase-by-phase runbooks
+- [x] deployment documentation
 
 #### What must work before phase is complete
-- a new install can be brought up smoothly
-- onboarding teaches the system correctly
-- backups are easy to create and verify
-- daily admin work is pleasant
-- phase runbooks are accurate and sufficient
+- [x] a new install can be brought up smoothly
+- [x] onboarding teaches the system correctly
+- [x] backups are easy to create and verify
+- [x] daily admin work is pleasant
+- [x] phase runbooks are accurate and sufficient
 
 #### Breakpoint test checklist
-- fresh install experience is smooth
-- backup/restore is verified
-- health checks accurately reflect service state
-- UI feels cohesive and production-minded
-- config changes survive restart
+- [x] fresh install experience is smooth
+- [x] backup/restore is verified
+- [x] health checks accurately reflect service state
+- [x] UI feels cohesive and production-minded
+- [x] config changes survive restart
 
 #### Stop condition
-This phase ends when the system feels installable, maintainable, and pleasant enough for real daily use.
+- [x] the system feels installable, maintainable, and pleasant enough for real daily use.
 
 ---
 
@@ -1257,7 +1257,7 @@ Build the system as a **Secretary-first, single-user, self-hosted personal assis
 
 ### 18.1 Current Implementation Baseline
 
-As of the Phase 3 checkpoint, the active implementation baseline is:
+At the current completed checkpoint, the active implementation baseline is:
 - Next.js `16.2.1`
 - React `19.2.4`
 - TypeScript `5.9.3`
@@ -1270,7 +1270,7 @@ This is the cleanest architecture that satisfies the user’s priorities without
 
 ## 19. Current Engineering Checkpoint
 
-Phases 1, 2, and 3 are complete.
+Phases 1 through 6 are complete.
 
 The current repository supports:
 - persistent local web chat
@@ -1278,10 +1278,13 @@ The current repository supports:
 - Telegram text ingress and egress
 - Telegram reminder delivery
 - visible local storage and repeatable verification scripts
+- cloned-voice and speech-note workflows
+- approval-gated tools with readable audit
+- onboarding, health, persona, backup, and export/import operator surfaces
 
-The next engineering step is **Phase 5 only**.
+The next engineering step is open-ended product expansion rather than a missing core phase.
 
-Phase 4 is now functionally complete for local development. Remaining follow-up is host-specific quality and performance tuning as needed.
+The current checkpoint is now the intended daily-use baseline: installable, inspectable, backup-friendly, and ready for future expansion work rather than foundational catch-up.
 
 ---
 

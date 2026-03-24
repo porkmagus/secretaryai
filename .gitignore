@@ -15,6 +15,9 @@ runtime/speech/inbound/*
 runtime/speech/transcripts/*
 runtime/speech/tts/*
 runtime/speech/models/*
+runtime/speech/profiles/*
+runtime/backups/*
+runtime/exports/*
 runtime/venvs/*
 !runtime/postgres/.gitkeep
 !runtime/redis/.gitkeep

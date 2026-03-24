@@ -7,8 +7,12 @@ import type {
   ConversationListItem,
   ConversationListResponse,
   ResearchSpecialistResult,
+  RuntimeChatResponse,
   RuntimeMemoryContextItem,
   RuntimeTaskContextItem,
+  ToolApprovalDecisionResponse,
+  ToolExecutionListResponse,
+  ToolExecutionRecord,
 } from "@secretary/core-runtime";
 import { formatTimestamp, formatTracePayload, snippet } from "./lib/presenters";
 
@@ -18,25 +22,18 @@ type DeskMessage = {
   text: string;
 };
 
-type ChatApiResponse = {
-  conversationId: string;
-  messageId: string;
-  outputText: string;
-  traceId: string;
-  contextSummary?: {
-    memories: RuntimeMemoryContextItem[];
-    tasks: RuntimeTaskContextItem[];
-    research?: ResearchSpecialistResult;
-  };
-};
-
 const starterMessages: DeskMessage[] = [
   {
     id: "assistant-intro",
     role: "assistant",
-    text: "Secretary is online in Phase 2 memory mode. Send a message, ask it to remember something, or try a research-shaped prompt.",
+    text: "Secretary is online with memory, channels, voice, and the new Phase 5 action layer. Ask for help, request a tool action, or approve a pending operation.",
   },
 ];
+
+function formatApprovalRequest(requestJson: Record<string, unknown>) {
+  const rendered = formatTracePayload(requestJson);
+  return rendered === "no payload" ? "No request payload recorded yet." : rendered;
+}
 
 export function DeskShell() {
   const [messages, setMessages] = useState<DeskMessage[]>(starterMessages);
@@ -53,6 +50,8 @@ export function DeskShell() {
     null,
   );
   const [activity, setActivity] = useState<ActivityTraceResponse["traces"]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<ToolExecutionRecord[]>([]);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [sidebarError, setSidebarError] = useState<string | null>(null);
   const hasLoadedHistory = useRef<string | null>(null);
 
@@ -71,6 +70,26 @@ export function DeskShell() {
       setSidebarError(null);
     } catch {
       setSidebarError("Recent conversations are unavailable.");
+    }
+  }
+
+  async function loadPendingApprovals(nextConversationId: string) {
+    try {
+      const response = await fetch(
+        `/api/tool-executions?conversationId=${encodeURIComponent(nextConversationId)}&approvalState=pending`,
+        {
+          cache: "no-store",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Request failed");
+      }
+
+      const data = (await response.json()) as ToolExecutionListResponse;
+      setPendingApprovals(data.executions);
+    } catch {
+      setPendingApprovals([]);
     }
   }
 
@@ -113,6 +132,7 @@ export function DeskShell() {
             : starterMessages,
         );
         hasLoadedHistory.current = data.conversationId;
+        void loadPendingApprovals(data.conversationId);
       } catch {
         if (!cancelled) {
           setError("Saved conversation history could not be loaded.");
@@ -134,6 +154,7 @@ export function DeskShell() {
   useEffect(() => {
     if (!conversationId) {
       setActivity([]);
+      setPendingApprovals([]);
       return;
     }
 
@@ -179,6 +200,7 @@ export function DeskShell() {
     setConversationId(undefined);
     setMessages(starterMessages);
     setActivity([]);
+    setPendingApprovals([]);
     setError(null);
     hasLoadedHistory.current = null;
     resetComposerState();
@@ -186,9 +208,57 @@ export function DeskShell() {
 
   async function openConversation(nextConversationId: string) {
     setConversationId(nextConversationId);
+    setPendingApprovals([]);
     setError(null);
     hasLoadedHistory.current = null;
     resetComposerState();
+  }
+
+  async function decideApproval(executionId: string, approve: boolean) {
+    setApprovalBusyId(executionId);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `/api/tool-executions/${executionId}/${approve ? "approve" : "deny"}`,
+        {
+          method: "POST",
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Request failed");
+      }
+
+      const data = (await response.json()) as ToolApprovalDecisionResponse;
+
+      if (data.assistantMessage) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: data.assistantMessage!.id,
+            role: "assistant",
+            text: data.assistantMessage!.text,
+          },
+        ]);
+      }
+
+      if (data.conversationId) {
+        await loadPendingApprovals(data.conversationId);
+        setConversationId(data.conversationId);
+        setLastTraceId(data.execution.updatedAt);
+      } else {
+        setPendingApprovals((current) =>
+          current.filter((execution) => execution.id !== executionId),
+        );
+      }
+
+      void loadConversations();
+    } catch {
+      setError("Approval action failed. Try again.");
+    } finally {
+      setApprovalBusyId(null);
+    }
   }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -228,7 +298,7 @@ export function DeskShell() {
         throw new Error("Request failed");
       }
 
-      const data = (await response.json()) as ChatApiResponse;
+      const data = (await response.json()) as RuntimeChatResponse;
 
       setConversationId(data.conversationId);
       setLastTraceId(data.traceId);
@@ -243,6 +313,9 @@ export function DeskShell() {
           text: data.outputText,
         },
       ]);
+      if (data.conversationId) {
+        void loadPendingApprovals(data.conversationId);
+      }
       void loadConversations();
     } catch {
       setError("The Desk could not reach the worker. Check the worker process and try again.");
@@ -309,7 +382,7 @@ export function DeskShell() {
             This Desk routes browser messages through a thin Next.js API layer to
             the Fastify worker. The runtime remains deterministic, but it now
             retrieves stored memory, tracks extracted reminder hooks, and can run
-            an internal research specialist before composing a reply.
+            internal specialists plus approval-gated tools before composing a reply.
           </p>
         </header>
 
@@ -595,6 +668,109 @@ export function DeskShell() {
                   </dd>
                 </div>
               </dl>
+            </article>
+
+            <article
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                border: "1px solid var(--border)",
+                background: "var(--panel-strong)",
+              }}
+            >
+              <h2 style={{ marginTop: 0 }}>Pending Approvals</h2>
+              <div style={{ display: "grid", gap: 12 }}>
+                {pendingApprovals.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    No approval requests waiting in this conversation.
+                  </p>
+                ) : (
+                  pendingApprovals.map((execution) => (
+                    <article
+                      key={execution.id}
+                      style={{
+                        padding: 12,
+                        borderRadius: 14,
+                        border: "1px solid rgba(148, 163, 184, 0.14)",
+                        background: "rgba(2, 6, 23, 0.65)",
+                        display: "grid",
+                        gap: 10,
+                      }}
+                    >
+                      <div>
+                        <p style={{ margin: "0 0 4px", fontWeight: 700 }}>
+                          {execution.toolName}
+                        </p>
+                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                          {execution.summary}
+                        </p>
+                        <p
+                          style={{
+                            margin: "6px 0 0",
+                            color: "var(--muted)",
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          Request: {formatApprovalRequest(execution.requestJson)}
+                        </p>
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void decideApproval(execution.id, true)}
+                          disabled={approvalBusyId === execution.id}
+                          style={{
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "10px 14px",
+                            font: "inherit",
+                            fontWeight: 700,
+                            cursor: approvalBusyId === execution.id ? "wait" : "pointer",
+                            color: "#03111f",
+                            background:
+                              "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
+                          }}
+                        >
+                          {approvalBusyId === execution.id ? "Working..." : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void decideApproval(execution.id, false)}
+                          disabled={approvalBusyId === execution.id}
+                          style={{
+                            border: "1px solid rgba(248, 113, 113, 0.32)",
+                            borderRadius: 999,
+                            padding: "10px 14px",
+                            font: "inherit",
+                            cursor: approvalBusyId === execution.id ? "wait" : "pointer",
+                            color: "var(--text)",
+                            background: "rgba(127, 29, 29, 0.24)",
+                          }}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                )}
+                <a
+                  href="/tools"
+                  style={{
+                    color: "var(--accent)",
+                    fontSize: 13,
+                    textDecoration: "none",
+                  }}
+                >
+                  Open full tools console
+                </a>
+              </div>
             </article>
 
             <article

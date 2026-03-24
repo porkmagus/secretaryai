@@ -9,10 +9,21 @@ import {
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
   type MemoryListResponse,
+  type OnboardingStatusResponse,
+  type PersonaSettingsResponse,
   type SpeechServiceStatusResponse,
   type SpeechArtifactListResponse,
+  type SettingsExportResponse,
+  type SettingsImportRequest,
+  type SettingsImportResponse,
+  type SystemHealthResponse,
   type TaskListResponse,
+  type ToolApprovalDecisionResponse,
+  type ToolExecutionListResponse,
+  type ToolListResponse,
   type TelegramTestMessageRequest,
+  type UpdateToolRequest,
+  type UpdatePersonaSettingsRequest,
   type UpdateVoiceProfileRequest,
   type UpdateTelegramIntegrationRequest,
   type UpdateMemoryRequest,
@@ -64,6 +75,21 @@ import {
 } from "./lib/speech-storage.js";
 import { getSpeechServiceStatus } from "./lib/speech-health.js";
 import { createVoicePreview, processWebSpeechTurn } from "./lib/web-speech.js";
+import {
+  exportSettingsSnapshot,
+  getOnboardingStatus,
+  getPersonaSettings,
+  getSystemHealth,
+  importSettingsSnapshot,
+  updatePersonaSettings,
+} from "./lib/admin-runtime.js";
+import {
+  decideToolExecution,
+  handleToolAwareTurn,
+  listToolExecutions,
+  listTools,
+  updateTool,
+} from "./lib/tools-runtime.js";
 
 export async function buildServer() {
   const config = loadAppConfig(process.env);
@@ -91,6 +117,122 @@ export async function buildServer() {
       service: "worker",
       dependencies,
     });
+  });
+
+  app.get("/runtime/system/health", async (_, reply) => {
+    try {
+      const response: SystemHealthResponse = await getSystemHealth({
+        config,
+        infrastructure,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.system.health_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load system health.",
+      });
+    }
+  });
+
+  app.get("/runtime/onboarding", async (_, reply) => {
+    try {
+      const response: OnboardingStatusResponse = await getOnboardingStatus({
+        config,
+        infrastructure,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.onboarding.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load onboarding state.",
+      });
+    }
+  });
+
+  app.get("/runtime/persona", async (_, reply) => {
+    try {
+      const response: PersonaSettingsResponse = await getPersonaSettings(
+        infrastructure.dbClient,
+        config,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.persona.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load persona settings.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdatePersonaSettingsRequest }>("/runtime/persona", async (request, reply) => {
+    try {
+      const response: PersonaSettingsResponse = await updatePersonaSettings({
+        dbClient: infrastructure.dbClient,
+        config,
+        request: request.body,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.persona.update_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update persona settings.",
+      });
+    }
+  });
+
+  app.get("/runtime/export/settings", async (_, reply) => {
+    try {
+      const response: SettingsExportResponse = await exportSettingsSnapshot({
+        config,
+        dbClient: infrastructure.dbClient,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.export.settings_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to export settings snapshot.",
+      });
+    }
+  });
+
+  app.post<{ Body: SettingsImportRequest }>("/runtime/import/settings", async (request, reply) => {
+    try {
+      const response: SettingsImportResponse = await importSettingsSnapshot({
+        config,
+        dbClient: infrastructure.dbClient,
+        request: request.body,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.import.settings_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to import settings snapshot.",
+      });
+    }
   });
 
   app.get<{
@@ -268,6 +410,146 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load tasks.",
+      });
+    }
+  });
+
+  app.get("/runtime/tools", async (_, reply) => {
+    try {
+      const response: ToolListResponse = await listTools(infrastructure.dbClient);
+      return response;
+    } catch (error) {
+      logger.error("runtime.tools.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load tools.",
+      });
+    }
+  });
+
+  app.patch<{
+    Params: {
+      toolId: string;
+    };
+    Body: UpdateToolRequest;
+  }>("/runtime/tools/:toolId", async (request, reply) => {
+    try {
+      const tool = await updateTool(
+        infrastructure.dbClient,
+        request.params.toolId,
+        request.body,
+      );
+
+      if (!tool) {
+        return reply.status(404).send({
+          error: "Tool not found.",
+        });
+      }
+
+      return {
+        tool,
+      };
+    } catch (error) {
+      logger.error("runtime.tool.update_failed", {
+        error: error instanceof Error ? error.message : error,
+        toolId: request.params.toolId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update tool.",
+      });
+    }
+  });
+
+  app.get<{
+    Querystring: {
+      approvalState?: string;
+      conversationId?: string;
+    };
+  }>("/runtime/tool-executions", async (request, reply) => {
+    try {
+      const response: ToolExecutionListResponse = await listToolExecutions({
+        approvalState: request.query.approvalState,
+        conversationId: request.query.conversationId,
+        dbClient: infrastructure.dbClient,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.tool_executions.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load tool executions.",
+      });
+    }
+  });
+
+  app.post<{
+    Params: {
+      executionId: string;
+    };
+  }>("/runtime/tool-executions/:executionId/approve", async (request, reply) => {
+    const traceId = createTraceId();
+    try {
+      const response: ToolApprovalDecisionResponse | null = await decideToolExecution({
+        approve: true,
+        dbClient: infrastructure.dbClient,
+        executionId: request.params.executionId,
+        traceId,
+      });
+
+      if (!response) {
+        return reply.status(404).send({
+          error: "Tool execution not found.",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.tool_execution.approve_failed", {
+        error: error instanceof Error ? error.message : error,
+        executionId: request.params.executionId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to approve tool execution.",
+      });
+    }
+  });
+
+  app.post<{
+    Params: {
+      executionId: string;
+    };
+  }>("/runtime/tool-executions/:executionId/deny", async (request, reply) => {
+    const traceId = createTraceId();
+    try {
+      const response: ToolApprovalDecisionResponse | null = await decideToolExecution({
+        approve: false,
+        dbClient: infrastructure.dbClient,
+        executionId: request.params.executionId,
+        traceId,
+      });
+
+      if (!response) {
+        return reply.status(404).send({
+          error: "Tool execution not found.",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.tool_execution.deny_failed", {
+        error: error instanceof Error ? error.message : error,
+        executionId: request.params.executionId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to deny tool execution.",
       });
     }
   });
@@ -744,13 +1026,22 @@ export async function buildServer() {
     const traceId = body.metadata?.requestId ?? createTraceId();
 
     try {
-      const persistedTurn = await persistChatTurn({
+      const toolHandledTurn = await handleToolAwareTurn({
         dbClient: infrastructure.dbClient,
         defaultPersonaId: config.defaultPersonaId,
         defaultUserId: config.defaultUserId,
         request: body,
         traceId,
       });
+      const persistedTurn =
+        toolHandledTurn ??
+        (await persistChatTurn({
+          dbClient: infrastructure.dbClient,
+          defaultPersonaId: config.defaultPersonaId,
+          defaultUserId: config.defaultUserId,
+          request: body,
+          traceId,
+        }));
 
       const jobId = await createQueuedMemoryJob({
         dbClient: infrastructure.dbClient,

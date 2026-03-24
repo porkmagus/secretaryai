@@ -17,6 +17,8 @@ for (const relativePath of [
   "runtime/speech/transcripts",
   "runtime/speech/tts",
   "runtime/speech/profiles",
+  "runtime/backups",
+  "runtime/exports",
   "runtime/venvs",
 ]) {
   const fullPath = resolve(root, relativePath);
