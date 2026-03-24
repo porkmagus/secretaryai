@@ -1,0 +1,166 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: secretary-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: secretary
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d secretary"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ../../runtime/postgres:/pgdata
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: secretary-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - ../../runtime/redis/data:/data
+
+  stt:
+    build:
+      context: ../..
+      dockerfile: services/stt-faster-whisper/Dockerfile
+    container_name: secretary-stt
+    restart: unless-stopped
+    env_file:
+      - ../../.env.deploy
+    environment:
+      STT_PORT: 5001
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health/live').read()",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - ../../runtime:/workspace/runtime
+
+  tts:
+    build:
+      context: ../..
+      dockerfile: services/tts-chatterbox/Dockerfile
+    container_name: secretary-tts
+    restart: unless-stopped
+    env_file:
+      - ../../.env.deploy
+    environment:
+      TTS_PORT: 5002
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5002/health/live').read()",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - ../../runtime:/workspace/runtime
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+    container_name: secretary-worker
+    restart: unless-stopped
+    env_file:
+      - ../../.env.deploy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      stt:
+        condition: service_started
+      tts:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/health/live').then((r)=>{if(!r.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    volumes:
+      - ../../runtime:/workspace/runtime
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    container_name: secretary-web
+    restart: unless-stopped
+    env_file:
+      - ../../.env.deploy
+    environment:
+      PORT: 3000
+    depends_on:
+      worker:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/login').then((r)=>{if(!r.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: apps/worker/Dockerfile
+    container_name: secretary-migrate
+    env_file:
+      - ../../.env.deploy
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["npm", "run", "migrate", "--workspace", "@secretary/db"]
+    restart: "no"
+
+  proxy:
+    image: caddy:2.10-alpine
+    container_name: secretary-proxy
+    restart: unless-stopped
+    env_file:
+      - ../../.env.deploy
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      web:
+        condition: service_started
+      worker:
+        condition: service_started
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../runtime/caddy/data:/data
+      - ../../runtime/caddy/config:/config

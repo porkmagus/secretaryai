@@ -1,0 +1,22 @@
+{
+	email {$CADDY_EMAIL}
+}
+
+{$SECRETARY_PUBLIC_HOST:localhost} {
+	encode gzip zstd
+
+	@telegramWebhook path /integrations/telegram/webhook /integrations/telegram/webhook/*
+	@workerHealth path /health/live /health/ready
+
+	handle @telegramWebhook {
+		reverse_proxy worker:4000
+	}
+
+	handle @workerHealth {
+		reverse_proxy worker:4000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}

@@ -33,6 +33,42 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
    - `npm run dev:stt`
    - `npm run dev:tts`
 
+## Deployment Package
+
+This repo now includes a packaged always-on deployment path with:
+
+- `proxy`: Caddy reverse proxy
+- `web`: Next.js app
+- `worker`: Fastify runtime
+- `stt`: faster-whisper speech service
+- `tts`: Chatterbox speech service
+- `postgres`
+- `redis`
+
+Deployment files:
+
+- [`docker-compose.deploy.yml`](/f:/hamcult/docker/compose/docker-compose.deploy.yml)
+- [`Caddyfile`](/f:/hamcult/docker/caddy/Caddyfile)
+- [`deployment.md`](/f:/hamcult/docs/runbooks/deployment.md)
+- [`.env.deploy.example`](/f:/hamcult/.env.deploy.example)
+
+Basic deployment flow:
+
+1. Copy `.env.deploy.example` to `.env.deploy`
+2. Set your public host, secrets, and Telegram webhook URL
+3. Run `npm run storage:prepare`
+4. Run `npm run deploy:up`
+5. Run `npm run deploy:migrate`
+6. Use `npm run deploy:logs` to watch the stack
+
+Useful deployment commands:
+
+- `npm run deploy:config`
+- `npm run deploy:up`
+- `npm run deploy:migrate`
+- `npm run deploy:logs`
+- `npm run deploy:down`
+
 ## Current Baseline
 
 - `apps/web`: Next.js `16.2.1` with React `19.2.4`

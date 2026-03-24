@@ -3,6 +3,7 @@ node_modules/
 dist/
 coverage/
 .env
+.env.deploy
 .env.local
 .env.*.local
 *.log
@@ -16,6 +17,8 @@ runtime/speech/transcripts/*
 runtime/speech/tts/*
 runtime/speech/models/*
 runtime/speech/profiles/*
+runtime/caddy/data/*
+runtime/caddy/config/*
 runtime/backups/*
 runtime/exports/*
 runtime/venvs/*

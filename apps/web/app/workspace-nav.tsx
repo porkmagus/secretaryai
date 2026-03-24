@@ -34,8 +34,8 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
         top: 0,
         zIndex: 10,
         backdropFilter: "blur(18px)",
-        background: "rgba(247, 241, 231, 0.84)",
-        borderBottom: "1px solid rgba(64, 89, 112, 0.1)",
+        background: "rgba(14, 11, 9, 0.84)",
+        borderBottom: "1px solid rgba(196, 180, 154, 0.08)",
       }}
     >
       <div
@@ -44,9 +44,9 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
           margin: "0 auto",
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: "flex-start",
           gap: 18,
-          padding: "16px 0",
+          padding: "14px 0",
           flexWrap: "wrap",
         }}
       >
@@ -56,29 +56,29 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
             style={{
               textDecoration: "none",
               fontWeight: 800,
-              letterSpacing: "0.12em",
+              letterSpacing: "0.16em",
               textTransform: "uppercase",
               color: "var(--accent)",
-              fontSize: 13,
+              fontSize: 12,
             }}
           >
             Secretary
           </Link>
-          <span style={{ color: "var(--muted)", fontSize: 13 }}>
-            Operator studio for memory, channels, voice, and action review
+          <span style={{ color: "var(--muted)", fontSize: 12 }}>
+            Rustic operator workspace for memory, channels, voice, and actions
           </span>
         </div>
         {isLoginRoute ? (
           <div
             style={{
               color: "var(--muted)",
-              fontSize: 13,
-              letterSpacing: "0.04em",
+              fontSize: 12,
+              letterSpacing: "0.06em",
               textTransform: "uppercase",
-              padding: "8px 12px",
+              padding: "7px 10px",
               borderRadius: 999,
-              border: "1px solid rgba(64, 89, 112, 0.12)",
-              background: "rgba(255, 255, 255, 0.58)",
+              border: "1px solid rgba(196, 180, 154, 0.12)",
+              background: "rgba(31, 26, 21, 0.84)",
             }}
           >
             Operator sign-in
@@ -87,10 +87,10 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
           <div
             style={{
               display: "flex",
-              gap: 10,
+              gap: 8,
               alignItems: "center",
               color: "var(--muted)",
-              fontSize: 14,
+              fontSize: 13,
               flexWrap: "wrap",
               justifyContent: "flex-end",
             }}
@@ -103,16 +103,16 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
                   href={link.href}
                   style={{
                     textDecoration: "none",
-                    padding: "8px 12px",
-                    borderRadius: 999,
+                    padding: "7px 10px",
+                    borderRadius: 10,
                     border: active
-                      ? "1px solid rgba(15, 118, 110, 0.18)"
-                      : "1px solid rgba(64, 89, 112, 0.08)",
+                      ? "1px solid rgba(164, 141, 100, 0.24)"
+                      : "1px solid rgba(196, 180, 154, 0.08)",
                     background: active
-                      ? "linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(15, 118, 110, 0.06))"
-                      : "rgba(255, 255, 255, 0.42)",
+                      ? "linear-gradient(135deg, rgba(164, 141, 100, 0.18), rgba(94, 86, 72, 0.18))"
+                      : "rgba(30, 24, 19, 0.72)",
                     color: active ? "var(--accent-strong)" : "inherit",
-                    fontWeight: active ? 700 : 500,
+                    fontWeight: active ? 700 : 550,
                   }}
                 >
                   {link.label}
@@ -124,11 +124,11 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
                 href="/api/auth/logout"
                 style={{
                   textDecoration: "none",
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(180, 83, 9, 0.2)",
-                  background: "rgba(255, 247, 237, 0.82)",
-                  color: "#9a3412",
+                  padding: "7px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(156, 93, 67, 0.28)",
+                  background: "rgba(57, 32, 25, 0.88)",
+                  color: "#efc0aa",
                 }}
               >
                 Log Out

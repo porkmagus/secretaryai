@@ -326,69 +326,16 @@ export function DeskShell() {
   }
 
   return (
-    <AppPage width="1100px">
-      <PageHero
-        eyebrow="Secretary Desk"
-        title="Conversation, memory, and runtime context"
-        description={
-          <p>
-            This Desk routes browser messages through a thin Next.js API layer to
-            the Fastify worker. The runtime remains deterministic, but it now
-            retrieves stored memory, tracks reminder hooks, and can run internal
-            specialists plus approval-gated tools before composing a reply.
-          </p>
-        }
-        meta={
-          <p>
-            {error ??
-              (isSending
-                ? "Sending through the worker..."
-                : isRefreshing
-                  ? "Refreshing saved history..."
-                  : "Ready for the next turn.")}
-          </p>
-        }
-        actions={
-          <button type="button" className="button-primary" onClick={startFreshConversation}>
-            New conversation
-          </button>
-        }
-      />
-
-      <StatGrid>
-        <StatCard label="Threads" value={conversations.length} detail="Recent saved conversations" />
-        <StatCard label="Pending approvals" value={pendingApprovals.length} detail="Actions waiting on you" />
-        <StatCard label="Memory hits" value={memoryContext.length} detail="Active memory items in the latest turn" />
-        <StatCard
-          label="Runtime traces"
-          value={activity.length}
-          detail={conversationId ? "Recent events for the active thread" : "Start a thread to inspect traces"}
-          tone="soft"
-        />
-      </StatGrid>
-
-      {error ? <NoticeBanner tone="warning">{error}</NoticeBanner> : null}
-
-      <section
-          style={{
-            display: "grid",
-            gap: 20,
-            gridTemplateColumns: "minmax(250px, 0.8fr) minmax(0, 1.9fr) minmax(280px, 0.95fr)",
-          }}
-        >
-          <aside
-            style={{
-              display: "grid",
-              gap: 16,
-              alignContent: "start",
-            }}
-          >
+    <AppPage width="1280px">
+      <div style={{ order: 1 }}>
+      <section className="desk-grid">
+          <aside className="desk-rail desk-rail--sticky">
             <article
               style={{
-                padding: 20,
-                borderRadius: 24,
+                padding: 16,
+                borderRadius: 16,
                 border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
+                background: "rgba(22, 18, 14, 0.94)",
                 display: "grid",
                 gap: 12,
               }}
@@ -413,7 +360,7 @@ export function DeskShell() {
               <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
                 {sidebarError ?? `${conversations.length} recent threads`}
               </p>
-              <div style={{ display: "grid", gap: 10 }}>
+              <div className="desk-list desk-list--scroll">
                 {conversations.map((conversation) => (
                   <button
                     key={conversation.id}
@@ -421,27 +368,27 @@ export function DeskShell() {
                     onClick={() => void openConversation(conversation.id)}
                     style={{
                       textAlign: "left",
-                      borderRadius: 18,
+                      borderRadius: 12,
                       border:
                         conversationId === conversation.id
-                          ? "1px solid rgba(15, 118, 110, 0.26)"
-                          : "1px solid rgba(64, 89, 112, 0.12)",
+                          ? "1px solid rgba(164, 141, 100, 0.24)"
+                          : "1px solid rgba(196, 180, 154, 0.12)",
                       background:
                         conversationId === conversation.id
-                          ? "rgba(15, 118, 110, 0.08)"
-                          : "rgba(255, 255, 255, 0.68)",
+                          ? "rgba(164, 141, 100, 0.14)"
+                          : "rgba(18, 15, 12, 0.82)",
                       color: "var(--text)",
-                      padding: 14,
+                      padding: 12,
                       cursor: "pointer",
                     }}
                   >
-                    <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                    <p style={{ margin: "0 0 5px", fontWeight: 700, fontSize: 14 }}>
                       {conversation.title ?? "Untitled conversation"}
                     </p>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.4, fontSize: 13 }}>
                       {snippet(conversation.lastMessagePreview)}
                     </p>
-                    <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                    <p style={{ margin: "7px 0 0", color: "var(--muted)", fontSize: 11 }}>
                       {conversation.channelType} · {conversation.messageCount} messages
                     </p>
                   </button>
@@ -451,10 +398,10 @@ export function DeskShell() {
 
             <article
               style={{
-                padding: 20,
-                borderRadius: 24,
+                padding: 16,
+                borderRadius: 16,
                 border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
+                background: "rgba(22, 18, 14, 0.94)",
                 display: "grid",
                 gap: 10,
               }}
@@ -472,13 +419,16 @@ export function DeskShell() {
                   onClick={() => setInput(prompt)}
                   style={{
                     textAlign: "left",
-                    borderRadius: 16,
-                    border: "1px solid rgba(64, 89, 112, 0.12)",
-                    background: "rgba(255, 255, 255, 0.68)",
+                    borderRadius: 10,
+                    border: "1px solid rgba(196, 180, 154, 0.12)",
+                    background: "rgba(18, 15, 12, 0.82)",
                     color: "var(--text)",
-                    padding: 12,
+                    padding: 11,
                     cursor: "pointer",
                     font: "inherit",
+                    lineHeight: 1.4,
+                    width: "100%",
+                    whiteSpace: "normal",
                   }}
                 >
                   {prompt}
@@ -488,61 +438,78 @@ export function DeskShell() {
           </aside>
 
           <div
+            className="desk-chat-shell"
             style={{
-              padding: 20,
-              borderRadius: 24,
+              padding: 16,
+              borderRadius: 16,
               border: "1px solid var(--border)",
-              background: "var(--panel-strong)",
-              minHeight: 520,
-              display: "grid",
-              gridTemplateRows: "1fr auto",
-              gap: 16,
+              background: "linear-gradient(180deg, rgba(16, 13, 11, 0.98), rgba(11, 9, 8, 0.96))",
+              boxShadow: "var(--shadow-soft)",
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gap: 12,
-                alignContent: "start",
-              }}
-            >
+            <div className="desk-live-row">
+              <div className="desk-live-chip">
+                <p className="desk-live-chip-label">Thread</p>
+                <p className="desk-live-chip-value">{conversationId ? "attached" : "fresh"}</p>
+              </div>
+              <div className="desk-live-chip">
+                <p className="desk-live-chip-label">Persistence</p>
+                <p className="desk-live-chip-value">
+                  {conversationId ? (isRefreshing ? "refreshing" : "history linked") : "not saved"}
+                </p>
+              </div>
+              <div className="desk-live-chip">
+                <p className="desk-live-chip-label">Memory</p>
+                <p className="desk-live-chip-value">{memoryContext.length} in context</p>
+              </div>
+              <div className="desk-live-chip">
+                <p className="desk-live-chip-label">Approvals</p>
+                <p className="desk-live-chip-value">{pendingApprovals.length} waiting</p>
+              </div>
+              <div className="desk-live-chip">
+                <p className="desk-live-chip-label">Trace feed</p>
+                <p className="desk-live-chip-value">{activity.length} events</p>
+              </div>
+            </div>
+            <div className="desk-message-stream">
               {messages.map((message) => (
                 <article
                   key={message.id}
                   style={{
                     justifySelf: message.role === "user" ? "end" : "start",
-                    width: "min(92%, 680px)",
-                    padding: "14px 16px",
-                    borderRadius: 18,
+                    width: "min(94%, 700px)",
+                    padding: "12px 14px",
+                    borderRadius: 12,
                     background:
                       message.role === "user"
-                        ? "rgba(15, 118, 110, 0.12)"
-                        : "rgba(255, 252, 247, 0.92)",
+                        ? "rgba(164, 141, 100, 0.16)"
+                        : "rgba(20, 17, 14, 0.94)",
                     border:
                       message.role === "user"
-                        ? "1px solid rgba(15, 118, 110, 0.18)"
-                        : "1px solid rgba(64, 89, 112, 0.12)",
+                        ? "1px solid rgba(164, 141, 100, 0.22)"
+                        : "1px solid rgba(196, 180, 154, 0.1)",
+                    boxShadow: "var(--shadow-soft)",
                   }}
                 >
                   <p
                     style={{
-                      margin: "0 0 8px",
-                      fontSize: 12,
+                      margin: "0 0 6px",
+                      fontSize: 10,
                       fontWeight: 700,
-                      letterSpacing: "0.08em",
+                      letterSpacing: "0.12em",
                       textTransform: "uppercase",
                       color:
-                        message.role === "user" ? "var(--accent)" : "var(--muted)",
+                        message.role === "user" ? "var(--accent-strong)" : "var(--muted)",
                     }}
                   >
                     {message.role}
                   </p>
-                  <p style={{ margin: 0, lineHeight: 1.6 }}>{message.text}</p>
+                  <p style={{ margin: 0, lineHeight: 1.5, fontSize: 14 }}>{message.text}</p>
                 </article>
               ))}
             </div>
 
-            <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+            <form onSubmit={onSubmit} style={{ display: "grid", gap: 10 }}>
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -551,20 +518,21 @@ export function DeskShell() {
                 style={{
                   width: "100%",
                   resize: "vertical",
-                  borderRadius: 18,
-                  padding: 16,
+                  borderRadius: 12,
+                  padding: 14,
+                  minHeight: 112,
                 }}
               />
               <div
                 style={{
                   display: "flex",
-                  gap: 12,
+                  gap: 10,
                   alignItems: "center",
                   justifyContent: "space-between",
                   flexWrap: "wrap",
                 }}
               >
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
                   {error ??
                     (isSending
                       ? "Sending through the worker..."
@@ -577,24 +545,20 @@ export function DeskShell() {
                   disabled={isSending || input.trim().length === 0}
                   className="button-primary"
                 >
-                  {isSending ? "Sending..." : "Send Message"}
+                  {isSending ? "Sending..." : "Send message"}
                 </button>
               </div>
             </form>
           </div>
 
-          <aside
-            style={{
-              display: "grid",
-              gap: 20,
-            }}
-          >
+          <aside className="desk-rail desk-rail--sticky">
             <article
               style={{
-                padding: 20,
-                borderRadius: 24,
+                padding: 16,
+                borderRadius: 16,
                 border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
+                background: "rgba(16, 13, 11, 0.96)",
+                boxShadow: "var(--shadow-soft)",
               }}
             >
               <h2 style={{ marginTop: 0 }}>Turn State</h2>
@@ -606,19 +570,19 @@ export function DeskShell() {
                 }}
               >
                 <div>
-                  <dt style={{ color: "var(--muted)", fontSize: 13 }}>Conversation</dt>
+                  <dt style={{ color: "var(--muted)", fontSize: 12 }}>Conversation</dt>
                   <dd style={{ margin: "6px 0 0", wordBreak: "break-word" }}>
                     {conversationId ?? "Not started"}
                   </dd>
                 </div>
                 <div>
-                  <dt style={{ color: "var(--muted)", fontSize: 13 }}>Last Trace</dt>
+                  <dt style={{ color: "var(--muted)", fontSize: 12 }}>Last Trace</dt>
                   <dd style={{ margin: "6px 0 0", wordBreak: "break-word" }}>
                     {lastTraceId ?? "None yet"}
                   </dd>
                 </div>
                 <div>
-                  <dt style={{ color: "var(--muted)", fontSize: 13 }}>Persistence</dt>
+                  <dt style={{ color: "var(--muted)", fontSize: 12 }}>Persistence</dt>
                   <dd style={{ margin: "6px 0 0", wordBreak: "break-word" }}>
                     {conversationId
                       ? isRefreshing
@@ -628,14 +592,116 @@ export function DeskShell() {
                   </dd>
                 </div>
               </dl>
+              <div className="desk-widget-separator" />
+              <div className="stack-sm">
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 12,
+                    color: "var(--muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                  }}
+                >
+                  Memory in play
+                </p>
+                {memoryContext.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                    No strong memory match on the latest turn.
+                  </p>
+                ) : (
+                  memoryContext.slice(0, 3).map((memory) => (
+                    <article
+                      key={memory.id}
+                      style={{
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid rgba(196, 180, 154, 0.12)",
+                        background: "rgba(24, 20, 16, 0.9)",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+                        {memory.title ?? memory.summary ?? memory.contentText}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                        {memory.memoryType} · importance {memory.importanceScore}
+                        {memory.pinned ? " · pinned" : ""}
+                      </p>
+                    </article>
+                  ))
+                )}
+              </div>
+              <div className="desk-widget-separator" />
+              <div className="stack-sm">
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 12,
+                    color: "var(--muted)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                  }}
+                >
+                  Tasks and research
+                </p>
+                {taskContext.length > 0 ? (
+                  taskContext.slice(0, 2).map((task) => (
+                    <article
+                      key={task.id}
+                      style={{
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid rgba(196, 180, 154, 0.12)",
+                        background: "rgba(24, 20, 16, 0.9)",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+                        {task.title}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                        {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
+                      </p>
+                    </article>
+                  ))
+                ) : (
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                    No active reminder hooks in context.
+                  </p>
+                )}
+                {researchContext ? (
+                  <article
+                    style={{
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid rgba(196, 180, 154, 0.12)",
+                      background: "rgba(24, 20, 16, 0.9)",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
+                      Research specialist used
+                    </p>
+                    <p
+                      style={{
+                        margin: 0,
+                        color: "var(--muted)",
+                        lineHeight: 1.45,
+                        fontSize: 12,
+                      }}
+                    >
+                      {researchContext.summary}
+                    </p>
+                  </article>
+                ) : null}
+              </div>
             </article>
 
             <article
               style={{
-                padding: 20,
-                borderRadius: 24,
+                padding: 16,
+                borderRadius: 16,
                 border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
+                background: "rgba(16, 13, 11, 0.96)",
+                boxShadow: "var(--shadow-soft)",
               }}
             >
               <h2 style={{ marginTop: 0 }}>Pending Approvals</h2>
@@ -649,27 +715,27 @@ export function DeskShell() {
                     <article
                       key={execution.id}
                       style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        border: "1px solid rgba(148, 163, 184, 0.14)",
-                        background: "rgba(2, 6, 23, 0.65)",
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid rgba(196, 180, 154, 0.12)",
+                        background: "rgba(24, 20, 16, 0.9)",
                         display: "grid",
-                        gap: 10,
+                        gap: 8,
                       }}
                     >
                       <div>
-                        <p style={{ margin: "0 0 4px", fontWeight: 700 }}>
+                        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
                           {execution.toolName}
                         </p>
-                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
                           {execution.summary}
                         </p>
                         <p
                           style={{
                             margin: "6px 0 0",
                             color: "var(--muted)",
-                            fontSize: 12,
-                            lineHeight: 1.5,
+                            fontSize: 11,
+                            lineHeight: 1.4,
                           }}
                         >
                           Request: {formatApprovalRequest(execution.requestJson)}
@@ -705,8 +771,8 @@ export function DeskShell() {
                 <a
                   href="/tools"
                   style={{
-                    color: "var(--accent)",
-                    fontSize: 13,
+                    color: "var(--accent-strong)",
+                    fontSize: 12,
                     textDecoration: "none",
                   }}
                 >
@@ -717,104 +783,15 @@ export function DeskShell() {
 
             <article
               style={{
-                padding: 20,
-                borderRadius: 24,
+                padding: 16,
+                borderRadius: 16,
                 border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Memory In Play</h2>
-              <div style={{ display: "grid", gap: 12 }}>
-                {memoryContext.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--muted)" }}>
-                    No strong memory match on the latest turn.
-                  </p>
-                ) : (
-                  memoryContext.map((memory) => (
-                    <article
-                      key={memory.id}
-                      style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        border: "1px solid rgba(148, 163, 184, 0.14)",
-                        background: "rgba(2, 6, 23, 0.65)",
-                      }}
-                    >
-                      <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
-                        {memory.title ?? memory.summary ?? memory.contentText}
-                      </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                        {memory.memoryType} · importance {memory.importanceScore}
-                        {memory.pinned ? " · pinned" : ""}
-                      </p>
-                    </article>
-                  ))
-                )}
-              </div>
-            </article>
-
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Tasks and Research</h2>
-              <div style={{ display: "grid", gap: 12 }}>
-                {taskContext.length > 0 ? (
-                  taskContext.map((task) => (
-                    <article
-                      key={task.id}
-                      style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        border: "1px solid rgba(148, 163, 184, 0.14)",
-                        background: "rgba(2, 6, 23, 0.65)",
-                      }}
-                    >
-                      <p style={{ margin: "0 0 4px", fontWeight: 700 }}>{task.title}</p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                        {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
-                      </p>
-                    </article>
-                  ))
-                ) : (
-                  <p style={{ margin: 0, color: "var(--muted)" }}>
-                    No active reminder hooks in context.
-                  </p>
-                )}
-                {researchContext ? (
-                  <article
-                    style={{
-                      padding: 12,
-                      borderRadius: 14,
-                      border: "1px solid rgba(148, 163, 184, 0.14)",
-                      background: "rgba(2, 6, 23, 0.65)",
-                    }}
-                  >
-                    <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
-                      Research specialist used
-                    </p>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                      {researchContext.summary}
-                    </p>
-                  </article>
-                ) : null}
-              </div>
-            </article>
-
-            <article
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                border: "1px solid var(--border)",
-                background: "var(--panel-strong)",
+                background: "rgba(16, 13, 11, 0.96)",
+                boxShadow: "var(--shadow-soft)",
               }}
             >
               <h2 style={{ marginTop: 0 }}>Recent Trace Events</h2>
-              <div style={{ display: "grid", gap: 10 }}>
+              <div className="desk-list desk-list--scroll">
                 {activity.length === 0 ? (
                   <p style={{ margin: 0, color: "var(--muted)" }}>
                     No activity trace loaded yet.
@@ -824,19 +801,19 @@ export function DeskShell() {
                     <article
                       key={trace.id}
                       style={{
-                        padding: 12,
-                        borderRadius: 14,
-                        border: "1px solid rgba(148, 163, 184, 0.14)",
-                        background: "rgba(2, 6, 23, 0.65)",
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid rgba(196, 180, 154, 0.12)",
+                        background: "rgba(24, 20, 16, 0.9)",
                       }}
                     >
-                      <p style={{ margin: "0 0 6px", fontWeight: 700 }}>
+                      <p style={{ margin: "0 0 5px", fontWeight: 700, fontSize: 13 }}>
                         {trace.eventName}
                       </p>
-                      <p style={{ margin: "0 0 4px", color: "var(--muted)", fontSize: 13 }}>
+                      <p style={{ margin: "0 0 4px", color: "var(--muted)", fontSize: 11 }}>
                         {formatTimestamp(trace.createdAt)}
                       </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
                         {formatTracePayload(trace.payload)}
                       </p>
                     </article>
@@ -846,6 +823,48 @@ export function DeskShell() {
             </article>
           </aside>
       </section>
+      </div>
+      <div style={{ order: 2, display: "grid", gap: 18 }}>
+        <PageHero
+          eyebrow="Secretary Desk"
+          title="Desk and live runtime"
+          description={
+            <p>
+              Live turns, current memory pressure, approvals, and runtime traces stay in
+              view here without making the whole page feel like a spreadsheet of cards.
+            </p>
+          }
+          meta={
+            <p>
+              {error ??
+                (isSending
+                  ? "Sending through the worker..."
+                  : isRefreshing
+                    ? "Refreshing saved history..."
+                    : "Ready for the next turn.")}
+            </p>
+          }
+          actions={
+            <button type="button" className="button-primary" onClick={startFreshConversation}>
+              New conversation
+            </button>
+          }
+        />
+
+        <StatGrid>
+          <StatCard label="Threads" value={conversations.length} detail="Recent saved conversations" />
+          <StatCard label="Pending approvals" value={pendingApprovals.length} detail="Actions waiting on you" />
+          <StatCard label="Memory hits" value={memoryContext.length} detail="Active memory items in the latest turn" />
+          <StatCard
+            label="Runtime traces"
+            value={activity.length}
+            detail={conversationId ? "Recent events for the active thread" : "Start a thread to inspect traces"}
+            tone="soft"
+          />
+        </StatGrid>
+
+        {error ? <NoticeBanner tone="warning">{error}</NoticeBanner> : null}
+      </div>
     </AppPage>
   );
 }
