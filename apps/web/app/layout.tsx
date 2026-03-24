@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Secretary Workspace",
-  description: "Desk, memory, and runtime activity surfaces for the Secretary-first assistant.",
+  description: "Desk, memory, activity, channels, and voice surfaces for the Secretary-first assistant.",
 };
 
 export default function RootLayout({
@@ -66,6 +66,9 @@ export default function RootLayout({
               </Link>
               <Link href="/channels" style={{ textDecoration: "none" }}>
                 Channels
+              </Link>
+              <Link href="/voice" style={{ textDecoration: "none" }}>
+                Voice
               </Link>
             </div>
           </div>

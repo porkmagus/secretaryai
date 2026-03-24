@@ -1,8 +1,10 @@
+import { writeFile } from "node:fs/promises";
 import { and, asc, desc, eq, isNull, lte, not, or } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
   activityTraces,
   integrations,
+  speechArtifacts,
   tasks,
   type DbClient,
 } from "@secretary/db";
@@ -25,9 +27,20 @@ import type { Infrastructure } from "./infrastructure.js";
 import {
   attachExternalMessageIdToMessage,
   createQueuedMemoryJob,
+  findConversationIdByChannelRef,
   markMemoryJobEnqueueFailed,
   persistChatTurn,
 } from "./chat-persistence.js";
+import {
+  createSpeechArtifact,
+  recordSpeechTrace,
+  updateSpeechArtifact,
+} from "./speech-runtime.js";
+import {
+  createSpeechStorageKey,
+  ensureSpeechStoragePath,
+} from "./speech-storage.js";
+import { transcribeAudioFile } from "./stt-service.js";
 
 const telegramIntegrationId = "telegram";
 
@@ -117,6 +130,80 @@ async function recordTelegramTrace(params: {
     eventName: params.eventName,
     payloadJson: params.payload,
   });
+}
+
+async function downloadTelegramVoiceArtifact(params: {
+  config: AppConfig;
+  dbClient: DbClient;
+  normalized: ReturnType<typeof normalizeTelegramUpdate> extends infer T ? Exclude<T, null> : never;
+  traceId: string;
+}) {
+  if (!params.normalized.voice) {
+    return null;
+  }
+
+  const conversationId = await findConversationIdByChannelRef(
+    params.dbClient,
+    "telegram",
+    params.normalized.chatId,
+  );
+  const client = getTelegramClient(params.config);
+  const file = await client.getFile(params.normalized.voice.fileId);
+
+  if (!file.file_path) {
+    throw new Error("Telegram voice note did not include a downloadable file path.");
+  }
+
+  const extension = file.file_path.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "dat";
+  const storageKey = createSpeechStorageKey(
+    "telegram",
+    `${Date.now()}-${params.normalized.chatId}-${params.normalized.messageId}.${extension}`,
+  );
+  const storagePath = await ensureSpeechStoragePath(storageKey);
+  const download = await client.downloadFile(file.file_path);
+
+  await writeFile(storagePath, download.data);
+
+  const artifactId = await createSpeechArtifact({
+    dbClient: params.dbClient,
+    conversationId,
+    messageId: null,
+    artifactKind: "telegram_voice_note",
+    status: "stored",
+    storageKey,
+    mimeType: params.normalized.voice.mimeType ?? download.contentType,
+    durationMs: params.normalized.voice.durationMs,
+    transcriptText: null,
+    sourceChannel: "telegram",
+    sourceRef: params.normalized.voice.fileId,
+    metadataJson: {
+      chatId: params.normalized.chatId,
+      messageId: params.normalized.messageId,
+      updateId: params.normalized.updateId,
+    },
+  });
+
+  await recordSpeechTrace({
+    dbClient: params.dbClient,
+    conversationId,
+    parentTraceId: params.traceId,
+    eventName: "speech.telegram_voice.stored",
+    payload: {
+      artifactId,
+      chatId: params.normalized.chatId,
+      fileId: params.normalized.voice.fileId,
+      mimeType: params.normalized.voice.mimeType ?? download.contentType ?? null,
+      storageKey,
+    },
+  });
+
+  return {
+    artifactId,
+    conversationId,
+    mimeType: params.normalized.voice.mimeType ?? download.contentType ?? null,
+    storageKey,
+    storagePath,
+  };
 }
 
 async function refreshTelegramHealth(
@@ -518,12 +605,139 @@ export async function handleTelegramWebhookUpdate(params: {
     };
   }
 
-  const requestText =
-    normalized.text ??
-    (normalized.hasVoice
-      ? "Voice note received."
-      : "Unsupported Telegram message received.");
   const traceId = `telegram_${normalized.updateId}`;
+  await recordTelegramTrace({
+    dbClient: params.infrastructure.dbClient,
+    conversationId: null,
+    parentTraceId: traceId,
+    eventName: "telegram.update.received",
+    payload: {
+      chatId: normalized.chatId,
+      chatLabel: normalized.chatLabel,
+      hasVoice: normalized.hasVoice,
+      hasText: Boolean(normalized.text),
+      textLength: normalized.text?.length ?? 0,
+      updateId: normalized.updateId,
+    },
+  });
+
+  let requestText = normalized.text;
+  let audioAttachment:
+    | {
+        mimeType: string;
+        storageKey: string;
+      }
+    | undefined;
+
+  if (!requestText && normalized.voice) {
+    const voiceArtifact = await downloadTelegramVoiceArtifact({
+      config: params.config,
+      dbClient: params.infrastructure.dbClient,
+      normalized,
+      traceId,
+    });
+
+    if (voiceArtifact) {
+      audioAttachment = {
+        mimeType: voiceArtifact.mimeType ?? "audio/ogg",
+        storageKey: voiceArtifact.storageKey,
+      };
+      const transcription = await transcribeAudioFile({
+        config: params.config,
+        filePath: voiceArtifact.storagePath,
+        mimeType: voiceArtifact.mimeType,
+      });
+
+      if (!transcription) {
+        const client = getTelegramClient(params.config);
+        const sentMessageIds = await client.sendMessageChunks(
+          normalized.chatId,
+          "I saved your voice note locally, but speech transcription is not configured yet. Add STT_BASE_URL when you're ready for voice-to-text.",
+        );
+
+        await recordSpeechTrace({
+          dbClient: params.infrastructure.dbClient,
+          conversationId: voiceArtifact.conversationId,
+          parentTraceId: traceId,
+          eventName: "speech.transcription.awaiting_configuration",
+          payload: {
+            artifactId: voiceArtifact.artifactId,
+            storageKey: voiceArtifact.storageKey,
+          },
+        });
+
+        await recordTelegramTrace({
+          dbClient: params.infrastructure.dbClient,
+          conversationId: voiceArtifact.conversationId,
+          parentTraceId: traceId,
+          eventName: "telegram.reply.sent",
+          payload: {
+            assistantMessageId: null,
+            chatId: normalized.chatId,
+            sentMessageIds,
+            mode: "voice_acknowledgement",
+          },
+        });
+
+        return {
+          ignored: false,
+          conversationId: voiceArtifact.conversationId ?? null,
+          traceId,
+        };
+      }
+
+      requestText = transcription.text;
+
+      await updateSpeechArtifact({
+        dbClient: params.infrastructure.dbClient,
+        artifactId: voiceArtifact.artifactId,
+        conversationId: voiceArtifact.conversationId,
+        status: "transcribed",
+        durationMs: transcription.durationMs ?? normalized.voice.durationMs,
+        transcriptText: transcription.text,
+      });
+
+      await recordSpeechTrace({
+        dbClient: params.infrastructure.dbClient,
+        conversationId: voiceArtifact.conversationId,
+        parentTraceId: traceId,
+        eventName: "speech.transcription.completed",
+        payload: {
+          artifactId: voiceArtifact.artifactId,
+          storageKey: voiceArtifact.storageKey,
+          transcriptLength: transcription.text.length,
+        },
+      });
+    }
+  }
+
+  if (!requestText) {
+    const client = getTelegramClient(params.config);
+    const sentMessageIds = await client.sendMessageChunks(
+      normalized.chatId,
+      "I can process text right now, and voice-note intake is wired for Phase 4. If this message had no transcriptable content, send text or configure STT for voice transcription.",
+    );
+
+    await recordTelegramTrace({
+      dbClient: params.infrastructure.dbClient,
+      conversationId: null,
+      parentTraceId: traceId,
+      eventName: "telegram.reply.sent",
+      payload: {
+        assistantMessageId: null,
+        chatId: normalized.chatId,
+        sentMessageIds,
+        mode: "unsupported_fallback",
+      },
+    });
+
+    return {
+      ignored: false,
+      conversationId: null,
+      traceId,
+    };
+  }
+
   const persistedTurn = await persistChatTurn({
     dbClient: params.infrastructure.dbClient,
     defaultPersonaId: params.config.defaultPersonaId,
@@ -533,6 +747,15 @@ export async function handleTelegramWebhookUpdate(params: {
       userId: params.config.defaultUserId,
       message: {
         text: requestText,
+        attachments: audioAttachment
+          ? [
+              {
+                kind: "audio",
+                mimeType: audioAttachment.mimeType,
+                storageKey: audioAttachment.storageKey,
+              },
+            ]
+          : undefined,
       },
       metadata: {
         requestId: traceId,
@@ -545,6 +768,22 @@ export async function handleTelegramWebhookUpdate(params: {
     traceId,
   });
 
+  if (normalized.voice && audioAttachment) {
+    const latestArtifact = await params.infrastructure.dbClient.db.query.speechArtifacts.findFirst({
+      where: eq(speechArtifacts.sourceRef, normalized.voice.fileId),
+      orderBy: (fields, { desc }) => [desc(fields.createdAt)],
+    });
+
+    if (latestArtifact) {
+      await updateSpeechArtifact({
+        dbClient: params.infrastructure.dbClient,
+        artifactId: latestArtifact.id,
+        conversationId: persistedTurn.response.conversationId,
+        messageId: persistedTurn.userMessageId,
+      });
+    }
+  }
+
   await recordTelegramTrace({
     dbClient: params.infrastructure.dbClient,
     conversationId: persistedTurn.response.conversationId,
@@ -554,7 +793,7 @@ export async function handleTelegramWebhookUpdate(params: {
       chatId: normalized.chatId,
       chatLabel: normalized.chatLabel,
       hasVoice: normalized.hasVoice,
-      textLength: normalized.text?.length ?? 0,
+      textLength: requestText.length,
       updateId: normalized.updateId,
     },
   });
@@ -578,9 +817,7 @@ export async function handleTelegramWebhookUpdate(params: {
   }
 
   const client = getTelegramClient(params.config);
-  const replyText = normalized.text
-    ? persistedTurn.response.outputText
-    : "Telegram text is live now. Voice note handling lands in Phase 4, so send me text for the moment.";
+  const replyText = persistedTurn.response.outputText;
   const sentMessageIds = await client.sendMessageChunks(normalized.chatId, replyText);
 
   if (sentMessageIds[0]) {

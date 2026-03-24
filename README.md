@@ -1,6 +1,6 @@
 # HamCult - Secretary-First Personal Assistant
 
-This repository contains a polished Phase 1 through Phase 3 checkpoint for a self-hosted, single-user Secretary-first assistant system.
+This repository contains a polished Phase 1 through Phase 3 checkpoint plus an active Phase 4 voice foundation build for a self-hosted, single-user Secretary-first assistant system.
 
 ## Workspace Layout
 
@@ -10,6 +10,7 @@ This repository contains a polished Phase 1 through Phase 3 checkpoint for a sel
 - `packages/core-runtime`: normalized runtime contracts and stub Secretary logic
 - `packages/db`: database schema and migration home
 - `packages/observability`: logger and trace helpers
+- `services/stt-faster-whisper`: local CPU-first STT service for Phase 4 voice intake
 - `docker/compose`: local infrastructure definitions
 - `docs/adr`: architectural decision records
 
@@ -21,9 +22,11 @@ This repository contains a polished Phase 1 through Phase 3 checkpoint for a sel
 4. Create visible runtime storage folders with `npm run storage:prepare`
 5. Start local services with `npm run stack:up`
 6. Apply the current schema with `npm run db:migrate`
-7. Run the apps in separate terminals:
+7. Prepare the local speech service once with `npm run stt:setup`
+8. Run the apps in separate terminals:
    - `npm run dev:web`
    - `npm run dev:worker`
+   - `npm run dev:stt`
 
 ## Current Baseline
 
@@ -39,6 +42,7 @@ Primary local surfaces:
 - `/memory`: memory browser/editor with pin and suppress controls
 - `/activity`: runtime activity and trace inspection console
 - `/channels`: Telegram integration setup, health, test send, and reminder dispatch
+- `/voice`: voice profile and speech artifact inspection console
 
 ## Phase 1 Verification
 
@@ -95,6 +99,51 @@ The Phase 3 verifier checks:
 - due reminders can be dispatched through Telegram
 - disabling the integration removes webhook state cleanly
 
+## Phase 4 Foundations
+
+Phase 4 is in progress. The current checkpoint now includes:
+
+- speech storage under `runtime/speech`
+- seeded voice profiles and speech artifact tables
+- Telegram voice-note intake that stores inbound audio locally
+- a local STT hook through `STT_BASE_URL`
+- `/voice` UI for voice profile and speech artifact inspection
+- a repo-native CPU speech service in `services/stt-faster-whisper`
+
+### Local STT Setup
+
+The current Phase 4 build uses a local `faster-whisper` service, which the design doc specified as the first STT target.
+
+1. Make sure `ffmpeg` is available on `PATH`
+2. Run `npm run stt:setup`
+3. Make sure `.env` contains:
+   - `STT_BASE_URL=http://127.0.0.1:5001`
+   - `STT_PORT=5001`
+   - `STT_MODEL_SIZE=base`
+   - `STT_DEVICE=cpu`
+   - `STT_COMPUTE_TYPE=int8`
+4. Start the service with `npm run dev:stt`
+5. Confirm it is ready:
+   - `http://127.0.0.1:5001/health/live`
+   - `http://127.0.0.1:5001/health/ready`
+
+The first ready check will download and load the configured Whisper model into `runtime/speech/models`.
+
+## Phase 4 Verification
+
+To verify the current Phase 4 foundation checkpoint:
+
+1. Make sure the core stack is running with `npm run stack:up`
+2. Run `npm run phase4:verify`
+
+The current Phase 4 verifier checks:
+
+- the Phase 4 migration applies
+- the worker seeds a default voice profile
+- the `/voice` page loads
+- voice profile data is available through the web API
+- speech artifacts round-trip through the worker and web API
+
 ## Live Telegram Test
 
 To verify the real bot instead of the fake verifier:
@@ -146,6 +195,6 @@ This current checkpoint now includes:
 - recent conversation browser in the Desk
 - reminder/task hooks created from memory processing
 - Telegram webhook handling, outbound replies, conversation routing, settings, and reminder delivery
-- automated Phase 1, Phase 2, and Phase 3 verification flows
-
-Voice and tool execution are still intentionally reserved for later phases.
+- voice profile seeding, speech artifact persistence, and Telegram voice-note intake foundations
+- a local CPU-first faster-whisper speech service with repo-native setup scripts
+- automated Phase 1, Phase 2, Phase 3, and Phase 4 foundation verification flows

@@ -126,3 +126,76 @@ export async function recordSpeechTrace(params: {
     payloadJson: params.payload,
   });
 }
+
+export async function createSpeechArtifact(params: {
+  dbClient: DbClient;
+  conversationId: string | null;
+  messageId: string | null;
+  artifactKind: SpeechArtifactRecord["artifactKind"];
+  status: SpeechArtifactRecord["status"];
+  storageKey: string;
+  mimeType?: string | null;
+  durationMs?: number | null;
+  transcriptText?: string | null;
+  sourceChannel: SpeechArtifactRecord["sourceChannel"];
+  sourceRef?: string | null;
+  metadataJson?: Record<string, unknown>;
+}) {
+  const id = createMessageId();
+
+  await params.dbClient.db.insert(speechArtifacts).values({
+    id,
+    conversationId: params.conversationId,
+    messageId: params.messageId,
+    artifactKind: params.artifactKind,
+    status: params.status,
+    storageKey: params.storageKey,
+    mimeType: params.mimeType ?? null,
+    durationMs: params.durationMs ?? null,
+    transcriptText: params.transcriptText ?? null,
+    sourceChannel: params.sourceChannel,
+    sourceRef: params.sourceRef ?? null,
+    metadataJson: params.metadataJson ?? {},
+  });
+
+  return id;
+}
+
+export async function updateSpeechArtifact(params: {
+  dbClient: DbClient;
+  artifactId: string;
+  conversationId?: string | null;
+  messageId?: string | null;
+  status?: SpeechArtifactRecord["status"];
+  durationMs?: number | null;
+  transcriptText?: string | null;
+}) {
+  const updatePayload: Partial<typeof speechArtifacts.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+
+  if (params.conversationId !== undefined) {
+    updatePayload.conversationId = params.conversationId;
+  }
+
+  if (params.messageId !== undefined) {
+    updatePayload.messageId = params.messageId;
+  }
+
+  if (params.status !== undefined) {
+    updatePayload.status = params.status;
+  }
+
+  if (params.durationMs !== undefined) {
+    updatePayload.durationMs = params.durationMs;
+  }
+
+  if (params.transcriptText !== undefined) {
+    updatePayload.transcriptText = params.transcriptText;
+  }
+
+  await params.dbClient.db
+    .update(speechArtifacts)
+    .set(updatePayload)
+    .where(eq(speechArtifacts.id, params.artifactId));
+}

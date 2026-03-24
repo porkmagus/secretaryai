@@ -5,9 +5,13 @@ import {
   markMemoryCandidateJobFailed,
   processMemoryCandidateJob,
 } from "./memory-engine.js";
+import { ensureSpeechStorageLayout } from "./speech-storage.js";
+import { ensureDefaultVoiceProfile } from "./speech-runtime.js";
 
-export function createInfrastructure(config: AppConfig) {
+export async function createInfrastructure(config: AppConfig) {
   const dbClient = createDbClient(config.databaseUrl);
+  await ensureSpeechStorageLayout();
+  await ensureDefaultVoiceProfile(dbClient);
   const memoryQueue = createMemoryQueue(config.redisUrl, {
     async processCandidate(jobId, payload) {
       try {
@@ -60,4 +64,4 @@ export function createInfrastructure(config: AppConfig) {
   };
 }
 
-export type Infrastructure = ReturnType<typeof createInfrastructure>;
+export type Infrastructure = Awaited<ReturnType<typeof createInfrastructure>>;

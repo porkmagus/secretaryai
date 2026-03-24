@@ -6,10 +6,12 @@ import {
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
   type MemoryListResponse,
+  type SpeechArtifactListResponse,
   type TaskListResponse,
   type TelegramTestMessageRequest,
   type UpdateTelegramIntegrationRequest,
   type UpdateMemoryRequest,
+  type VoiceProfileListResponse,
   createTraceId,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
@@ -37,12 +39,16 @@ import {
   syncTelegramWebhook,
   updateTelegramIntegrationSettings,
 } from "./lib/telegram-integration.js";
+import {
+  listSpeechArtifacts,
+  listVoiceProfiles,
+} from "./lib/speech-runtime.js";
 
 export async function buildServer() {
   const config = loadAppConfig(process.env);
   const logger = createLogger("worker");
   const app = Fastify({ logger: false });
-  const infrastructure = createInfrastructure(config);
+  const infrastructure = await createInfrastructure(config);
 
   await app.register(cors, {
     origin: true,
@@ -240,6 +246,47 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load tasks.",
+      });
+    }
+  });
+
+  app.get<{
+    Querystring: {
+      conversationId?: string;
+    };
+  }>("/runtime/speech/artifacts", async (request, reply) => {
+    try {
+      const response: SpeechArtifactListResponse = await listSpeechArtifacts(
+        infrastructure.dbClient,
+        request.query.conversationId,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.speech.artifacts.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load speech artifacts.",
+      });
+    }
+  });
+
+  app.get("/runtime/voice/profiles", async (_, reply) => {
+    try {
+      const response: VoiceProfileListResponse = await listVoiceProfiles(
+        infrastructure.dbClient,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.voice.profiles.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load voice profiles.",
       });
     }
   });

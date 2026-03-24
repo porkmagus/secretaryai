@@ -11,6 +11,13 @@ for (const relativePath of [
   "runtime/postgres/data",
   "runtime/redis",
   "runtime/redis/data",
+  "runtime/speech",
+  "runtime/speech/inbound",
+  "runtime/speech/models",
+  "runtime/speech/transcripts",
+  "runtime/speech/tts",
+  "runtime/speech/profiles",
+  "runtime/venvs",
 ]) {
   const fullPath = resolve(root, relativePath);
   await mkdir(fullPath, { recursive: true });

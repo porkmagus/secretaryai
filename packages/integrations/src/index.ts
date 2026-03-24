@@ -43,6 +43,13 @@ export type TelegramWebhookInfo = {
   last_error_message?: string;
 };
 
+export type TelegramFile = {
+  file_id: string;
+  file_unique_id?: string;
+  file_path?: string;
+  file_size?: number;
+};
+
 export type TelegramSendMessageResult = {
   message_id: number;
 };
@@ -56,6 +63,13 @@ export type NormalizedTelegramInboundMessage = {
   userDisplayName: string;
   text: string | null;
   hasVoice: boolean;
+  voice:
+    | {
+        fileId: string;
+        mimeType: string | null;
+        durationMs: number | null;
+      }
+    | null;
 };
 
 type TelegramMethodResponse<T> = {
@@ -104,6 +118,16 @@ export function normalizeTelegramUpdate(update: TelegramUpdate) {
     ),
     text: trimToNull(message.text ?? message.caption),
     hasVoice: Boolean(message.voice),
+    voice: message.voice
+      ? {
+          fileId: message.voice.file_id,
+          mimeType: trimToNull(message.voice.mime_type),
+          durationMs:
+            typeof message.voice.duration === "number"
+              ? message.voice.duration * 1000
+              : null,
+        }
+      : null,
   } satisfies NormalizedTelegramInboundMessage;
 }
 
@@ -147,7 +171,9 @@ export function createTelegramClient(options: {
   apiBaseUrl: string;
   botToken: string;
 }) {
-  const baseUrl = `${options.apiBaseUrl.replace(/\/+$/g, "")}/bot${options.botToken}`;
+  const apiRoot = options.apiBaseUrl.replace(/\/+$/g, "");
+  const baseUrl = `${apiRoot}/bot${options.botToken}`;
+  const fileBaseUrl = `${apiRoot}/file/bot${options.botToken}`;
 
   async function callMethod<T>(method: string, body?: Record<string, unknown>) {
     const response = await fetch(`${baseUrl}/${method}`, {
@@ -173,6 +199,11 @@ export function createTelegramClient(options: {
     },
     async getWebhookInfo() {
       return callMethod<TelegramWebhookInfo>("getWebhookInfo");
+    },
+    async getFile(fileId: string) {
+      return callMethod<TelegramFile>("getFile", {
+        file_id: fileId,
+      });
     },
     async setWebhook(url: string, secretToken?: string | null) {
       return callMethod<boolean>("setWebhook", {
@@ -204,6 +235,20 @@ export function createTelegramClient(options: {
       }
 
       return sentMessageIds;
+    },
+    async downloadFile(filePath: string) {
+      const response = await fetch(`${fileBaseUrl}/${filePath.replace(/^\/+/g, "")}`, {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Telegram file download failed with ${response.status}.`);
+      }
+
+      return {
+        contentType: response.headers.get("content-type"),
+        data: Buffer.from(await response.arrayBuffer()),
+      };
     },
   };
 }

@@ -11,6 +11,11 @@ coverage/
 drizzle/
 runtime/postgres/data/*
 runtime/redis/data/*
+runtime/speech/inbound/*
+runtime/speech/transcripts/*
+runtime/speech/tts/*
+runtime/speech/models/*
+runtime/venvs/*
 !runtime/postgres/.gitkeep
 !runtime/redis/.gitkeep
 !runtime/README.md
