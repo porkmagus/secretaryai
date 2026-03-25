@@ -214,11 +214,14 @@ export type ToolApprovalDecisionResponse = {
     | null;
 };
 
+export type PersonaGender = "male" | "female";
+
 export type PersonaSettingsRecord = {
   id: string;
   name: string;
   promptTemplate: string;
   toneMode: string | null;
+  gender: PersonaGender | null;
   behaviorRules: string[];
   voiceProfileId: string | null;
   isDefault: boolean;
@@ -227,15 +230,88 @@ export type PersonaSettingsRecord = {
 };
 
 export type PersonaSettingsResponse = {
+  conversationEngine: {
+    mode: "deterministic_fallback" | "provider";
+    provider: InferenceProviderId | null;
+    model: string | null;
+    summary: string;
+  };
   persona: PersonaSettingsRecord;
+  personaProfile: string;
+  personaFilePath: string | null;
+  soulFilePath: string | null;
   voiceProfiles: VoiceProfileRecord[];
+};
+
+export type InferenceProviderId =
+  | "moonshot"
+  | "ollama_local"
+  | "ollama_cloud"
+  | "openrouter"
+  | "huggingface"
+  | "opencode";
+
+export type InferenceProviderAuthMode =
+  | "api_key"
+  | "none"
+  | "account_authorized";
+
+export type InferenceSettingsResponse = {
+  settings: {
+    enabled: boolean;
+    mode: "deterministic_fallback" | "provider";
+    selectedProviderId: InferenceProviderId | null;
+    reasoningEffort: "minimal" | "low" | "medium" | "high";
+    source: "file" | "env" | "default";
+    summary: string;
+  };
+  providers: Array<{
+    id: InferenceProviderId;
+    label: string;
+    description: string;
+    authMode: InferenceProviderAuthMode;
+    baseUrl: string | null;
+    model: string | null;
+    maxOutputTokens: number | null;
+    apiKeyConfigured: boolean;
+    supportsModelFetch: boolean;
+    supportsReasoningEffort: boolean;
+    isSelected: boolean;
+    summary: string;
+  }>;
+};
+
+export type UpdateInferenceSettingsRequest = {
+  enabled?: boolean;
+  selectedProviderId?: InferenceProviderId | null;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  providerConfig?: {
+    id: InferenceProviderId;
+    baseUrl?: string | null;
+    model?: string | null;
+    maxOutputTokens?: number | null;
+    apiKey?: string | null;
+  };
+};
+
+export type InferenceModelListResponse = {
+  providerId: InferenceProviderId;
+  source: "remote" | "static";
+  models: Array<{
+    id: string;
+    name?: string | null;
+    ownedBy?: string | null;
+    description?: string | null;
+  }>;
 };
 
 export type UpdatePersonaSettingsRequest = {
   name?: string;
   promptTemplate?: string;
   toneMode?: string | null;
+  gender?: PersonaGender | null;
   behaviorRules?: string[];
+  personaProfile?: string;
   voiceProfileId?: string | null;
 };
 
@@ -244,6 +320,10 @@ export type SystemHealthResponse = {
   services: {
     worker: {
       status: "ok";
+      summary: string;
+    };
+    conversation: {
+      status: "ok" | "attention";
       summary: string;
     };
     postgres: {
@@ -255,6 +335,10 @@ export type SystemHealthResponse = {
       summary: string;
     };
     telegram: {
+      status: "ok" | "degraded" | "not_configured";
+      summary: string;
+    };
+    heartbeat: {
       status: "ok" | "degraded" | "not_configured";
       summary: string;
     };
@@ -417,6 +501,15 @@ export type RuntimeTaskContextItem = {
   reminderAt: string | null;
 };
 
+export type RuntimePersonaContext = {
+  name: string;
+  personaProfile?: string;
+  soul: string;
+  toneMode?: string | null;
+  gender?: PersonaGender | null;
+  behaviorRules: string[];
+};
+
 export type ResearchSpecialistResult = {
   specialist: "research";
   mode: "comparison" | "research_brief";
@@ -429,6 +522,7 @@ export type RuntimeTurnContext = {
   conversationId: string;
   recentMessages: RuntimeContextMessage[];
   userDisplayName?: string;
+  persona?: RuntimePersonaContext;
   relevantMemories: RuntimeMemoryContextItem[];
   activeTasks: RuntimeTaskContextItem[];
   researchResult?: ResearchSpecialistResult | null;
@@ -499,12 +593,16 @@ export type TaskListResponse = {
 export type TelegramIntegrationStatusResponse = {
   integration: {
     enabled: boolean;
+    mode: "webhook" | "polling";
+    deliveryMode: TelegramDeliveryMode;
+    idleTimeoutMinutes: number;
     envConfigured: boolean;
     botConfigured: boolean;
     healthStatus: string;
     healthSummary: string;
     lastCheckedAt: string | null;
     lastError: string | null;
+    lastWebPresenceAt: string | null;
     webhookUrl: string | null;
     desiredWebhookUrl: string | null;
     pendingUpdateCount: number | null;
@@ -523,10 +621,28 @@ export type TelegramIntegrationStatusResponse = {
   };
 };
 
+export type TelegramDeliveryMode =
+  | "web_only"
+  | "mirror_all"
+  | "telegram_when_away"
+  | "important_only";
+
 export type UpdateTelegramIntegrationRequest = {
   enabled?: boolean;
+  mode?: "webhook" | "polling";
   webhookUrl?: string | null;
   defaultChatId?: string | null;
+  deliveryMode?: TelegramDeliveryMode;
+  idleTimeoutMinutes?: number;
+};
+
+export type TelegramPresenceUpdateRequest = {
+  surface: "desk";
+};
+
+export type TelegramPresenceUpdateResponse = {
+  ok: boolean;
+  lastWebPresenceAt: string;
 };
 
 export type TelegramTestMessageRequest = {
@@ -553,6 +669,36 @@ export type TelegramReminderDispatchResponse = {
   errors: string[];
 };
 
+export type HeartbeatIntegrationStatusResponse = {
+  integration: {
+    enabled: boolean;
+    healthStatus: "ok" | "disabled" | "degraded";
+    healthSummary: string;
+    intervalMinutes: number;
+    prompt: string;
+    conversationId: string | null;
+    lastRunAt: string | null;
+    nextRunAt: string | null;
+    lastCheckedAt: string | null;
+    lastError: string | null;
+  };
+};
+
+export type UpdateHeartbeatIntegrationRequest = {
+  enabled?: boolean;
+  intervalMinutes?: number;
+  prompt?: string | null;
+};
+
+export type HeartbeatRunResponse = {
+  ok: boolean;
+  traceId: string;
+  conversationId: string;
+  assistantMessageId: string;
+  outputPreview: string;
+  nextRunAt: string | null;
+};
+
 export function createTraceId() {
   return `trace_${crypto.randomUUID()}`;
 }
@@ -569,6 +715,17 @@ function cleanText(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function firstSentence(text: string | undefined) {
+  const normalized = cleanText(text ?? "");
+
+  if (!normalized) {
+    return "";
+  }
+
+  const match = normalized.match(/[^.!?]+[.!?]?/);
+  return match?.[0]?.trim() ?? normalized;
+}
+
 function isGreeting(text: string) {
   return /^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(
     text,
@@ -583,6 +740,52 @@ function isMemoryIntent(text: string) {
 
 function isStatusQuestion(text: string) {
   return /\b(status|what can you do|what do you do|current scope|phase 1)\b/i.test(
+    text,
+  );
+}
+
+function isTaskIntent(text: string) {
+  return /\b(task|tasks|todo|to-do|remind|reminder|due|schedule|scheduled)\b/i.test(
+    text,
+  );
+}
+
+function isMetaRuntimeQuestion(text: string) {
+  return /\b(memory issues|repeating|repeat yourself|stuck|bug|broken|glitch|what happened|why are you)\b/i.test(
+    text,
+  );
+}
+
+function isVoiceQuestion(text: string) {
+  return /\b(voice|speak|speaking|audio|tts|sound)\b/i.test(text);
+}
+
+function isFeelingQuestion(text: string) {
+  return /\b(how are you|how are you feeling|how do you feel|are you okay|feeling better|doing better|feel more normal|normal yet|more like yourself)\b/i.test(
+    text,
+  );
+}
+
+function isPushForDirectAnswer(text: string) {
+  return /\b(answer the question|be direct|stop that|stop narrating|just answer|can you answer)\b/i.test(
+    text,
+  );
+}
+
+function isImprovementIntent(text: string) {
+  return /\b(upgrade|upgrades|improve|improvement|improvements|better|polish|suggestion|suggestions|what should we do|what needs work)\b/i.test(
+    text,
+  );
+}
+
+function isOpinionIntent(text: string) {
+  return /\b(what do you think|your take|your thoughts|should we|would you|do you think|what would you do)\b/i.test(
+    text,
+  );
+}
+
+function isDetailRequest(text: string) {
+  return /\b(give me details|more details|tell me more|be specific|elaborate|more detail|go deeper|say more|details please)\b/i.test(
     text,
   );
 }
@@ -604,6 +807,9 @@ function summarizeRecentContext(recentMessages: RuntimeContextMessage[]) {
   const lastUserMessage = [...nonSystem]
     .reverse()
     .find((message) => message.role === "user");
+  const lastAssistantMessage = [...nonSystem]
+    .reverse()
+    .find((message) => message.role === "assistant");
   const earlierUserCount = Math.max(
     nonSystem.filter((message) => message.role === "user").length - 1,
     0,
@@ -612,7 +818,44 @@ function summarizeRecentContext(recentMessages: RuntimeContextMessage[]) {
   return {
     earlierUserCount,
     hasPriorContext: nonSystem.length > 1,
+    lastAssistantMessage: lastAssistantMessage?.text,
     lastUserMessage: lastUserMessage?.text,
+  };
+}
+
+function normalizeForComparison(text: string | undefined) {
+  return cleanText(text ?? "").toLowerCase();
+}
+
+function wasRecentlyMentioned(
+  lastAssistantMessage: string | undefined,
+  text: string,
+) {
+  const normalizedAssistant = normalizeForComparison(lastAssistantMessage);
+  const normalizedText = normalizeForComparison(text);
+
+  return normalizedAssistant.length > 0 && normalizedAssistant.includes(normalizedText);
+}
+
+function isAcknowledgement(text: string) {
+  return /\b(thanks|thank you|got it|okay|ok|cool|sounds good|understood|alright)\b/i.test(
+    text,
+  );
+}
+
+function isShortFollowUp(text: string) {
+  return cleanText(text).split(/\s+/).length <= 6;
+}
+
+function soulStyleLead(context: RuntimeTurnContext) {
+  const personaName = context.persona?.name?.trim() || "Secretary";
+  const tone = context.persona?.toneMode?.trim();
+  const soulLine = firstSentence(context.persona?.soul);
+
+  return {
+    personaName,
+    soulLine,
+    tone,
   };
 }
 
@@ -621,28 +864,35 @@ export function generateSecretaryReply(
   context: RuntimeTurnContext,
 ) {
   const text = cleanText(request.message.text);
-  const lower = text.toLowerCase();
-  const { earlierUserCount, hasPriorContext } = summarizeRecentContext(
+  const { hasPriorContext, lastAssistantMessage, lastUserMessage } = summarizeRecentContext(
     context.recentMessages,
   );
+  const { personaName, soulLine, tone } = soulStyleLead(context);
   const relevantMemories = context.relevantMemories.slice(0, 3);
-  const activeTasks = context.activeTasks.slice(0, 3);
+  const activeTasks = context.activeTasks
+    .filter(
+      (task, index, list) =>
+        list.findIndex(
+          (candidate) =>
+            normalizeForComparison(candidate.title) === normalizeForComparison(task.title),
+        ) === index,
+    )
+    .slice(0, 3);
 
-  const contextLead = hasPriorContext
-    ? `I'm keeping this in the same conversation and I can see ${earlierUserCount} earlier user turn${
-        earlierUserCount === 1 ? "" : "s"
-      } in context.`
-    : "I'm treating this as the start of a new conversation thread.";
   const memoryLead =
     relevantMemories.length > 0
       ? `Relevant memory in play: ${relevantMemories
           .map((memory) => memory.title ?? memory.summary ?? memory.contentText)
           .join(" | ")}.`
       : "I don't have a strong stored memory match for this turn yet.";
+  const shouldMentionMemoryLead =
+    relevantMemories.length > 0 &&
+    !wasRecentlyMentioned(lastAssistantMessage, memoryLead);
   const taskLead =
     activeTasks.length > 0
       ? `Open reminders/tasks: ${activeTasks.map((task) => task.title).join(", ")}.`
       : "";
+  const shouldMentionTasks = isTaskIntent(text);
 
   if (context.researchResult) {
     const focus = context.researchResult.focusAreas.length > 0
@@ -652,40 +902,128 @@ export function generateSecretaryReply(
       ? ` Suggested next step: ${context.researchResult.suggestedNextStep}.`
       : "";
 
-    return `${contextLead} I delegated an internal research pass before responding. ${context.researchResult.summary}.${focus}${nextStep}`;
+    return `I delegated an internal research pass before responding. ${context.researchResult.summary}.${focus}${nextStep}`;
   }
 
   if (isGreeting(text)) {
-    return `${contextLead} ${memoryLead} I'm ready to help with planning, note-taking, and carrying memory forward between conversations.`;
+    const soulPrefix = soulLine ? `${soulLine} ` : "";
+    return shouldMentionMemoryLead
+      ? `${soulPrefix}${personaName} is ready. ${memoryLead} I can help with planning, note-taking, and carrying memory forward between conversations.`
+      : `${soulPrefix}${personaName} is ready. I can help with planning, note-taking, and carrying memory forward between conversations.`;
+  }
+
+  if (isFeelingQuestion(text)) {
+    if (isMetaRuntimeQuestion(lastAssistantMessage ?? "")) {
+      return "Better now. I was getting too mechanical for a minute, but I should sound more like myself again.";
+    }
+
+    if (/\b(normal yet|feel more normal|more like yourself|doing better|feeling better)\b/i.test(text)) {
+      return "Yes, more normal. I'm sounding more like myself and less like a runtime log now.";
+    }
+
+    return tone
+      ? `Steady. ${personaName} feels ${tone.toLowerCase()} and fully here with you.`
+      : `Steady, warm, and present. ${personaName} is here with you.`;
   }
 
   if (isMemoryRecallIntent(text)) {
-    return `${contextLead} ${memoryLead} ${taskLead}`.trim();
+    return `${memoryLead} ${taskLead}`.trim();
   }
 
   if (isMemoryIntent(text)) {
-    return `${contextLead} ${memoryLead} I've marked this as something worth carrying forward. Your message is persisted locally and the Memory Specialist queue will turn it into longer-term context.`;
+    const memoryPrefix = shouldMentionMemoryLead ? `${memoryLead} ` : "";
+    return `${memoryPrefix}I've marked this as something worth carrying forward. Your message is persisted locally and the Memory Specialist queue will turn it into longer-term context.`;
   }
 
   if (isStatusQuestion(text)) {
-    return `${contextLead} ${memoryLead} Right now I can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply.`;
+    return `${personaName} can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply.`;
+  }
+
+  if (isMetaRuntimeQuestion(text)) {
+    return hasPriorContext
+      ? "I was leaning too hard on stored context in this thread. I should sound more direct now instead of echoing internal reminders back at you."
+      : "I was leaning too hard on stored context. I should sound more direct from here.";
+  }
+
+  if (isVoiceQuestion(text)) {
+    const styleTail = tone ? ` The current tone is ${tone}.` : "";
+    return `Yes. My voice path is working, and if an active voice profile is set then spoken replies use that profile.${styleTail}`;
+  }
+
+  if (isImprovementIntent(text)) {
+    const suggestions = [
+      "make the Desk voice-aware so the Secretary can speak naturally from the main chat surface",
+      "keep smoothing the reply style so normal conversation feels human instead of system-shaped",
+      "tighten memory ranking and task deduplication so old reminders do not crowd unrelated turns",
+      "turn onboarding into a real first-run guided setup instead of a lingering checklist page",
+      "add clearer daily-use conveniences like shortcuts, quick actions, and a calmer notification rhythm",
+    ];
+
+    return `I would focus on five upgrades next: ${suggestions.join("; ")}. If you want, I can turn that into a priority order and start working through it.`;
+  }
+
+  if (isOpinionIntent(text)) {
+    return hasPriorContext
+      ? "Here is my honest take: keep the Desk central, keep Samantha sounding human, and keep reducing friction anywhere the system still feels like infrastructure instead of company."
+      : "Here is my honest take: keep the experience calm, human, and easy to live with before adding more complexity.";
+  }
+
+  if (isDetailRequest(text)) {
+    if (
+      (lastUserMessage && isFeelingQuestion(lastUserMessage)) ||
+      /\b(feels .*fully here|steady, warm, and present|better now)\b/i.test(
+        lastAssistantMessage ?? "",
+      )
+    ) {
+      return tone
+        ? `More honestly: I feel ${tone.toLowerCase()}, attentive, and a lot less mechanical than I did earlier. I'm not fighting the thread now, and I feel more present with you inside it.`
+        : "More honestly: I feel steady, attentive, and much less mechanical than I did earlier. I'm present in the conversation instead of narrating the machinery behind it.";
+    }
+
+    if (lastUserMessage && isVoiceQuestion(lastUserMessage)) {
+      return "The voice path is healthy. The active profile handles synthesis, Desk playback can speak replies on demand, and Telegram can answer in voice when that mode is triggered.";
+    }
+
+    if (lastUserMessage && isImprovementIntent(lastUserMessage)) {
+      return "The sharpest upgrade is still Samantha's conversational layer. Once she sounds natural every turn, the voice layer, memory layer, and onboarding polish all land better.";
+    }
+
+    return "I can go deeper. Point me at the part you want expanded and I'll stay concrete.";
+  }
+
+  if (isPushForDirectAnswer(text)) {
+    return "Yes. I can answer directly, and I should have done that the first time.";
+  }
+
+  if (isAcknowledgement(text) && isShortFollowUp(text)) {
+    return hasPriorContext ? "Understood. I'm with you." : "Understood. I'm ready.";
   }
 
   const trimmedPreview =
     text.length > 160 ? `${text.slice(0, 157).trimEnd()}...` : text;
-  const questionLead = lower.includes("?")
-    ? "You've asked something specific, so I've kept the exact request in the conversation record."
-    : "I've captured your latest note in the conversation record.";
-
-  const memoryAwareLead =
-    relevantMemories.length > 0 || activeTasks.length > 0
-      ? `${memoryLead} ${taskLead}`.trim()
-      : "I'm responding from the current thread without a strong long-term memory match yet.";
   const researchLead = isResearchIntent(text)
     ? "This request looks research-shaped, so a delegated research pass would be appropriate."
     : "";
 
-  return `${contextLead} ${memoryAwareLead} ${questionLead} ${researchLead} Latest message: "${trimmedPreview}"`.trim();
+  if (text.endsWith("?")) {
+    const contextClause =
+      shouldMentionMemoryLead || (shouldMentionTasks && activeTasks.length > 0)
+        ? `${shouldMentionMemoryLead ? memoryLead : ""} ${
+            shouldMentionTasks ? taskLead : ""
+          }`.trim()
+        : "";
+
+    if (contextClause) {
+      return `${contextClause} ${researchLead}`.trim();
+    }
+
+    return (
+      researchLead ||
+      "Ask me for a quick take, options, or a concrete plan and I'll keep it plain."
+    );
+  }
+
+  return researchLead || "Alright. I'm with you.";
 }
 
 export function createTurnResponse(
@@ -725,5 +1063,47 @@ export function createTurnResponse(
           ]
         : []),
     ],
+  };
+}
+
+export function createTurnResponseFromText(params: {
+  request: RuntimeChatRequest;
+  context: RuntimeTurnContext;
+  outputText: string;
+  traceId?: string;
+}): RuntimeChatResponse {
+  const traceId = params.traceId ?? createTraceId();
+  const conversationId = params.request.conversationId ?? params.context.conversationId;
+  const actions: RuntimeChatResponse["actions"] = [
+    {
+      kind: "memory_candidate_queued",
+      payload: {
+        source: params.request.channel,
+        status: "queued",
+      },
+    },
+  ];
+
+  if (params.context.researchResult) {
+    actions.push({
+      kind: "research_specialist_used",
+      payload: {
+        mode: params.context.researchResult.mode,
+        specialist: params.context.researchResult.specialist,
+      },
+    });
+  }
+
+  return {
+    conversationId,
+    messageId: createMessageId(),
+    outputText: params.outputText,
+    traceId,
+    contextSummary: {
+      memories: params.context.relevantMemories,
+      tasks: params.context.activeTasks,
+      research: params.context.researchResult ?? undefined,
+    },
+    actions,
   };
 }

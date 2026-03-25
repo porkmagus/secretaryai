@@ -19,3 +19,11 @@ services:
       - "6379:6379"
     volumes:
       - ../../runtime/redis/data:/data
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: secretary-searxng
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../searxng/settings.yml:/etc/searxng/settings.yml:ro

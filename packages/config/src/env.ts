@@ -22,6 +22,20 @@ const appConfigSchema = z.object({
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   DEFAULT_USER_ID: z.string().min(1),
   DEFAULT_PERSONA_ID: z.string().min(1),
+  OPENAI_API_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  OPENAI_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  OPENAI_MODEL: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  OPENAI_REASONING_EFFORT: z.preprocess(
+    emptyStringToUndefined,
+    z.enum(["minimal", "low", "medium", "high"]).optional(),
+  ),
+  SEARXNG_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
   TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
   TELEGRAM_BOT_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
   TELEGRAM_WEBHOOK_SECRET: z.preprocess(
@@ -53,7 +67,16 @@ export type AppConfig = {
   defaultUserId: string;
   logLevel: "debug" | "info" | "warn" | "error";
   nodeEnv: "development" | "test" | "production";
+  openai: {
+    apiKey: string | null;
+    baseUrl: string;
+    model: string;
+    reasoningEffort: "minimal" | "low" | "medium" | "high";
+  };
   redisUrl: string;
+  search: {
+    searxngBaseUrl: string | null;
+  };
   speech: {
     sttBaseUrl: string | null;
     ttsBaseUrl: string | null;
@@ -84,7 +107,16 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     defaultUserId: parsed.DEFAULT_USER_ID,
     logLevel: parsed.LOG_LEVEL,
     nodeEnv: parsed.NODE_ENV,
+    openai: {
+      apiKey: parsed.OPENAI_API_KEY ?? null,
+      baseUrl: parsed.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+      model: parsed.OPENAI_MODEL ?? "gpt-5",
+      reasoningEffort: parsed.OPENAI_REASONING_EFFORT ?? "low",
+    },
     redisUrl: parsed.REDIS_URL,
+    search: {
+      searxngBaseUrl: parsed.SEARXNG_BASE_URL ?? null,
+    },
     speech: {
       sttBaseUrl: parsed.STT_BASE_URL ?? null,
       ttsBaseUrl: parsed.TTS_BASE_URL ?? null,

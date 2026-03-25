@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const primaryLinks = [
   { href: "/", label: "Desk" },
-  { href: "/onboarding", label: "Onboarding" },
+  { href: "/onboarding", label: "Overview" },
   { href: "/health", label: "Health" },
   { href: "/persona", label: "Persona" },
   { href: "/memory", label: "Memory" },

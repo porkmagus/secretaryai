@@ -9,7 +9,7 @@ import type {
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
+import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
 
 type EditableTool = {
@@ -18,6 +18,32 @@ type EditableTool = {
 };
 
 type ExecutionFilter = "all" | "pending" | "completed" | "denied" | "failed";
+
+function toolGroupLabel(tool: ToolRecord) {
+  switch (tool.key) {
+    case "web_search":
+    case "download_url":
+    case "browser_open":
+      return "Discovery and browsing";
+    case "file_read":
+    case "file_write":
+    case "document_create":
+    case "shell_command":
+      return "Workspace and documents";
+    case "task_create":
+    case "task_update":
+    case "memory_write":
+      return "Memory and planning";
+    case "telegram_send":
+      return "Channels";
+    case "calendar_create":
+    case "email_draft":
+    case "email_send":
+      return "Future adapters";
+    default:
+      return "Other";
+  }
+}
 
 function approvalModeLabel(mode: ToolApprovalMode) {
   switch (mode) {
@@ -86,6 +112,8 @@ export function ToolsConsole() {
   const [tools, setTools] = useState<ToolRecord[]>([]);
   const [executions, setExecutions] = useState<ToolExecutionRecord[]>([]);
   const [drafts, setDrafts] = useState<Record<string, EditableTool>>({});
+  const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [savingToolId, setSavingToolId] = useState<string | null>(null);
   const [decisionId, setDecisionId] = useState<string | null>(null);
@@ -118,8 +146,10 @@ export function ToolsConsole() {
       }
 
       const nextTools = (toolsBody as ToolListResponse).tools;
+      const nextExecutions = (executionsBody as ToolExecutionListResponse).executions;
+
       setTools(nextTools);
-      setExecutions((executionsBody as ToolExecutionListResponse).executions);
+      setExecutions(nextExecutions);
       setDrafts((current) => {
         const next = { ...current };
 
@@ -131,6 +161,20 @@ export function ToolsConsole() {
         }
 
         return next;
+      });
+      setSelectedToolId((current) => {
+        if (current && nextTools.some((tool) => tool.id === current)) {
+          return current;
+        }
+
+        return nextTools[0]?.id ?? null;
+      });
+      setSelectedExecutionId((current) => {
+        if (current && nextExecutions.some((execution) => execution.id === current)) {
+          return current;
+        }
+
+        return nextExecutions[0]?.id ?? null;
       });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load tools.");
@@ -269,15 +313,33 @@ export function ToolsConsole() {
     });
   }, [executions, filterState, filterText, filterToolKey]);
 
+  const groupedTools = useMemo(() => {
+    const orderedGroups = [
+      "Discovery and browsing",
+      "Workspace and documents",
+      "Memory and planning",
+      "Channels",
+      "Future adapters",
+      "Other",
+    ] as const;
+
+    return orderedGroups
+      .map((group) => ({
+        group,
+        tools: tools.filter((tool) => toolGroupLabel(tool) === group),
+      }))
+      .filter((entry) => entry.tools.length > 0);
+  }, [tools]);
+
   const pending = filteredExecutions.filter(
     (execution) => execution.approvalState === "pending",
   );
-  const recentFailures = executions.filter(
-    (execution) => execution.executionStatus === "failed",
-  ).length;
-  const completedCount = executions.filter(
-    (execution) => execution.executionStatus === "completed",
-  ).length;
+  const selectedTool = tools.find((tool) => tool.id === selectedToolId) ?? tools[0] ?? null;
+  const selectedDraft = selectedTool ? drafts[selectedTool.id] : null;
+  const selectedExecution =
+    filteredExecutions.find((execution) => execution.id === selectedExecutionId) ??
+    filteredExecutions[0] ??
+    null;
 
   return (
     <AppPage width="1280px">
@@ -286,8 +348,8 @@ export function ToolsConsole() {
         title="Tools, policies, and audit"
         description={
           <p>
-            Review which tools run automatically, which require approval, and exactly
-            what happened when the Secretary tried to take action.
+            Browse the tool registry by capability, tune one policy at a time, and open
+            a selected execution only when you need the detail.
           </p>
         }
         meta={
@@ -299,6 +361,7 @@ export function ToolsConsole() {
                 : `${tools.length} tools · ${executions.length} recent executions · ${dirtyToolIds.length} unsaved policies`)}
           </p>
         }
+        tone="dark"
       />
 
       {(error || statusMessage) ? (
@@ -307,196 +370,108 @@ export function ToolsConsole() {
         </NoticeBanner>
       ) : null}
 
-      <StatGrid>
-          {[
-            { label: "Pending approvals", value: pending.length, note: "Needs review before execution" },
-            { label: "Completed actions", value: completedCount, note: "Successful runs in the recent audit window" },
-            { label: "Recent failures", value: recentFailures, note: "Safe failures that need inspection if unexpected" },
-            { label: "Policy changes", value: dirtyToolIds.length, note: "Tool cards with unsaved edits" },
-          ].map((stat) => (
-            <StatCard
-              key={stat.label}
-              label={stat.label}
-              value={stat.value}
-              detail={stat.note}
-            />
-          ))}
-      </StatGrid>
+      <div className="summary-strip">
+        {[
+          ["Pending approvals", pending.length],
+          ["Completed actions", executions.filter((execution) => execution.executionStatus === "completed").length],
+          ["Recent failures", executions.filter((execution) => execution.executionStatus === "failed").length],
+          ["Policy changes", dirtyToolIds.length],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="summary-chip">
+            <p className="summary-chip-label">{label}</p>
+            <p className="summary-chip-value">{value}</p>
+          </div>
+        ))}
+      </div>
 
-      <section
-          style={{
-            display: "grid",
-            gap: 20,
-            gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 1.25fr)",
-          }}
-        >
-          <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-            {tools.map((tool) => {
-              const draft = drafts[tool.id];
-              if (!draft) {
-                return null;
-              }
-
-              const isDirty =
-                draft.approvalMode !== tool.approvalMode || draft.enabled !== tool.enabled;
-
-              return (
-                <SurfaceCard
-                  key={tool.id}
-                  className="stack-md"
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-                    <div>
-                      <p
+      <section className="inspector-grid">
+        <aside className="inspector-sidebar">
+          <SurfaceCard
+            tone="dark"
+            title="Tool navigator"
+            description={<p>Pick a capability group, then inspect one tool policy in focus.</p>}
+            className="stack-sm"
+          >
+            <div className="compact-list inspector-list">
+              {groupedTools.map((entry) => (
+                <div key={entry.group} style={{ display: "grid", gap: 8, padding: "6px 0 10px" }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      color: "var(--accent)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {entry.group}
+                  </p>
+                  {entry.tools.map((tool) => (
+                    <button
+                      key={tool.id}
+                      type="button"
+                      onClick={() => setSelectedToolId(tool.id)}
+                      className="inspector-list-row"
+                      style={{
+                        textAlign: "left",
+                        border:
+                          selectedTool?.id === tool.id
+                            ? "1px solid rgba(164, 141, 100, 0.26)"
+                            : "1px solid rgba(196, 180, 154, 0.12)",
+                        background:
+                          selectedTool?.id === tool.id
+                            ? "rgba(164, 141, 100, 0.1)"
+                            : "rgba(18, 15, 12, 0.82)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div
                         style={{
-                          margin: 0,
-                          color: "var(--accent)",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 10,
+                          alignItems: "flex-start",
                         }}
                       >
-                        {tool.key}
-                      </p>
-                      <h2 style={{ margin: "8px 0 4px", fontSize: 22 }}>{tool.name}</h2>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                        {tool.description}
-                      </p>
-                    </div>
-                    <div style={{ textAlign: "right", color: "var(--muted)", fontSize: 13 }}>
-                      <div>{tool.healthStatus}</div>
-                      <div>{formatTimestamp(tool.updatedAt)}</div>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 12,
-                      gridTemplateColumns: "minmax(180px, 220px) auto",
-                    }}
-                  >
-                    <select
-                      value={draft.approvalMode}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [tool.id]: {
-                            ...current[tool.id],
-                            approvalMode: event.target.value as ToolApprovalMode,
-                          },
-                        }))
-                      }
-                      style={{
-                        borderRadius: 12,
-                        border: "1px solid rgba(64, 89, 112, 0.16)",
-                        background: "rgba(255, 255, 255, 0.76)",
-                        color: "var(--text)",
-                        padding: "10px 12px",
-                        font: "inherit",
-                      }}
-                    >
-                      <option value="always_allow">Always allow</option>
-                      <option value="ask_first">Ask first</option>
-                      <option value="deny">Deny</option>
-                    </select>
-                    <label
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        color: "var(--muted)",
-                        fontSize: 14,
-                      }}
-                    >
-                      <input
-                        checked={draft.enabled}
-                        onChange={(event) =>
-                          setDrafts((current) => ({
-                            ...current,
-                            [tool.id]: {
-                              ...current[tool.id],
-                              enabled: event.target.checked,
-                            },
-                          }))
-                        }
-                        type="checkbox"
-                      />
-                      enabled
-                    </label>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                      {approvalModeLabel(draft.approvalMode)}: {approvalModeHint(draft.approvalMode)}
-                      {!draft.enabled ? " Tool is disabled." : ""}
-                      {isDirty ? " Unsaved changes are waiting." : ""}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void saveTool(tool)}
-                      disabled={savingToolId === tool.id}
-                      className="button-primary"
-                      style={{ opacity: isDirty || savingToolId === tool.id ? 1 : 0.84 }}
-                    >
-                      {savingToolId === tool.id ? "Saving..." : isDirty ? "Save Policy" : "Policy Saved"}
+                        <div>
+                          <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 14 }}>
+                            {tool.name}
+                          </p>
+                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                            {tool.key}
+                          </p>
+                        </div>
+                        <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                          {tool.enabled ? tool.healthStatus : "disabled"}
+                        </span>
+                      </div>
                     </button>
-                  </div>
-                </SurfaceCard>
-              );
-            })}
-          </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </SurfaceCard>
 
-          <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <SurfaceCard title="Pending approvals" className="stack-md">
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button type="button" onClick={() => void load()} className="button-secondary">
-                  Refresh
-                </button>
-              </div>
-              {pending.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>
-                  Nothing is waiting for approval right now.
-                </p>
-              ) : (
-                pending.map((execution) => (
-                  <article
-                    key={execution.id}
-                    style={{
-                      padding: 14,
-                      borderRadius: 16,
-                      border: "1px solid rgba(64, 89, 112, 0.12)",
-                      background: "rgba(255, 255, 255, 0.68)",
-                      display: "grid",
-                      gap: 10,
-                    }}
-                  >
+          <SurfaceCard title="Pending approvals" className="stack-sm">
+            <button type="button" onClick={() => void load()} className="button-secondary">
+              Refresh
+            </button>
+            {pending.length === 0 ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Nothing is waiting for approval right now.
+              </p>
+            ) : (
+              <div className="compact-list">
+                {pending.slice(0, 4).map((execution) => (
+                  <div key={execution.id} style={{ display: "grid", gap: 8, padding: "12px 0" }}>
                     <div>
-                      <p style={{ margin: "0 0 6px", fontWeight: 700 }}>{execution.toolName}</p>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                      <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>{execution.toolName}</p>
+                      <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
                         {execution.summary}
                       </p>
                     </div>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                      Request: {formatRequest(execution.requestJson)}
-                    </p>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button
                         type="button"
@@ -515,13 +490,148 @@ export function ToolsConsole() {
                         Deny
                       </button>
                     </div>
-                  </article>
-                ))
-              )}
-            </SurfaceCard>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SurfaceCard>
+        </aside>
 
-            <SurfaceCard title="Recent executions" className="stack-md">
-              <div style={{ display: "grid", gap: 10 }}>
+        <div className="inspector-panel">
+          {!selectedTool || !selectedDraft ? (
+            <SurfaceCard>
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Select a tool from the navigator to inspect its policy.
+              </p>
+            </SurfaceCard>
+          ) : (
+            <>
+              <SurfaceCard tone="dark" className="stack-sm">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 16,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div className="stack-sm" style={{ gap: 6 }}>
+                    <p
+                      className="eyebrow"
+                      style={{ marginBottom: 0, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                    >
+                      {toolGroupLabel(selectedTool)}
+                    </p>
+                    <h2 style={{ margin: 0, fontSize: 24 }}>{selectedTool.name}</h2>
+                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.5 }}>
+                      {selectedTool.description}
+                    </p>
+                  </div>
+                  <div className="desk-live-row" style={{ minWidth: "min(100%, 360px)" }}>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Key</p>
+                      <p className="desk-live-chip-value">{selectedTool.key}</p>
+                    </div>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Health</p>
+                      <p className="desk-live-chip-value">{selectedTool.healthStatus}</p>
+                    </div>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Updated</p>
+                      <p className="desk-live-chip-value">
+                        {formatTimestamp(selectedTool.updatedAt)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard title="Policy inspector" className="stack-md">
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    gridTemplateColumns: "minmax(180px, 220px) auto",
+                    alignItems: "center",
+                  }}
+                >
+                  <select
+                    value={selectedDraft.approvalMode}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedTool.id]: {
+                          ...current[selectedTool.id],
+                          approvalMode: event.target.value as ToolApprovalMode,
+                        },
+                      }))
+                    }
+                  >
+                    <option value="always_allow">Always allow</option>
+                    <option value="ask_first">Ask first</option>
+                    <option value="deny">Deny</option>
+                  </select>
+
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
+                    <input
+                      checked={selectedDraft.enabled}
+                      onChange={(event) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [selectedTool.id]: {
+                            ...current[selectedTool.id],
+                            enabled: event.target.checked,
+                          },
+                        }))
+                      }
+                      type="checkbox"
+                    />
+                    Tool enabled
+                  </label>
+                </div>
+
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.55 }}>
+                  {approvalModeLabel(selectedDraft.approvalMode)}: {approvalModeHint(selectedDraft.approvalMode)}
+                  {!selectedDraft.enabled ? " This tool is disabled and will not execute." : ""}
+                </p>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 16,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                    {dirtyToolIds.includes(selectedTool.id)
+                      ? "Unsaved policy changes are waiting."
+                      : "This tool policy matches the saved registry."}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void saveTool(selectedTool)}
+                    disabled={savingToolId === selectedTool.id}
+                    className="button-primary"
+                    style={{
+                      opacity:
+                        dirtyToolIds.includes(selectedTool.id) || savingToolId === selectedTool.id
+                          ? 1
+                          : 0.84,
+                    }}
+                  >
+                    {savingToolId === selectedTool.id
+                      ? "Saving..."
+                      : dirtyToolIds.includes(selectedTool.id)
+                        ? "Save Policy"
+                        : "Saved"}
+                  </button>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard title="Execution browser" className="stack-md">
                 <div
                   style={{
                     display: "grid",
@@ -556,95 +666,138 @@ export function ToolsConsole() {
                     <option value="failed">Failed</option>
                   </select>
                 </div>
-              </div>
 
-              {filteredExecutions.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>
-                  No tool executions match the current filters.
-                </p>
-              ) : (
-                filteredExecutions.map((execution) => {
-                  const tone = executionTone(execution);
+                {filteredExecutions.length === 0 ? (
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    No tool executions match the current filters.
+                  </p>
+                ) : (
+                  <>
+                    <div className="compact-list inspector-list">
+                      {filteredExecutions.slice(0, 10).map((execution) => {
+                        const tone = executionTone(execution);
 
-                  return (
-                    <article
-                      key={execution.id}
-                      style={{
-                        padding: 14,
-                        borderRadius: 16,
-                        border: "1px solid rgba(64, 89, 112, 0.12)",
-                        background: "rgba(255, 255, 255, 0.68)",
-                        display: "grid",
-                        gap: 10,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div>
-                          <p style={{ margin: 0, fontWeight: 700 }}>{execution.toolName}</p>
-                          <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
-                            {formatTimestamp(execution.createdAt)}
-                            {execution.conversationId ? ` · ${snippet(execution.conversationId, 24)}` : ""}
-                          </p>
-                        </div>
-                        <span
+                        return (
+                          <button
+                            key={execution.id}
+                            type="button"
+                            onClick={() => setSelectedExecutionId(execution.id)}
+                            className="inspector-list-row"
+                            style={{
+                              textAlign: "left",
+                              border:
+                                selectedExecution?.id === execution.id
+                                  ? "1px solid rgba(164, 141, 100, 0.26)"
+                                  : `1px solid ${tone.border}`,
+                              background:
+                                selectedExecution?.id === execution.id
+                                  ? "rgba(164, 141, 100, 0.1)"
+                                  : "rgba(18, 15, 12, 0.82)",
+                              color: "var(--text)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                gap: 12,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <div>
+                                <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>
+                                  {execution.toolName}
+                                </p>
+                                <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                                  {formatTimestamp(execution.createdAt)}
+                                </p>
+                              </div>
+                              <span
+                                style={{
+                                  alignSelf: "start",
+                                  padding: "5px 9px",
+                                  borderRadius: 999,
+                                  border: `1px solid ${tone.border}`,
+                                  background: tone.background,
+                                  color: tone.text,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {execution.executionStatus}
+                              </span>
+                            </div>
+                            <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                              {snippet(execution.summary, 140)}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {selectedExecution ? (
+                      <SurfaceCard tone="dark" className="stack-sm">
+                        <div
                           style={{
-                            alignSelf: "start",
-                            padding: "6px 10px",
-                            borderRadius: 999,
-                            border: `1px solid ${tone.border}`,
-                            background: tone.background,
-                            color: tone.text,
-                            fontSize: 12,
-                            fontWeight: 700,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            flexWrap: "wrap",
                           }}
                         >
-                          {execution.executionStatus} · {execution.approvalState}
-                        </span>
-                      </div>
-
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                        {execution.summary}
-                      </p>
-
-                      <div style={{ display: "grid", gap: 6 }}>
-                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
-                          Request
-                        </p>
-                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                          {formatRequest(execution.requestJson)}
-                        </p>
-                      </div>
-
-                      {execution.responseJson ? (
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
-                            Result
-                          </p>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                            {snippet(formatTracePayload(execution.responseJson), 260)}
+                          <div>
+                            <p
+                              className="eyebrow"
+                              style={{ marginBottom: 6, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                            >
+                              {selectedExecution.toolKey}
+                            </p>
+                            <h2 style={{ margin: 0, fontSize: 22 }}>{selectedExecution.toolName}</h2>
+                          </div>
+                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                            {formatTimestamp(selectedExecution.createdAt)}
                           </p>
                         </div>
-                      ) : null}
 
-                      {execution.errorText ? (
-                        <p style={{ margin: 0, color: "var(--danger)", fontSize: 13, lineHeight: 1.5 }}>
-                          {execution.errorText}
+                        <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                          {selectedExecution.summary}
                         </p>
-                      ) : null}
-                    </article>
-                  );
-                })
-              )}
-            </SurfaceCard>
-          </div>
-        </section>
+
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
+                            Request
+                          </p>
+                          <pre className="activity-trace-detail" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                            {formatRequest(selectedExecution.requestJson)}
+                          </pre>
+                        </div>
+
+                        {selectedExecution.responseJson ? (
+                          <div style={{ display: "grid", gap: 6 }}>
+                            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
+                              Result
+                            </p>
+                            <pre className="activity-trace-detail" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                              {formatTracePayload(selectedExecution.responseJson)}
+                            </pre>
+                          </div>
+                        ) : null}
+
+                        {selectedExecution.errorText ? (
+                          <p style={{ margin: 0, color: "var(--danger)", fontSize: 13, lineHeight: 1.5 }}>
+                            {selectedExecution.errorText}
+                          </p>
+                        ) : null}
+                      </SurfaceCard>
+                    ) : null}
+                  </>
+                )}
+              </SurfaceCard>
+            </>
+          )}
+        </div>
+      </section>
     </AppPage>
   );
 }

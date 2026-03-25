@@ -8,12 +8,37 @@ import {
 import {
   createMessageId,
   type CreateVoiceProfileRequest,
+  type PersonaGender,
   type SpeechArtifactListResponse,
   type SpeechArtifactRecord,
   type UpdateVoiceProfileRequest,
   type VoiceProfileListResponse,
   type VoiceProfileRecord,
 } from "@secretary/core-runtime";
+
+const builtInVoiceProfiles: Record<
+  PersonaGender,
+  {
+    name: string;
+    qualityPreset: string;
+    speakingStyle: string;
+  }
+> = {
+  female: {
+    name: "Secretary Female Voice",
+    qualityPreset: "balanced",
+    speakingStyle: "warm, poised, and clear",
+  },
+  male: {
+    name: "Secretary Male Voice",
+    qualityPreset: "balanced",
+    speakingStyle: "grounded, steady, and clear",
+  },
+};
+
+export function isBuiltInGenderVoiceProfileName(name: string) {
+  return Object.values(builtInVoiceProfiles).some((profile) => profile.name === name);
+}
 
 function toSpeechArtifactRecord(
   record: typeof speechArtifacts.$inferSelect,
@@ -62,22 +87,11 @@ export async function ensureDefaultVoiceProfile(dbClient: DbClient) {
     return existing;
   }
 
-  const id = createMessageId();
-
-  await dbClient.db.insert(voiceProfiles).values({
-    id,
-    name: "Secretary Default Voice",
-    engineId: "chatterbox",
-    sampleStorageKey: null,
-    sampleMimeType: null,
-    sampleDurationMs: null,
-    qualityPreset: "balanced",
-    speakingStyle: "warm and clear",
-    isActive: true,
-  });
+  const profile = await ensureGenderVoiceProfile(dbClient, "female");
+  await activateVoiceProfile(dbClient, profile.id);
 
   return dbClient.db.query.voiceProfiles.findFirst({
-    where: eq(voiceProfiles.id, id),
+    where: eq(voiceProfiles.id, profile.id),
   });
 }
 
@@ -108,6 +122,59 @@ export async function getVoiceProfileById(dbClient: DbClient, profileId: string)
   return dbClient.db.query.voiceProfiles.findFirst({
     where: eq(voiceProfiles.id, profileId),
   });
+}
+
+export async function ensureGenderVoiceProfile(
+  dbClient: DbClient,
+  gender: PersonaGender,
+) {
+  const definition = builtInVoiceProfiles[gender];
+  const existing = await dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.name, definition.name),
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  const id = createMessageId();
+
+  await dbClient.db.insert(voiceProfiles).values({
+    id,
+    name: definition.name,
+    engineId: "chatterbox",
+    sampleStorageKey: null,
+    sampleMimeType: null,
+    sampleDurationMs: null,
+    qualityPreset: definition.qualityPreset,
+    speakingStyle: definition.speakingStyle,
+    isActive: false,
+  });
+
+  const profile = await dbClient.db.query.voiceProfiles.findFirst({
+    where: eq(voiceProfiles.id, id),
+  });
+
+  if (!profile) {
+    throw new Error(`Unable to create the built-in ${gender} voice profile.`);
+  }
+
+  return profile;
+}
+
+export async function activateVoiceProfile(dbClient: DbClient, profileId: string) {
+  await dbClient.db.update(voiceProfiles).set({
+    isActive: false,
+    updatedAt: new Date(),
+  });
+
+  await dbClient.db
+    .update(voiceProfiles)
+    .set({
+      isActive: true,
+      updatedAt: new Date(),
+    })
+    .where(eq(voiceProfiles.id, profileId));
 }
 
 export async function createVoiceProfile(

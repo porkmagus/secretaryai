@@ -8,9 +8,14 @@ import {
   type ConversationListResponse,
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
+  type HeartbeatIntegrationStatusResponse,
+  type HeartbeatRunResponse,
+  type InferenceProviderId,
   type MemoryListResponse,
   type OnboardingStatusResponse,
   type PersonaSettingsResponse,
+  type InferenceSettingsResponse,
+  type InferenceModelListResponse,
   type SpeechServiceStatusResponse,
   type SpeechArtifactListResponse,
   type SettingsExportResponse,
@@ -22,8 +27,12 @@ import {
   type ToolExecutionListResponse,
   type ToolListResponse,
   type TelegramTestMessageRequest,
+  type TelegramPresenceUpdateRequest,
+  type TelegramPresenceUpdateResponse,
+  type UpdateHeartbeatIntegrationRequest,
   type UpdateToolRequest,
   type UpdatePersonaSettingsRequest,
+  type UpdateInferenceSettingsRequest,
   type UpdateVoiceProfileRequest,
   type UpdateTelegramIntegrationRequest,
   type UpdateMemoryRequest,
@@ -54,8 +63,10 @@ import {
   dispatchDueTelegramReminders,
   getTelegramIntegrationStatus,
   handleTelegramWebhookUpdate,
+  maybeDeliverTelegramAssistantMessage,
   sendTelegramTestMessage,
   syncTelegramWebhook,
+  touchTelegramWebPresence,
   updateTelegramIntegrationSettings,
 } from "./lib/telegram-integration.js";
 import {
@@ -83,6 +94,16 @@ import {
   importSettingsSnapshot,
   updatePersonaSettings,
 } from "./lib/admin-runtime.js";
+import {
+  getHeartbeatIntegrationStatus,
+  runHeartbeat,
+  updateHeartbeatIntegrationSettings,
+} from "./lib/heartbeat-runtime.js";
+import {
+  listInferenceModels,
+  loadInferenceSettings,
+  updateInferenceSettings,
+} from "./lib/inference-settings.js";
 import {
   decideToolExecution,
   handleToolAwareTurn,
@@ -192,6 +213,61 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to update persona settings.",
+      });
+    }
+  });
+
+  app.get("/runtime/inference", async (_, reply) => {
+    try {
+      const response: InferenceSettingsResponse = await loadInferenceSettings();
+      return response;
+    } catch (error) {
+      logger.error("runtime.inference.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load inference settings.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateInferenceSettingsRequest }>("/runtime/inference", async (request, reply) => {
+    try {
+      const response: InferenceSettingsResponse = await updateInferenceSettings({
+        request: request.body,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.inference.update_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update inference settings.",
+      });
+    }
+  });
+
+  app.get<{
+    Querystring: {
+      providerId?: string;
+    };
+  }>("/runtime/inference/models", async (request, reply) => {
+    try {
+      const response: InferenceModelListResponse = await listInferenceModels(
+        request.query.providerId as InferenceProviderId | undefined,
+      );
+      return response;
+    } catch (error) {
+      logger.error("runtime.inference.models_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error:
+          error instanceof Error ? error.message : "Unable to fetch inference models.",
       });
     }
   });
@@ -497,6 +573,7 @@ export async function buildServer() {
     try {
       const response: ToolApprovalDecisionResponse | null = await decideToolExecution({
         approve: true,
+        config,
         dbClient: infrastructure.dbClient,
         executionId: request.params.executionId,
         traceId,
@@ -530,6 +607,7 @@ export async function buildServer() {
     try {
       const response: ToolApprovalDecisionResponse | null = await decideToolExecution({
         approve: false,
+        config,
         dbClient: infrastructure.dbClient,
         executionId: request.params.executionId,
         traceId,
@@ -969,6 +1047,32 @@ export async function buildServer() {
     },
   );
 
+  app.post<{ Body: TelegramPresenceUpdateRequest }>(
+    "/runtime/integrations/telegram/presence",
+    async (request, reply) => {
+      try {
+        const response: TelegramPresenceUpdateResponse = await touchTelegramWebPresence({
+          dbClient: infrastructure.dbClient,
+          config,
+          request: request.body,
+        });
+
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.telegram.presence_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to update Telegram presence.",
+        });
+      }
+    },
+  );
+
   app.post("/runtime/integrations/telegram/deliver-reminders", async (_, reply) => {
     try {
       return await dispatchDueTelegramReminders({
@@ -985,6 +1089,66 @@ export async function buildServer() {
           error instanceof Error
             ? error.message
             : "Unable to deliver Telegram reminders.",
+      });
+    }
+  });
+
+  app.get("/runtime/integrations/heartbeat", async (_, reply) => {
+    try {
+      const response: HeartbeatIntegrationStatusResponse =
+        await getHeartbeatIntegrationStatus(infrastructure.dbClient, config);
+      return response;
+    } catch (error) {
+      logger.error("runtime.integrations.heartbeat.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load heartbeat integration state.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateHeartbeatIntegrationRequest }>(
+    "/runtime/integrations/heartbeat",
+    async (request, reply) => {
+      try {
+        const response: HeartbeatIntegrationStatusResponse =
+          await updateHeartbeatIntegrationSettings({
+            dbClient: infrastructure.dbClient,
+            config,
+            patch: request.body,
+          });
+
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.heartbeat.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to update heartbeat settings.",
+        });
+      }
+    },
+  );
+
+  app.post("/runtime/integrations/heartbeat/run", async (_, reply) => {
+    try {
+      const response: HeartbeatRunResponse = await runHeartbeat({
+        config,
+        infrastructure,
+        reason: "manual",
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.integrations.heartbeat.run_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: error instanceof Error ? error.message : "Unable to run heartbeat.",
       });
     }
   });
@@ -1027,6 +1191,7 @@ export async function buildServer() {
 
     try {
       const toolHandledTurn = await handleToolAwareTurn({
+        config,
         dbClient: infrastructure.dbClient,
         defaultPersonaId: config.defaultPersonaId,
         defaultUserId: config.defaultUserId,
@@ -1036,6 +1201,7 @@ export async function buildServer() {
       const persistedTurn =
         toolHandledTurn ??
         (await persistChatTurn({
+          config,
           dbClient: infrastructure.dbClient,
           defaultPersonaId: config.defaultPersonaId,
           defaultUserId: config.defaultUserId,
@@ -1068,6 +1234,26 @@ export async function buildServer() {
         traceId,
         userId: body.userId,
       });
+
+      if (body.channel === "web") {
+        try {
+          await maybeDeliverTelegramAssistantMessage({
+            dbClient: infrastructure.dbClient,
+            config,
+            conversationId: persistedTurn.response.conversationId,
+            messageId: persistedTurn.response.messageId,
+            text: persistedTurn.response.outputText,
+            importance: persistedTurn.response.pendingApproval ? "important" : "normal",
+            source: "web",
+            traceId,
+          });
+        } catch (deliveryError) {
+          logger.error("runtime.chat.telegram_delivery_failed", {
+            error: deliveryError instanceof Error ? deliveryError.message : deliveryError,
+            traceId,
+          });
+        }
+      }
 
       return persistedTurn.response;
     } catch (error) {

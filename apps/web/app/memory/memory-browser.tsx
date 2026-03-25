@@ -1,13 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type {
-  MemoryRecord,
-  MemoryType,
-  TaskRecord,
-} from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
-import { formatTimestamp } from "../lib/presenters";
+import type { MemoryRecord, MemoryType, TaskRecord } from "@secretary/core-runtime";
+import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
+import { formatTimestamp, snippet } from "../lib/presenters";
 
 type MemoryApiResponse = {
   memories: MemoryRecord[];
@@ -42,6 +38,7 @@ export function MemoryBrowser() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<MemoryType | "all">("all");
   const [includeSuppressed, setIncludeSuppressed] = useState(false);
+  const [selectedMemoryId, setSelectedMemoryId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -108,6 +105,17 @@ export function MemoryBrowser() {
 
           return next;
         });
+        setSelectedMemoryId((current) => {
+          if (memoryData.memories.length === 0) {
+            return null;
+          }
+
+          if (current && memoryData.memories.some((memory) => memory.id === current)) {
+            return current;
+          }
+
+          return memoryData.memories[0]?.id ?? null;
+        });
       } catch {
         if (!cancelled) {
           setError("Unable to load memory data.");
@@ -137,12 +145,17 @@ export function MemoryBrowser() {
       }));
 
     return {
-      total: memories.length,
+      byType,
       pinned,
       suppressed,
-      byType,
+      total: memories.length,
     };
   }, [memories]);
+
+  const selectedMemory =
+    memories.find((memory) => memory.id === selectedMemoryId) ?? memories[0] ?? null;
+  const selectedDraft = selectedMemory ? drafts[selectedMemory.id] : null;
+  const visibleTasks = tasks.slice(0, 6);
 
   async function saveMemory(memoryId: string) {
     const draft = drafts[memoryId];
@@ -178,14 +191,10 @@ export function MemoryBrowser() {
         throw new Error("Request failed");
       }
 
-      const payload = (await response.json()) as {
-        memory: MemoryRecord;
-      };
+      const payload = (await response.json()) as { memory: MemoryRecord };
 
       setMemories((current) =>
-        current.map((memory) =>
-          memory.id === memoryId ? payload.memory : memory,
-        ),
+        current.map((memory) => (memory.id === memoryId ? payload.memory : memory)),
       );
       setDrafts((current) => ({
         ...current,
@@ -213,8 +222,8 @@ export function MemoryBrowser() {
         title="Memory and context"
         description={
           <p>
-            Inspect long-term memory, pin what must always matter, suppress bad entries,
-            and keep an eye on reminder hooks created by the Memory Specialist.
+            Browse the Secretary&apos;s memory base the same way you inspect traces:
+            scan a compact list, then open one item at a time in focus.
           </p>
         }
         meta={
@@ -222,209 +231,305 @@ export function MemoryBrowser() {
             {error ??
               (isLoading
                 ? "Loading memory state..."
-                : `${summary.total} memories loaded, ${summary.pinned} pinned, ${summary.suppressed} suppressed.`)}
+                : `${summary.total} memories in view, ${summary.pinned} pinned, ${summary.suppressed} suppressed.`)}
           </p>
         }
+        tone="dark"
       />
 
       {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
 
-      <section
-          style={{
-            display: "grid",
-            gap: 20,
-            gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 0.95fr)",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gap: 16,
-              alignContent: "start",
-            }}
-          >
-            <StatGrid>
-              <StatCard label="Memories" value={summary.total} detail="Current long-term memory entries" />
-              <StatCard label="Pinned" value={summary.pinned} detail="Always-important memory items" />
-              <StatCard label="Suppressed" value={summary.suppressed} detail="Entries hidden from normal recall" />
-            </StatGrid>
+      <div className="summary-strip">
+        {[
+          ["Memories", summary.total],
+          ["Pinned", summary.pinned],
+          ["Suppressed", summary.suppressed],
+          ["Reminder hooks", tasks.length],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="summary-chip">
+            <p className="summary-chip-label">{label}</p>
+            <p className="summary-chip-value">{value}</p>
+          </div>
+        ))}
+      </div>
 
-            <SurfaceCard className="stack-md">
-              <div
+      <section className="inspector-grid">
+        <aside className="inspector-sidebar">
+          <SurfaceCard
+            tone="dark"
+            title="Memory navigator"
+            description={<p>Filter the corpus, then open one memory in the inspector.</p>}
+            className="stack-sm"
+          >
+            <div
+              style={{
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search memory text, summaries, or tags"
+              />
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value as MemoryType | "all")}
+              >
+                {memoryTypes.map((memoryType) => (
+                  <option key={memoryType} value={memoryType}>
+                    {memoryType}
+                  </option>
+                ))}
+              </select>
+              <label
                 style={{
-                  display: "grid",
-                  gap: 12,
-                  gridTemplateColumns: "minmax(0, 1.4fr) minmax(180px, 0.6fr) auto",
+                  display: "flex",
                   alignItems: "center",
+                  gap: 8,
+                  color: "var(--muted)",
+                  fontSize: 14,
                 }}
               >
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search memory text, summaries, or tags"
-                  />
-                  <select
-                    value={typeFilter}
-                    onChange={(event) =>
-                      setTypeFilter(event.target.value as MemoryType | "all")
-                    }
-                  >
-                    {memoryTypes.map((memoryType) => (
-                      <option key={memoryType} value={memoryType}>
-                      {memoryType}
-                    </option>
-                  ))}
-                </select>
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    color: "var(--muted)",
-                    fontSize: 14,
-                  }}
-                >
-                  <input
-                    checked={includeSuppressed}
-                    onChange={(event) => setIncludeSuppressed(event.target.checked)}
-                    type="checkbox"
-                  />
-                  Show suppressed
-                </label>
-              </div>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                {error ??
-                  (isLoading
-                    ? "Loading memory state..."
-                    : `${summary.total} memories loaded, ${summary.pinned} pinned, ${summary.suppressed} suppressed.`)}
-              </p>
-            </SurfaceCard>
+                <input
+                  checked={includeSuppressed}
+                  onChange={(event) => setIncludeSuppressed(event.target.checked)}
+                  type="checkbox"
+                />
+                Show suppressed
+              </label>
+            </div>
 
-            {memories.map((memory) => {
-              const draft = drafts[memory.id];
-
-              if (!draft) {
-                return null;
-              }
-
-              return (
-                <article
-                  key={memory.id}
-                  style={{
-                    padding: 20,
-                    borderRadius: 24,
-                    border: "1px solid var(--border)",
-                    background: "var(--panel-strong)",
-                    display: "grid",
-                    gap: 14,
-                  }}
-                >
-                  <div
+            <div className="compact-list inspector-list">
+              {memories.length === 0 ? (
+                <p style={{ margin: 0, color: "var(--muted)" }}>
+                  No memories match the current filters.
+                </p>
+              ) : (
+                memories.map((memory) => (
+                  <button
+                    key={memory.id}
+                    type="button"
+                    onClick={() => setSelectedMemoryId(memory.id)}
+                    className="inspector-list-row"
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 16,
-                      flexWrap: "wrap",
+                      textAlign: "left",
+                      border:
+                        selectedMemory?.id === memory.id
+                          ? "1px solid rgba(164, 141, 100, 0.26)"
+                          : "1px solid rgba(196, 180, 154, 0.12)",
+                      background:
+                        selectedMemory?.id === memory.id
+                          ? "rgba(164, 141, 100, 0.1)"
+                          : "rgba(18, 15, 12, 0.82)",
+                      color: "var(--text)",
+                      cursor: "pointer",
                     }}
                   >
-                    <div>
-                      <p
-                        style={{
-                          margin: 0,
-                          color: "var(--accent)",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        {memory.memoryType}
-                      </p>
-                      <h2 style={{ margin: "8px 0 0", fontSize: 22 }}>
-                        {memory.title ?? "Untitled Memory"}
-                      </h2>
-                    </div>
                     <div
                       style={{
-                        display: "grid",
-                        gap: 6,
-                        justifyItems: "end",
-                        color: "var(--muted)",
-                        fontSize: 13,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        alignItems: "flex-start",
                       }}
                     >
-                      <span>importance {memory.importanceScore}</span>
-                      <span>confidence {memory.confidenceScore}</span>
-                      <span>updated {formatTimestamp(memory.updatedAt)}</span>
-                      <span>last accessed {formatTimestamp(memory.lastAccessedAt)}</span>
+                      <div>
+                        <p
+                          style={{
+                            margin: "0 0 4px",
+                            color: "var(--accent)",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {memory.memoryType}
+                        </p>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>
+                          {memory.title ?? "Untitled memory"}
+                        </p>
+                      </div>
+                      <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                        {memory.pinned ? "Pinned" : memory.suppressed ? "Suppressed" : ""}
+                      </span>
+                    </div>
+                    <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                      {snippet(memory.summary ?? memory.contentText, 120)}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </SurfaceCard>
+
+          <SurfaceCard title="Reminder hooks" className="stack-sm">
+            {visibleTasks.length === 0 ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                No reminder hooks are visible right now.
+              </p>
+            ) : (
+              <div className="compact-list">
+                {visibleTasks.map((task) => (
+                  <div key={task.id} style={{ display: "grid", gap: 6, padding: "12px 0" }}>
+                    <p style={{ margin: 0, fontWeight: 700 }}>{task.title}</p>
+                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                      {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SurfaceCard>
+        </aside>
+
+        <div className="inspector-panel">
+          {!selectedMemory || !selectedDraft ? (
+            <SurfaceCard>
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Select a memory from the navigator to inspect it.
+              </p>
+            </SurfaceCard>
+          ) : (
+            <>
+              <SurfaceCard tone="dark" className="stack-sm">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 16,
+                    flexWrap: "wrap",
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div className="stack-sm" style={{ gap: 6 }}>
+                    <p
+                      className="eyebrow"
+                      style={{ marginBottom: 0, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                    >
+                      {selectedMemory.memoryType}
+                    </p>
+                    <h2 style={{ margin: 0, fontSize: 24 }}>
+                      {selectedMemory.title ?? "Untitled memory"}
+                    </h2>
+                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.5 }}>
+                      Source {selectedMemory.sourceRef ?? "n/a"} · updated {formatTimestamp(selectedMemory.updatedAt)}
+                    </p>
+                  </div>
+                  <div className="desk-live-row" style={{ minWidth: "min(100%, 360px)" }}>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Importance</p>
+                      <p className="desk-live-chip-value">{selectedMemory.importanceScore}</p>
+                    </div>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Confidence</p>
+                      <p className="desk-live-chip-value">{selectedMemory.confidenceScore}</p>
+                    </div>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Last used</p>
+                      <p className="desk-live-chip-value">
+                        {formatTimestamp(selectedMemory.lastAccessedAt)}
+                      </p>
                     </div>
                   </div>
+                </div>
+              </SurfaceCard>
 
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 12,
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    }}
+              <SurfaceCard title="Memory inspector" className="stack-md">
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  }}
+                >
+                  <input
+                    value={selectedDraft.title}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedMemory.id]: {
+                          ...current[selectedMemory.id],
+                          title: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="Title"
+                  />
+                  <input
+                    value={selectedDraft.tags}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedMemory.id]: {
+                          ...current[selectedMemory.id],
+                          tags: event.target.value,
+                        },
+                      }))
+                    }
+                    placeholder="tags, comma, separated"
+                  />
+                </div>
+
+                <textarea
+                  value={selectedDraft.summary}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [selectedMemory.id]: {
+                        ...current[selectedMemory.id],
+                        summary: event.target.value,
+                      },
+                    }))
+                  }
+                  rows={3}
+                  placeholder="Summary"
+                />
+
+                <textarea
+                  value={selectedDraft.contentText}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [selectedMemory.id]: {
+                        ...current[selectedMemory.id],
+                        contentText: event.target.value,
+                      },
+                    }))
+                  }
+                  rows={9}
+                  placeholder="Memory content"
+                />
+
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    gridTemplateColumns: "minmax(160px, 220px) auto",
+                    alignItems: "center",
+                  }}
+                >
+                  <select
+                    value={selectedDraft.memoryType}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedMemory.id]: {
+                          ...current[selectedMemory.id],
+                          memoryType: event.target.value as MemoryType,
+                        },
+                      }))
+                    }
                   >
-                    <input
-                      value={draft.title}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [memory.id]: {
-                            ...current[memory.id],
-                            title: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="Title"
-                    />
-                    <input
-                      value={draft.tags}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [memory.id]: {
-                            ...current[memory.id],
-                            tags: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="tags, comma, separated"
-                    />
-                  </div>
-
-                  <textarea
-                    value={draft.summary}
-                    onChange={(event) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [memory.id]: {
-                          ...current[memory.id],
-                          summary: event.target.value,
-                        },
-                      }))
-                    }
-                    rows={2}
-                    placeholder="Summary"
-                  />
-
-                  <textarea
-                    value={draft.contentText}
-                    onChange={(event) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [memory.id]: {
-                          ...current[memory.id],
-                          contentText: event.target.value,
-                        },
-                      }))
-                    }
-                    rows={4}
-                    placeholder="Memory content"
-                  />
-
+                    {memoryTypes
+                      .filter((memoryType) => memoryType !== "all")
+                      .map((memoryType) => (
+                        <option key={memoryType} value={memoryType}>
+                          {memoryType}
+                        </option>
+                      ))}
+                  </select>
                   <div
                     style={{
                       display: "flex",
@@ -436,12 +541,12 @@ export function MemoryBrowser() {
                   >
                     <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <input
-                        checked={draft.pinned}
+                        checked={selectedDraft.pinned}
                         onChange={(event) =>
                           setDrafts((current) => ({
                             ...current,
-                            [memory.id]: {
-                              ...current[memory.id],
+                            [selectedMemory.id]: {
+                              ...current[selectedMemory.id],
                               pinned: event.target.checked,
                             },
                           }))
@@ -452,12 +557,12 @@ export function MemoryBrowser() {
                     </label>
                     <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <input
-                        checked={draft.suppressed}
+                        checked={selectedDraft.suppressed}
                         onChange={(event) =>
                           setDrafts((current) => ({
                             ...current,
-                            [memory.id]: {
-                              ...current[memory.id],
+                            [selectedMemory.id]: {
+                              ...current[selectedMemory.id],
                               suppressed: event.target.checked,
                             },
                           }))
@@ -466,108 +571,47 @@ export function MemoryBrowser() {
                       />
                       suppressed
                     </label>
-                    <span>source: {memory.sourceRef ?? "n/a"}</span>
-                    {memory.tags.map((tag) => (
-                      <span
-                        key={`${memory.id}-${tag}`}
-                        style={{
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: "rgba(15, 118, 110, 0.08)",
-                          color: "var(--accent)",
-                          fontSize: 12,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {tag}
-                      </span>
-                    ))}
                   </div>
+                </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 16,
-                      flexWrap: "wrap",
-                      alignItems: "center",
-                    }}
-                  >
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                      provenance is currently conversation/message linked in the worker trace chain
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void saveMemory(memory.id)}
-                      disabled={savingId === memory.id}
-                      className="button-primary"
-                      style={{ opacity: savingId === memory.id ? 0.7 : 1 }}
-                    >
-                      {savingId === memory.id ? "Saving..." : "Save Memory"}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          <aside
-            style={{
-              display: "grid",
-              gap: 20,
-              alignContent: "start",
-            }}
-          >
-            <SurfaceCard title="Reminder hooks" className="stack-md">
-              <div style={{ display: "grid", gap: 12 }}>
-                {tasks.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--muted)" }}>
-                    No extracted reminder/task hooks yet.
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 16,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                    Tags: {selectedMemory.tags.length > 0 ? selectedMemory.tags.join(", ") : "none yet"}
                   </p>
-                ) : (
-                  tasks.map((task) => (
-                    <article
-                      key={task.id}
-                      style={{
-                        padding: 14,
-                        borderRadius: 16,
-                        border: "1px solid rgba(64, 89, 112, 0.12)",
-                        background: "rgba(255, 255, 255, 0.68)",
-                      }}
-                    >
-                      <p style={{ margin: "0 0 6px", fontWeight: 700 }}>{task.title}</p>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                        {task.detail ?? "No extra detail."}
-                      </p>
-                      <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 12 }}>
-                        {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
-                      </p>
-                    </article>
-                  ))
-                )}
-              </div>
-            </SurfaceCard>
-
-            <SurfaceCard title="Type mix" className="stack-sm">
-              <div style={{ display: "grid", gap: 10 }}>
-                {summary.byType.map((entry) => (
-                  <div
-                    key={entry.type}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      color: "var(--muted)",
-                    }}
+                  <button
+                    type="button"
+                    onClick={() => void saveMemory(selectedMemory.id)}
+                    disabled={savingId === selectedMemory.id}
+                    className="button-primary"
+                    style={{ opacity: savingId === selectedMemory.id ? 0.7 : 1 }}
                   >
-                    <span>{entry.type}</span>
-                    <strong style={{ color: "var(--text)" }}>{entry.count}</strong>
-                  </div>
-                ))}
-              </div>
-            </SurfaceCard>
-          </aside>
-        </section>
+                    {savingId === selectedMemory.id ? "Saving..." : "Save Memory"}
+                  </button>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard title="Type mix" className="stack-sm">
+                <div className="summary-strip">
+                  {summary.byType.map((entry) => (
+                    <div key={entry.type} className="summary-chip">
+                      <p className="summary-chip-label">{entry.type}</p>
+                      <p className="summary-chip-value">{entry.count}</p>
+                    </div>
+                  ))}
+                </div>
+              </SurfaceCard>
+            </>
+          )}
+        </div>
+      </section>
     </AppPage>
   );
 }

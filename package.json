@@ -18,7 +18,7 @@
     "deploy:down": "node scripts/setup/deploy-compose-runner.mjs down",
     "deploy:logs": "node scripts/setup/deploy-compose-runner.mjs logs -f",
     "deploy:migrate": "node scripts/setup/deploy-compose-runner.mjs run --rm migrate",
-    "deploy:up": "npm run storage:prepare && node scripts/setup/deploy-compose-runner.mjs up -d postgres redis stt tts worker web proxy",
+    "deploy:up": "npm run storage:prepare && node scripts/setup/deploy-compose-runner.mjs up -d postgres redis searxng stt tts worker web proxy",
     "lint": "npm run lint --workspaces --if-present",
     "export:settings": "node scripts/admin/export-settings.mjs",
     "import:settings": "node scripts/admin/import-settings.mjs",

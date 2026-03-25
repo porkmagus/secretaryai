@@ -162,6 +162,11 @@ main {
   padding: 24px 18px 40px;
 }
 
+.app-page--desk {
+  min-height: calc(100vh - 72px);
+  padding: 14px 18px 18px;
+}
+
 .page-stack {
   margin: 0 auto;
   display: grid;
@@ -427,27 +432,74 @@ main {
 }
 
 .notice-banner--info {
-  background: rgba(15, 118, 110, 0.08);
-  border-color: rgba(15, 118, 110, 0.16);
-  color: #0f4e4a;
+  background: rgba(37, 56, 53, 0.68);
+  border-color: rgba(96, 128, 122, 0.22);
+  color: #d3e2dc;
 }
 
 .notice-banner--success {
-  background: rgba(47, 133, 90, 0.08);
-  border-color: rgba(47, 133, 90, 0.18);
-  color: #256b47;
+  background: rgba(39, 61, 40, 0.7);
+  border-color: rgba(111, 132, 98, 0.24);
+  color: var(--success-soft-text);
 }
 
 .notice-banner--warning {
-  background: rgba(198, 123, 42, 0.1);
-  border-color: rgba(198, 123, 42, 0.18);
-  color: #8f4e11;
+  background: rgba(65, 44, 24, 0.7);
+  border-color: rgba(163, 122, 73, 0.26);
+  color: var(--warning-soft-text);
 }
 
 .notice-banner--error {
-  background: rgba(180, 83, 9, 0.08);
-  border-color: rgba(180, 83, 9, 0.18);
-  color: #9a3412;
+  background: rgba(64, 35, 29, 0.72);
+  border-color: rgba(156, 93, 67, 0.28);
+  color: var(--danger-soft-text);
+}
+
+.summary-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.summary-chip {
+  display: inline-grid;
+  gap: 2px;
+  min-width: 112px;
+  padding: 9px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(196, 180, 154, 0.1);
+  background: rgba(26, 22, 18, 0.9);
+}
+
+.summary-chip-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.summary-chip-value {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.96rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.section-rule {
+  height: 1px;
+  background: rgba(196, 180, 154, 0.08);
+}
+
+.compact-list {
+  display: grid;
+  gap: 0;
+}
+
+.compact-list > * + * {
+  border-top: 1px solid rgba(196, 180, 154, 0.08);
 }
 
 .field {
@@ -479,8 +531,12 @@ main {
 .desk-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: minmax(208px, 228px) minmax(0, 1fr) minmax(272px, 304px);
+  grid-template-columns: minmax(216px, 0.72fr) minmax(0, 3.05fr) minmax(216px, 0.72fr);
   align-items: start;
+}
+
+.desk-grid--workspace {
+  min-height: calc(100vh - 146px);
 }
 
 .desk-grid > * {
@@ -489,7 +545,7 @@ main {
 
 .desk-rail {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   align-content: start;
   min-width: 0;
 }
@@ -500,11 +556,10 @@ main {
 }
 
 .desk-rail--sticky {
-  position: sticky;
-  top: 88px;
-  max-height: calc(100vh - 112px);
-  overflow: auto;
-  padding-right: 4px;
+  position: static;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .desk-list {
@@ -513,22 +568,22 @@ main {
 }
 
 .desk-list--scroll {
-  max-height: 44vh;
-  overflow: auto;
-  padding-right: 4px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .desk-chat-shell {
   position: sticky;
   top: 88px;
   align-self: start;
-  height: calc(100vh - 112px);
-  max-height: calc(100vh - 112px);
-  min-height: calc(100vh - 112px);
+  height: calc(100vh - 146px);
+  max-height: calc(100vh - 146px);
+  min-height: calc(100vh - 146px);
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 14px;
   overflow: hidden;
 }
 
@@ -537,8 +592,9 @@ main {
   gap: 10px;
   align-content: start;
   overflow: auto;
-  padding-right: 6px;
-  max-height: calc(100vh - 430px);
+  min-height: 0;
+  padding-right: 4px;
+  max-height: none;
 }
 
 .desk-live-row {
@@ -574,6 +630,100 @@ main {
   background: rgba(196, 180, 154, 0.1);
 }
 
+.activity-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(260px, 0.88fr) minmax(0, 1.75fr);
+  align-items: start;
+}
+
+.activity-grid > * {
+  min-width: 0;
+}
+
+.activity-sidebar {
+  position: sticky;
+  top: 88px;
+  align-self: start;
+}
+
+.activity-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.activity-trace-detail {
+  max-height: min(34vh, 320px);
+  overflow: auto;
+}
+
+.activity-trace-list {
+  display: grid;
+  gap: 10px;
+  max-height: calc(100vh - 410px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.activity-trace-row {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+}
+
+.inspector-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(270px, 0.9fr) minmax(0, 1.85fr);
+  align-items: start;
+}
+
+.inspector-grid > * {
+  min-width: 0;
+}
+
+.inspector-sidebar {
+  position: sticky;
+  top: 88px;
+  align-self: start;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.inspector-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+
+.inspector-list {
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.inspector-list-row {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 120ms ease;
+}
+
+.inspector-list-row:hover {
+  border-color: rgba(164, 141, 100, 0.24);
+}
+
 code,
 pre {
   font-family: var(--font-mono);
@@ -581,7 +731,7 @@ pre {
 
 @media (max-width: 1240px) {
   .desk-grid {
-    grid-template-columns: minmax(220px, 250px) minmax(0, 1fr);
+    grid-template-columns: minmax(200px, 0.8fr) minmax(0, 1.9fr);
   }
 
   .desk-grid > :last-child {
@@ -593,6 +743,28 @@ pre {
     max-height: none;
     overflow: visible;
     padding-right: 0;
+  }
+
+  .activity-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .activity-sidebar {
+    position: static;
+    top: auto;
+  }
+
+  .inspector-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inspector-sidebar {
+    position: static;
+    top: auto;
+  }
+
+  .activity-trace-list {
+    max-height: 360px;
   }
 }
 
@@ -624,6 +796,12 @@ pre {
 
   .desk-message-stream,
   .desk-list--scroll {
+    max-height: none;
+  }
+
+  .inspector-list,
+  .activity-trace-list,
+  .activity-trace-detail {
     max-height: none;
   }
 }

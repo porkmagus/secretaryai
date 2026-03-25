@@ -196,6 +196,7 @@ export async function processWebSpeechTurn(params: {
   });
 
   const persistedTurn = await persistChatTurn({
+    config: params.config,
     dbClient: params.dbClient,
     defaultPersonaId: params.defaultPersonaId,
     defaultUserId: params.defaultUserId,

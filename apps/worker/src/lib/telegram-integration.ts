@@ -16,11 +16,14 @@ import {
 } from "@secretary/integrations";
 import {
   createMessageId,
+  type TelegramDeliveryMode,
+  type TelegramPresenceUpdateResponse,
   type TelegramIntegrationStatusResponse,
   type TelegramReminderDispatchResponse,
   type TelegramSyncWebhookResponse,
   type TelegramTestMessageRequest,
   type TelegramTestMessageResponse,
+  type TelegramPresenceUpdateRequest,
   type UpdateTelegramIntegrationRequest,
 } from "@secretary/core-runtime";
 import type { Infrastructure } from "./infrastructure.js";
@@ -47,14 +50,46 @@ const telegramIntegrationId = "telegram";
 
 type TelegramIntegrationConfig = {
   defaultChatId: string | null;
+  deliveryMode: TelegramDeliveryMode;
+  idleTimeoutMinutes: number;
+  mode: "webhook" | "polling";
+  pollCursor: number | null;
+  webPresenceLastActiveAt: string | null;
   webhookUrl: string | null;
 };
+
+const DEFAULT_IDLE_TIMEOUT_MINUTES = 15;
+
+function clampIdleTimeoutMinutes(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_IDLE_TIMEOUT_MINUTES;
+  }
+
+  return Math.max(1, Math.min(8 * 60, Math.round(value)));
+}
 
 function parseTelegramIntegrationConfig(value: Record<string, unknown> | null | undefined) {
   return {
     defaultChatId:
       typeof value?.defaultChatId === "string" && value.defaultChatId.trim()
         ? value.defaultChatId
+        : null,
+    deliveryMode:
+      value?.deliveryMode === "mirror_all" ||
+      value?.deliveryMode === "telegram_when_away" ||
+      value?.deliveryMode === "important_only" ||
+      value?.deliveryMode === "web_only"
+        ? value.deliveryMode
+        : "web_only",
+    idleTimeoutMinutes: clampIdleTimeoutMinutes(value?.idleTimeoutMinutes),
+    mode: value?.mode === "polling" ? "polling" : "webhook",
+    pollCursor:
+      typeof value?.pollCursor === "number" && Number.isFinite(value.pollCursor)
+        ? value.pollCursor
+        : null,
+    webPresenceLastActiveAt:
+      typeof value?.webPresenceLastActiveAt === "string" && value.webPresenceLastActiveAt.trim()
+        ? value.webPresenceLastActiveAt
         : null,
     webhookUrl:
       typeof value?.webhookUrl === "string" && value.webhookUrl.trim()
@@ -87,6 +122,11 @@ async function ensureTelegramIntegrationRecord(
       enabled: false,
       configJson: {
         defaultChatId: config.telegram.defaultChatId,
+        deliveryMode: "web_only",
+        idleTimeoutMinutes: DEFAULT_IDLE_TIMEOUT_MINUTES,
+        mode: "webhook",
+        pollCursor: null,
+        webPresenceLastActiveAt: null,
         webhookUrl: config.telegram.webhookUrl,
       },
       healthStatus: config.telegram.botToken ? "disabled" : "not_configured",
@@ -115,6 +155,28 @@ function getTelegramClient(config: AppConfig) {
   });
 }
 
+async function saveTelegramRecord(params: {
+  dbClient: DbClient;
+  recordId: string;
+  configJson?: TelegramIntegrationConfig;
+  enabled?: boolean;
+  healthStatus?: string;
+  lastCheckedAt?: Date | null;
+  lastErrorText?: string | null;
+}) {
+  await params.dbClient.db
+    .update(integrations)
+    .set({
+      ...(params.configJson ? { configJson: params.configJson } : {}),
+      ...(params.enabled !== undefined ? { enabled: params.enabled } : {}),
+      ...(params.healthStatus !== undefined ? { healthStatus: params.healthStatus } : {}),
+      ...(params.lastCheckedAt !== undefined ? { lastCheckedAt: params.lastCheckedAt } : {}),
+      ...(params.lastErrorText !== undefined ? { lastErrorText: params.lastErrorText } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(integrations.id, params.recordId));
+}
+
 async function recordTelegramTrace(params: {
   dbClient: DbClient;
   conversationId: string | null;
@@ -131,6 +193,126 @@ async function recordTelegramTrace(params: {
     eventName: params.eventName,
     payloadJson: params.payload,
   });
+}
+
+function shouldDeliverTelegramMirror(params: {
+  deliveryMode: TelegramDeliveryMode;
+  idleTimeoutMinutes: number;
+  importance: "important" | "normal";
+  webPresenceLastActiveAt: string | null;
+}) {
+  switch (params.deliveryMode) {
+    case "web_only":
+      return false;
+    case "mirror_all":
+      return true;
+    case "important_only":
+      return params.importance === "important";
+    case "telegram_when_away": {
+      if (!params.webPresenceLastActiveAt) {
+        return true;
+      }
+
+      const lastActiveAt = Date.parse(params.webPresenceLastActiveAt);
+      if (Number.isNaN(lastActiveAt)) {
+        return true;
+      }
+
+      return Date.now() - lastActiveAt >= params.idleTimeoutMinutes * 60 * 1000;
+    }
+  }
+}
+
+export async function touchTelegramWebPresence(params: {
+  dbClient: DbClient;
+  config: AppConfig;
+  request: TelegramPresenceUpdateRequest;
+}) {
+  const record = await ensureTelegramIntegrationRecord(params.dbClient, params.config);
+  const stored = parseTelegramIntegrationConfig(record.configJson);
+  const lastWebPresenceAt = new Date().toISOString();
+
+  await saveTelegramRecord({
+    dbClient: params.dbClient,
+    recordId: telegramIntegrationId,
+    configJson: {
+      ...stored,
+      webPresenceLastActiveAt: lastWebPresenceAt,
+    },
+  });
+
+  return {
+    ok: true,
+    lastWebPresenceAt,
+  } satisfies TelegramPresenceUpdateResponse;
+}
+
+export async function maybeDeliverTelegramAssistantMessage(params: {
+  dbClient: DbClient;
+  config: AppConfig;
+  conversationId: string | null;
+  messageId: string | null;
+  text: string;
+  importance: "important" | "normal";
+  source: "heartbeat" | "web";
+  traceId: string;
+}) {
+  const record = await ensureTelegramIntegrationRecord(params.dbClient, params.config);
+  if (!record.enabled || !params.config.telegram.botToken) {
+    return {
+      delivered: false,
+      reason: "disabled",
+    } as const;
+  }
+
+  const stored = parseTelegramIntegrationConfig(record.configJson);
+  const chatId = stored.defaultChatId ?? params.config.telegram.defaultChatId;
+
+  if (!chatId) {
+    return {
+      delivered: false,
+      reason: "missing_chat_id",
+    } as const;
+  }
+
+  const shouldDeliver = shouldDeliverTelegramMirror({
+    deliveryMode: stored.deliveryMode,
+    idleTimeoutMinutes: stored.idleTimeoutMinutes,
+    importance: params.importance,
+    webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
+  });
+
+  if (!shouldDeliver) {
+    return {
+      delivered: false,
+      reason: "policy_suppressed",
+    } as const;
+  }
+
+  const client = getTelegramClient(params.config);
+  const sentMessageIds = await client.sendMessageChunks(chatId, params.text);
+
+  await recordTelegramTrace({
+    dbClient: params.dbClient,
+    conversationId: params.conversationId,
+    parentTraceId: params.traceId,
+    eventName: "telegram.delivery.mirrored",
+    payload: {
+      assistantMessageId: params.messageId,
+      chatId,
+      deliveryMode: stored.deliveryMode,
+      importance: params.importance,
+      sentMessageIds,
+      source: params.source,
+      webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
+    },
+  });
+
+  return {
+    delivered: true,
+    sentMessageIds,
+    chatId,
+  } as const;
 }
 
 async function downloadTelegramVoiceArtifact(params: {
@@ -213,6 +395,7 @@ async function refreshTelegramHealth(
   record: Awaited<ReturnType<typeof ensureTelegramIntegrationRecord>>,
 ) {
   const stored = parseTelegramIntegrationConfig(record.configJson);
+  const mode = stored.mode;
   const desiredWebhookUrl = resolveDesiredWebhookUrl(
     stored.webhookUrl ?? config.telegram.webhookUrl,
   );
@@ -279,8 +462,12 @@ async function refreshTelegramHealth(
       lastError = webhookInfo.last_error_message ?? null;
 
       if (!record.enabled) {
-        healthStatus = "disabled";
-        healthSummary = "Telegram credentials are valid, but the integration is disabled.";
+      healthStatus = "disabled";
+      healthSummary = "Telegram credentials are valid, but the integration is disabled.";
+      } else if (mode === "polling") {
+        healthStatus = "ok";
+        healthSummary = "Telegram polling is active locally. No public webhook URL is required.";
+        lastError = null;
       } else if (!desiredWebhookUrl) {
         healthStatus = "degraded";
         healthSummary = "Provide a public worker URL, then sync the webhook.";
@@ -313,6 +500,7 @@ async function refreshTelegramHealth(
   return {
     integration: {
       enabled: record.enabled,
+      mode,
       envConfigured: Boolean(config.telegram.botToken),
       botConfigured: botUser !== null,
       healthStatus,
@@ -320,9 +508,12 @@ async function refreshTelegramHealth(
       lastCheckedAt: checkedAt.toISOString(),
       lastError,
       webhookUrl:
-        healthStatus === "not_configured" || !config.telegram.botToken
+        healthStatus === "not_configured" || !config.telegram.botToken || mode === "polling"
           ? null
           : desiredWebhookUrl,
+      deliveryMode: stored.deliveryMode,
+      idleTimeoutMinutes: stored.idleTimeoutMinutes,
+      lastWebPresenceAt: stored.webPresenceLastActiveAt,
       desiredWebhookUrl,
       pendingUpdateCount,
       defaultChatId: stored.defaultChatId ?? config.telegram.defaultChatId,
@@ -355,20 +546,26 @@ export async function updateTelegramIntegrationSettings(params: {
       params.patch.defaultChatId !== undefined
         ? params.patch.defaultChatId
         : stored.defaultChatId,
+    deliveryMode: params.patch.deliveryMode ?? stored.deliveryMode,
+    idleTimeoutMinutes:
+      params.patch.idleTimeoutMinutes !== undefined
+        ? clampIdleTimeoutMinutes(params.patch.idleTimeoutMinutes)
+        : stored.idleTimeoutMinutes,
+    mode: params.patch.mode ?? stored.mode,
+    pollCursor: stored.pollCursor,
+    webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
     webhookUrl:
       params.patch.webhookUrl !== undefined
         ? params.patch.webhookUrl
         : stored.webhookUrl,
   };
 
-  await params.dbClient.db
-    .update(integrations)
-    .set({
-      enabled: params.patch.enabled ?? record.enabled,
-      configJson: nextConfig,
-      updatedAt: new Date(),
-    })
-    .where(eq(integrations.id, telegramIntegrationId));
+  await saveTelegramRecord({
+    dbClient: params.dbClient,
+    recordId: telegramIntegrationId,
+    enabled: params.patch.enabled ?? record.enabled,
+    configJson: nextConfig,
+  });
 
   return getTelegramIntegrationStatus(params.dbClient, params.config);
 }
@@ -399,6 +596,22 @@ export async function syncTelegramWebhook(params: {
     } satisfies TelegramSyncWebhookResponse;
   }
 
+  if (stored.mode === "polling") {
+    await client.deleteWebhook();
+    await saveTelegramRecord({
+      dbClient: params.dbClient,
+      recordId: telegramIntegrationId,
+      healthStatus: "ok",
+      lastCheckedAt: new Date(),
+      lastErrorText: null,
+    });
+
+    return {
+      ok: true,
+      webhookUrl: null,
+    } satisfies TelegramSyncWebhookResponse;
+  }
+
   const desiredWebhookUrl = resolveDesiredWebhookUrl(
     stored.webhookUrl ?? params.config.telegram.webhookUrl,
   );
@@ -422,6 +635,103 @@ export async function syncTelegramWebhook(params: {
     ok: true,
     webhookUrl: desiredWebhookUrl,
   } satisfies TelegramSyncWebhookResponse;
+}
+
+export function startTelegramPolling(params: {
+  config: AppConfig;
+  infrastructure: Infrastructure;
+  onError?: (error: unknown) => void;
+}) {
+  let stopped = false;
+  let timer: NodeJS.Timeout | null = null;
+  let webhookClearedForPolling = false;
+
+  const schedule = (delayMs: number) => {
+    if (stopped) {
+      return;
+    }
+
+    timer = setTimeout(() => {
+      void tick();
+    }, delayMs);
+  };
+
+  const tick = async () => {
+    if (stopped) {
+      return;
+    }
+
+    try {
+      const record = await ensureTelegramIntegrationRecord(
+        params.infrastructure.dbClient,
+        params.config,
+      );
+      const stored = parseTelegramIntegrationConfig(record.configJson);
+
+      if (!record.enabled || stored.mode !== "polling" || !params.config.telegram.botToken) {
+        webhookClearedForPolling = false;
+        schedule(5000);
+        return;
+      }
+
+      const client = getTelegramClient(params.config);
+
+      if (!webhookClearedForPolling) {
+        await client.deleteWebhook();
+        webhookClearedForPolling = true;
+      }
+
+      const updates = await client.getUpdates({
+        allowedUpdates: ["message", "edited_message"],
+        limit: 10,
+        offset: stored.pollCursor !== null ? stored.pollCursor + 1 : undefined,
+        timeoutSeconds: 20,
+      });
+
+      let nextCursor = stored.pollCursor;
+
+      for (const update of updates) {
+        nextCursor =
+          nextCursor === null ? update.update_id : Math.max(nextCursor, update.update_id);
+
+        try {
+          await handleTelegramWebhookUpdate({
+            config: params.config,
+            infrastructure: params.infrastructure,
+            update,
+          });
+        } catch (error) {
+          params.onError?.(error);
+        }
+      }
+
+      if (nextCursor !== stored.pollCursor) {
+        await saveTelegramRecord({
+          configJson: {
+            ...stored,
+            pollCursor: nextCursor,
+          },
+          dbClient: params.infrastructure.dbClient,
+          recordId: telegramIntegrationId,
+        });
+      }
+
+      schedule(updates.length > 0 ? 200 : 1000);
+    } catch (error) {
+      params.onError?.(error);
+      schedule(5000);
+    }
+  };
+
+  void tick();
+
+  return () => {
+    stopped = true;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
 }
 
 export async function sendTelegramTestMessage(params: {
@@ -740,6 +1050,7 @@ export async function handleTelegramWebhookUpdate(params: {
   }
 
   const persistedTurn = await persistChatTurn({
+    config: params.config,
     dbClient: params.infrastructure.dbClient,
     defaultPersonaId: params.config.defaultPersonaId,
     defaultUserId: params.config.defaultUserId,

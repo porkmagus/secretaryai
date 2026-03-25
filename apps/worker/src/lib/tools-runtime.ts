@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, extname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { and, asc, desc, eq } from "drizzle-orm";
 import {
   activityTraces,
   conversations,
+  memoryEntries,
   messages,
   personas,
   tasks,
@@ -13,6 +15,7 @@ import {
   users,
   type DbClient,
 } from "@secretary/db";
+import type { AppConfig } from "@secretary/config";
 import {
   createConversationId,
   createMessageId,
@@ -27,53 +30,76 @@ import {
   type ToolRecord,
   type UpdateToolRequest,
 } from "@secretary/core-runtime";
+import { createTelegramClient } from "@secretary/integrations";
 import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
 import { findConversationIdByChannelRef, getConversationMessages } from "./chat-persistence.js";
 
 const FILE_PREVIEW_LIMIT = 1500;
 const MAX_FILE_READ_BYTES = 256 * 1024;
+const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
 const SHELL_TIMEOUT_MS = 20_000;
+const GENERATED_DOCUMENTS_DIR = "runtime/generated/documents";
+const DOWNLOADS_DIR = "runtime/downloads";
+const REPO_ROOT = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
 type BuiltInTool = {
   key: string;
   name: string;
   description: string;
   approvalMode: ToolApprovalMode;
+  enabled?: boolean;
+  healthStatus?: string;
 };
 
-type ToolIntent =
-  | {
-      requestJson: Record<string, unknown>;
-      summary: string;
-      toolKey: "task_create";
-    }
-  | {
-      requestJson: Record<string, unknown>;
-      summary: string;
-      toolKey: "web_search";
-    }
-  | {
-      requestJson: Record<string, unknown>;
-      summary: string;
-      toolKey: "file_read";
-    }
-  | {
-      requestJson: Record<string, unknown>;
-      summary: string;
-      toolKey: "shell_command";
-    };
+type ToolIntent = {
+  requestJson: Record<string, unknown>;
+  summary: string;
+  toolKey:
+    | "task_create"
+    | "task_update"
+    | "web_search"
+    | "file_read"
+    | "file_write"
+    | "document_create"
+    | "download_url"
+    | "memory_write"
+    | "telegram_send"
+    | "shell_command"
+    | "browser_open"
+    | "calendar_create"
+    | "email_draft"
+    | "email_send";
+};
 
 const builtInTools: BuiltInTool[] = [
   {
     key: "web_search",
     name: "Web Search",
-    description: "Look up current public information through a constrained search wrapper.",
+    description: "Look up current public information through the local SearXNG search wrapper.",
     approvalMode: "always_allow",
   },
   {
     key: "file_read",
     name: "Read File",
     description: "Read a local text file from the workspace or runtime area.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "file_write",
+    name: "Write File",
+    description: "Create or update a safe local text file inside the workspace.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "document_create",
+    name: "Create Document",
+    description: "Draft a markdown document into the local generated-documents area.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "download_url",
+    name: "Download URL",
+    description: "Download a public file into the local downloads area.",
     approvalMode: "ask_first",
   },
   {
@@ -87,6 +113,56 @@ const builtInTools: BuiltInTool[] = [
     name: "Create Task",
     description: "Create a task or reminder from an explicit user request.",
     approvalMode: "ask_first",
+  },
+  {
+    key: "task_update",
+    name: "Update Task",
+    description: "Mark a task done, reopen it, or reschedule its reminder.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "memory_write",
+    name: "Update Memory",
+    description: "Create or adjust a memory entry by pinning, suppressing, or editing it.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "telegram_send",
+    name: "Send Telegram Message",
+    description: "Send a proactive Telegram message through the configured bot.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "browser_open",
+    name: "Open Browser Target",
+    description: "Queue a browser target for a future operator action bridge.",
+    approvalMode: "ask_first",
+    enabled: false,
+    healthStatus: "not_configured",
+  },
+  {
+    key: "calendar_create",
+    name: "Create Calendar Event",
+    description: "Create a calendar event once a calendar integration is configured.",
+    approvalMode: "ask_first",
+    enabled: false,
+    healthStatus: "not_configured",
+  },
+  {
+    key: "email_draft",
+    name: "Draft Email",
+    description: "Create a reviewable outbound email draft once an email adapter exists.",
+    approvalMode: "ask_first",
+    enabled: false,
+    healthStatus: "not_configured",
+  },
+  {
+    key: "email_send",
+    name: "Send Email",
+    description: "Send a real outbound email once an email adapter exists.",
+    approvalMode: "deny",
+    enabled: false,
+    healthStatus: "not_configured",
   },
 ];
 
@@ -141,6 +217,41 @@ function parseInlinePath(text: string) {
 
   const plainMatch = text.match(/\b([./\\A-Za-z0-9_-]+\.[A-Za-z0-9]+)\b/);
   return plainMatch?.[1]?.trim() ?? null;
+}
+
+function parseInlineQuotedValue(text: string) {
+  const backtickMatch = text.match(/`([^`]+)`/);
+  if (backtickMatch?.[1]) {
+    return backtickMatch[1].trim();
+  }
+
+  const quotedMatch = text.match(/"([^"]+)"/);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1].trim();
+  }
+
+  return null;
+}
+
+function parseInlineUrl(text: string) {
+  const urlMatch = text.match(/\bhttps?:\/\/[^\s`]+/i);
+  return urlMatch?.[0]?.trim() ?? null;
+}
+
+function sanitizeFileNamePart(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72) || `item-${Date.now()}`;
+}
+
+function resolveRuntimePath(relativePath: string) {
+  return resolveWorkspacePath(relativePath);
+}
+
+function shortSnippet(text: string, max = 96) {
+  return text.length > max ? `${text.slice(0, max - 3).trimEnd()}...` : text;
 }
 
 function isWindowsPlatform() {
@@ -200,6 +311,57 @@ function parseReminderIntent(text: string) {
   };
 }
 
+function parseTaskUpdateIntent(text: string) {
+  const reference = parseInlineQuotedValue(text);
+  if (!reference) {
+    return null;
+  }
+
+  if (/\b(?:mark|set|complete|finish)\b.+\b(?:task)\b.+\b(?:done|complete|completed)\b/i.test(text)) {
+    return {
+      requestJson: {
+        reference,
+        status: "done",
+      },
+      summary: `Mark task ${reference} done`,
+      toolKey: "task_update" as const,
+    };
+  }
+
+  if (/\b(?:reopen|resume)\b.+\btask\b/i.test(text)) {
+    return {
+      requestJson: {
+        reference,
+        status: "open",
+      },
+      summary: `Reopen task ${reference}`,
+      toolKey: "task_update" as const,
+    };
+  }
+
+  const rescheduleMatch = text.match(/\b(?:reschedule|move)\b.+\btask\b.+\bto\b\s+(.+)$/i);
+  if (!rescheduleMatch?.[1]) {
+    return null;
+  }
+
+  const scheduleText = rescheduleMatch[1].trim().replace(/[.?!]+$/, "");
+  const reminderAt = /\btomorrow\b/i.test(scheduleText)
+    ? new Date(Date.now() + 24 * 60 * 60 * 1000)
+    : /\btoday\b/i.test(scheduleText)
+      ? new Date(Date.now() + 60 * 60 * 1000)
+      : null;
+
+  return {
+    requestJson: {
+      reference,
+      reminderAt: reminderAt?.toISOString() ?? null,
+      scheduleText,
+    },
+    summary: `Reschedule task ${reference}`,
+    toolKey: "task_update" as const,
+  };
+}
+
 function parseSearchIntent(text: string) {
   const match = text.match(/\b(?:search (?:the )?web for|look up|find latest on|latest on|google)\s+(.+)/i);
   if (!match?.[1]) {
@@ -231,6 +393,157 @@ function parseFileIntent(text: string) {
   };
 }
 
+function parseFileWriteIntent(text: string) {
+  const path =
+    parseInlinePath(text) ??
+    text.match(/\b(?:write|save|update)\s+(?:a\s+)?file\s+([^\s]+)\s+(?:with|to)\b/i)?.[1]?.trim() ??
+    null;
+
+  if (!path || !/\b(?:write|save|update)\b/i.test(text)) {
+    return null;
+  }
+
+  const contentMatch =
+    text.match(/\b(?:with|to)\s+content\s*:\s*(.+)$/i) ??
+    text.match(/\b(?:with|to)\s+(.+)$/i);
+  const content = contentMatch?.[1]?.trim().replace(/[.]+$/, "") ?? "";
+
+  if (!content) {
+    return null;
+  }
+
+  return {
+    requestJson: { content, path },
+    summary: `Write local file ${path}`,
+    toolKey: "file_write" as const,
+  };
+}
+
+function parseDocumentCreateIntent(text: string) {
+  const match =
+    text.match(/\b(?:create|draft|write|make)\s+(?:a\s+)?(?:document|note|report|brief|checklist)\s+(?:called|named|titled)\s+["`]?([^"`]+)["`]?/i) ??
+    text.match(/\b(?:create|draft|write|make)\s+(?:a\s+)?(?:document|note|report|brief|checklist)\b[:\s-]+(.+)$/i);
+
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const raw = match[1].trim();
+  const [titleCandidate, ...rest] = raw.split(/\s+-\s+|\s+with\s+/);
+  const title = titleCandidate.trim().replace(/[.?!]+$/, "");
+  const content = rest.join(" ").trim();
+
+  return {
+    requestJson: {
+      content: content || `# ${title}\n`,
+      title,
+    },
+    summary: `Create document "${title}"`,
+    toolKey: "document_create" as const,
+  };
+}
+
+function parseDownloadIntent(text: string) {
+  const url = parseInlineUrl(text);
+  if (!url || !/\b(?:download|fetch|grab)\b/i.test(text)) {
+    return null;
+  }
+
+  const path = parseInlinePath(text);
+
+  return {
+    requestJson: {
+      path,
+      url,
+    },
+    summary: `Download ${url}`,
+    toolKey: "download_url" as const,
+  };
+}
+
+function parseMemoryWriteIntent(text: string) {
+  const reference = parseInlineQuotedValue(text);
+
+  if (/\bpin memory\b/i.test(text) && reference) {
+    return {
+      requestJson: { operation: "pin", reference },
+      summary: `Pin memory ${reference}`,
+      toolKey: "memory_write" as const,
+    };
+  }
+
+  if (/\bsuppress memory\b/i.test(text) && reference) {
+    return {
+      requestJson: { operation: "suppress", reference },
+      summary: `Suppress memory ${reference}`,
+      toolKey: "memory_write" as const,
+    };
+  }
+
+  if (/\bunsuppress memory\b/i.test(text) && reference) {
+    return {
+      requestJson: { operation: "unsuppress", reference },
+      summary: `Unsuppress memory ${reference}`,
+      toolKey: "memory_write" as const,
+    };
+  }
+
+  const rememberMatch =
+    text.match(/\bremember(?: this)?[:\s]+(.+)$/i) ??
+    text.match(/\bstore in memory[:\s]+(.+)$/i);
+
+  if (!rememberMatch?.[1]) {
+    return null;
+  }
+
+  const contentText = rememberMatch[1].trim().replace(/[.]+$/, "");
+  return {
+    requestJson: {
+      contentText,
+      operation: "create",
+      title: contentText.slice(0, 60),
+    },
+    summary: "Create explicit memory entry",
+    toolKey: "memory_write" as const,
+  };
+}
+
+function parseTelegramSendIntent(text: string) {
+  if (!/\b(?:send|message)\b.+\btelegram\b/i.test(text)) {
+    return null;
+  }
+
+  const bodyMatch =
+    text.match(/\btelegram\b(?:\s+message)?\s*:\s*(.+)$/i) ??
+    text.match(/\bsend\b.+\btelegram\b.+\bthat\b\s+(.+)$/i);
+  const message = bodyMatch?.[1]?.trim();
+
+  if (!message) {
+    return null;
+  }
+
+  return {
+    requestJson: {
+      message,
+    },
+    summary: `Send Telegram message: ${shortSnippet(message, 72)}`,
+    toolKey: "telegram_send" as const,
+  };
+}
+
+function parseBrowserOpenIntent(text: string) {
+  const url = parseInlineUrl(text);
+  if (!url || !/\bopen\b/i.test(text)) {
+    return null;
+  }
+
+  return {
+    requestJson: { target: url },
+    summary: `Open ${url} in the browser`,
+    toolKey: "browser_open" as const,
+  };
+}
+
 function parseShellIntent(text: string) {
   const match =
     text.match(/\b(?:run|execute)\s+(?:the )?(?:shell )?command\s+`([^`]+)`/i) ??
@@ -250,8 +563,15 @@ function parseShellIntent(text: string) {
 function detectToolIntent(text: string): ToolIntent | null {
   return (
     parseReminderIntent(text) ??
+    parseTaskUpdateIntent(text) ??
     parseSearchIntent(text) ??
+    parseFileWriteIntent(text) ??
     parseFileIntent(text) ??
+    parseDocumentCreateIntent(text) ??
+    parseDownloadIntent(text) ??
+    parseMemoryWriteIntent(text) ??
+    parseTelegramSendIntent(text) ??
+    parseBrowserOpenIntent(text) ??
     parseShellIntent(text)
   );
 }
@@ -517,13 +837,19 @@ async function ensureToolRegistry(dbClient: DbClient) {
         key: tool.key,
         name: tool.name,
         description: tool.description,
-        enabled: true,
+        enabled: tool.enabled ?? true,
         approvalMode: tool.approvalMode,
         configSchemaJson: {},
-        healthStatus: "ok",
+        healthStatus: tool.healthStatus ?? "ok",
       })
-      .onConflictDoNothing({
+      .onConflictDoUpdate({
         target: tools.key,
+        set: {
+          description: tool.description,
+          healthStatus: tool.healthStatus ?? "ok",
+          name: tool.name,
+          updatedAt: new Date(),
+        },
       });
   }
 }
@@ -536,7 +862,7 @@ async function getToolByKey(dbClient: DbClient, key: string) {
 }
 
 function resolveWorkspacePath(inputPath: string) {
-  const root = resolve(process.cwd());
+  const root = REPO_ROOT;
   const candidate = resolve(root, inputPath);
 
   if (!isPathInsideWorkspace(root, candidate)) {
@@ -546,7 +872,52 @@ function resolveWorkspacePath(inputPath: string) {
   return candidate;
 }
 
-async function executeWebSearch(query: string) {
+async function executeWebSearch(config: AppConfig, query: string) {
+  if (config.search.searxngBaseUrl) {
+    const url = new URL("/search", config.search.searxngBaseUrl);
+    url.searchParams.set("q", query);
+    url.searchParams.set("format", "json");
+    url.searchParams.set("language", "en-US");
+    url.searchParams.set("safesearch", "1");
+
+    const response = await fetch(url, {
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error(`SearXNG search failed with ${response.status}.`);
+    }
+
+    const payload = (await response.json()) as {
+      answers?: string[];
+      results?: Array<{ title?: string; url?: string; content?: string }>;
+    };
+    const topResults = (payload.results ?? []).slice(0, 4).map((result) => ({
+      summary: result.content?.trim() || null,
+      title: result.title?.trim() || "Untitled result",
+      url: result.url?.trim() || null,
+    }));
+
+    const lines = [
+      ...(payload.answers ?? []).slice(0, 2),
+      ...topResults.map((result, index) =>
+        `${index + 1}. ${result.title}${result.url ? ` (${result.url})` : ""}${result.summary ? ` - ${shortSnippet(result.summary, 120)}` : ""}`,
+      ),
+    ].filter(Boolean);
+
+    return {
+      responseJson: {
+        provider: "searxng",
+        query,
+        results: topResults,
+      },
+      text:
+        lines.length > 0
+          ? `I searched the web for "${query}" through SearXNG. ${lines.join(" ")}`
+          : `I searched the web for "${query}" through SearXNG, but it did not return a strong summary.`,
+    };
+  }
+
   const url = new URL("https://api.duckduckgo.com/");
   url.searchParams.set("q", query);
   url.searchParams.set("format", "json");
@@ -578,6 +949,7 @@ async function executeWebSearch(query: string) {
   return {
     responseJson: {
       abstractUrl: payload.AbstractURL ?? null,
+      provider: "duckduckgo_fallback",
       query,
       results: topResults,
     },
@@ -615,6 +987,81 @@ async function executeFileRead(pathInput: string) {
   };
 }
 
+async function executeFileWrite(pathInput: string, content: string) {
+  const filePath = resolveWorkspacePath(pathInput);
+  await mkdir(resolve(filePath, ".."), { recursive: true });
+  await writeFile(filePath, content, "utf8");
+
+  return {
+    responseJson: {
+      bytes: Buffer.byteLength(content, "utf8"),
+      path: pathInput,
+    },
+    text: `I wrote ${pathInput} safely inside the workspace.`,
+  };
+}
+
+async function executeDocumentCreate(requestJson: Record<string, unknown>) {
+  const title =
+    typeof requestJson.title === "string" && requestJson.title.trim()
+      ? requestJson.title.trim()
+      : "Secretary Note";
+  const content =
+    typeof requestJson.content === "string" && requestJson.content.trim()
+      ? requestJson.content.trim()
+      : `# ${title}\n`;
+  const filename = `${sanitizeFileNamePart(title)}.md`;
+  const relativePath = `${GENERATED_DOCUMENTS_DIR}/${filename}`;
+  const fullPath = resolveRuntimePath(relativePath);
+  await mkdir(resolve(fullPath, ".."), { recursive: true });
+  await writeFile(fullPath, content, "utf8");
+
+  return {
+    responseJson: {
+      path: relativePath,
+      title,
+    },
+    text: `I created the document "${title}" at ${relativePath}.`,
+  };
+}
+
+async function executeDownloadUrl(requestJson: Record<string, unknown>) {
+  const url = typeof requestJson.url === "string" ? requestJson.url.trim() : "";
+  if (!url) {
+    throw new Error("Download URL is required.");
+  }
+
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Download failed with ${response.status}.`);
+  }
+
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
+    throw new Error("Downloaded file exceeded the safe size limit.");
+  }
+
+  const customPath =
+    typeof requestJson.path === "string" && requestJson.path.trim()
+      ? requestJson.path.trim()
+      : null;
+  const fallbackName = basename(new URL(url).pathname) || `download-${Date.now()}`;
+  const filename = sanitizeFileNamePart(customPath ? basename(customPath) : fallbackName);
+  const relativePath = customPath ?? `${DOWNLOADS_DIR}/${filename}`;
+  const targetPath = resolveWorkspacePath(relativePath);
+  await mkdir(resolve(targetPath, ".."), { recursive: true });
+  await writeFile(targetPath, bytes);
+
+  return {
+    responseJson: {
+      bytes: bytes.byteLength,
+      path: relativePath,
+      url,
+    },
+    text: `I downloaded ${url} to ${relativePath}.`,
+  };
+}
+
 function allowedShellCommand(command: string) {
   const normalized = command.trim();
   const allowedPatterns = [
@@ -643,7 +1090,7 @@ async function executeShellCommand(command: string) {
   const output = await new Promise<{ durationMs: number; stderr: string; stdout: string }>((resolvePromise, rejectPromise) => {
     const startedAt = Date.now();
     const child = spawn(shellCommand, shellArgs, {
-      cwd: process.cwd(),
+      cwd: REPO_ROOT,
       shell: false,
     });
     let stdout = "";
@@ -724,7 +1171,229 @@ async function executeTaskCreate(dbClient: DbClient, userId: string, requestJson
   };
 }
 
+async function findTaskByReference(dbClient: DbClient, userId: string, reference: string) {
+  const exact = await dbClient.db.query.tasks.findFirst({
+    where: eq(tasks.id, reference),
+  });
+
+  if (exact && exact.userId === userId) {
+    return exact;
+  }
+
+  const recent = await dbClient.db.query.tasks.findMany({
+    where: eq(tasks.userId, userId),
+    orderBy: [desc(tasks.updatedAt)],
+    limit: 25,
+  });
+
+  const normalizedReference = reference.toLowerCase();
+  return (
+    recent.find((task) => task.title.toLowerCase() === normalizedReference) ??
+    recent.find((task) => task.title.toLowerCase().includes(normalizedReference)) ??
+    null
+  );
+}
+
+async function executeTaskUpdate(
+  dbClient: DbClient,
+  userId: string,
+  requestJson: Record<string, unknown>,
+) {
+  const reference = typeof requestJson.reference === "string" ? requestJson.reference.trim() : "";
+  if (!reference) {
+    throw new Error("Task reference is required.");
+  }
+
+  const task = await findTaskByReference(dbClient, userId, reference);
+  if (!task) {
+    throw new Error(`No matching task was found for "${reference}".`);
+  }
+
+  const nextStatus =
+    typeof requestJson.status === "string" && requestJson.status.trim()
+      ? requestJson.status.trim()
+      : task.status;
+  const reminderAt =
+    typeof requestJson.reminderAt === "string" && requestJson.reminderAt
+      ? new Date(requestJson.reminderAt)
+      : task.reminderAt;
+
+  await dbClient.db
+    .update(tasks)
+    .set({
+      reminderAt,
+      status: nextStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(tasks.id, task.id));
+
+  return {
+    responseJson: {
+      reminderAt: reminderAt?.toISOString() ?? null,
+      status: nextStatus,
+      taskId: task.id,
+      title: task.title,
+    },
+    text:
+      nextStatus === "done"
+        ? `I marked "${task.title}" as done.`
+        : `I updated "${task.title}"${reminderAt ? ` and set its reminder to ${reminderAt.toLocaleString()}` : ""}.`,
+  };
+}
+
+async function findMemoryByReference(dbClient: DbClient, reference: string) {
+  const exact = await dbClient.db.query.memoryEntries.findFirst({
+    where: eq(memoryEntries.id, reference),
+  });
+
+  if (exact) {
+    return exact;
+  }
+
+  const recent = await dbClient.db.query.memoryEntries.findMany({
+    orderBy: [desc(memoryEntries.updatedAt)],
+    limit: 30,
+  });
+  const normalizedReference = reference.toLowerCase();
+  return (
+    recent.find((memory) => (memory.title ?? "").toLowerCase() === normalizedReference) ??
+    recent.find((memory) => memory.contentText.toLowerCase().includes(normalizedReference)) ??
+    null
+  );
+}
+
+async function executeMemoryWrite(
+  dbClient: DbClient,
+  requestJson: Record<string, unknown>,
+) {
+  const operation =
+    typeof requestJson.operation === "string" ? requestJson.operation.trim() : "";
+
+  if (operation === "create") {
+    const contentText =
+      typeof requestJson.contentText === "string" ? requestJson.contentText.trim() : "";
+    if (!contentText) {
+      throw new Error("Memory content is required.");
+    }
+
+    const memoryId = createMessageId();
+    const title =
+      typeof requestJson.title === "string" && requestJson.title.trim()
+        ? requestJson.title.trim()
+        : contentText.slice(0, 60);
+
+    await dbClient.db.insert(memoryEntries).values({
+      id: memoryId,
+      memoryType: "semantic",
+      title,
+      summary: shortSnippet(contentText, 120),
+      contentText,
+      contentJson: {},
+      tags: ["explicit"],
+      sourceKind: "tool",
+      sourceRef: "memory_write",
+      importanceScore: 70,
+      confidenceScore: 90,
+      pinned: false,
+      suppressed: false,
+    });
+
+    return {
+      responseJson: {
+        memoryId,
+        operation,
+        title,
+      },
+      text: `I created a new explicit memory entry titled "${title}".`,
+    };
+  }
+
+  const reference = typeof requestJson.reference === "string" ? requestJson.reference.trim() : "";
+  if (!reference) {
+    throw new Error("Memory reference is required.");
+  }
+
+  const memory = await findMemoryByReference(dbClient, reference);
+  if (!memory) {
+    throw new Error(`No matching memory was found for "${reference}".`);
+  }
+
+  await dbClient.db
+    .update(memoryEntries)
+    .set({
+      pinned: operation === "pin" ? true : memory.pinned,
+      suppressed:
+        operation === "suppress" ? true : operation === "unsuppress" ? false : memory.suppressed,
+      updatedAt: new Date(),
+    })
+    .where(eq(memoryEntries.id, memory.id));
+
+  return {
+    responseJson: {
+      memoryId: memory.id,
+      operation,
+      title: memory.title ?? null,
+    },
+    text:
+      operation === "pin"
+        ? `I pinned the memory "${memory.title ?? memory.id}".`
+        : operation === "suppress"
+          ? `I suppressed the memory "${memory.title ?? memory.id}".`
+          : `I restored the memory "${memory.title ?? memory.id}" back into normal retrieval.`,
+  };
+}
+
+async function executeTelegramSend(config: AppConfig, requestJson: Record<string, unknown>) {
+  const message = typeof requestJson.message === "string" ? requestJson.message.trim() : "";
+  const chatId =
+    typeof requestJson.chatId === "string" && requestJson.chatId.trim()
+      ? requestJson.chatId.trim()
+      : config.telegram.defaultChatId;
+
+  if (!config.telegram.botToken) {
+    throw new Error("Telegram bot token is not configured.");
+  }
+
+  if (!chatId) {
+    throw new Error("No Telegram chat id is configured for proactive sends.");
+  }
+
+  if (!message) {
+    throw new Error("Telegram message content is required.");
+  }
+
+  const client = createTelegramClient({
+    apiBaseUrl: config.telegram.apiBaseUrl,
+    botToken: config.telegram.botToken,
+  });
+  const sentMessageIds = await client.sendMessageChunks(chatId, message);
+
+  return {
+    responseJson: {
+      chatId,
+      message,
+      sentMessageIds,
+    },
+    text: `I sent the Telegram message to chat ${chatId}.`,
+  };
+}
+
+async function executeBrowserOpen(requestJson: Record<string, unknown>) {
+  const target = typeof requestJson.target === "string" ? requestJson.target.trim() : "";
+  if (!target) {
+    throw new Error("Browser target is required.");
+  }
+
+  return {
+    responseJson: {
+      target,
+    },
+    text: `I prepared the browser target ${target}. The UI bridge for opening it directly is not wired yet.`,
+  };
+}
+
 async function executeToolRequest(params: {
+  config: AppConfig;
   dbClient: DbClient;
   requestJson: Record<string, unknown>;
   requestedBy: string;
@@ -732,13 +1401,36 @@ async function executeToolRequest(params: {
 }) {
   switch (params.toolKey) {
     case "web_search":
-      return executeWebSearch(String(params.requestJson.query ?? ""));
+      return executeWebSearch(params.config, String(params.requestJson.query ?? ""));
     case "file_read":
       return executeFileRead(String(params.requestJson.path ?? ""));
+    case "file_write":
+      return executeFileWrite(
+        String(params.requestJson.path ?? ""),
+        String(params.requestJson.content ?? ""),
+      );
+    case "document_create":
+      return executeDocumentCreate(params.requestJson);
+    case "download_url":
+      return executeDownloadUrl(params.requestJson);
     case "shell_command":
       return executeShellCommand(String(params.requestJson.command ?? ""));
     case "task_create":
       return executeTaskCreate(params.dbClient, params.requestedBy, params.requestJson);
+    case "task_update":
+      return executeTaskUpdate(params.dbClient, params.requestedBy, params.requestJson);
+    case "memory_write":
+      return executeMemoryWrite(params.dbClient, params.requestJson);
+    case "telegram_send":
+      return executeTelegramSend(params.config, params.requestJson);
+    case "browser_open":
+      return executeBrowserOpen(params.requestJson);
+    case "calendar_create":
+      throw new Error("Calendar integration is not configured yet.");
+    case "email_draft":
+      throw new Error("Email drafting is not configured yet.");
+    case "email_send":
+      throw new Error("Email sending is not configured yet.");
     default:
       throw new Error(`Unsupported tool key ${params.toolKey}.`);
   }
@@ -829,6 +1521,7 @@ function createMemoryPayload(params: {
 }
 
 export async function handleToolAwareTurn(params: {
+  config: AppConfig;
   dbClient: DbClient;
   defaultPersonaId: string;
   defaultUserId: string;
@@ -966,6 +1659,7 @@ export async function handleToolAwareTurn(params: {
 
     try {
       const result = await executeToolRequest({
+        config: params.config,
         dbClient: params.dbClient,
         requestJson: intent.requestJson,
         requestedBy: envelope.userId,
@@ -1100,6 +1794,7 @@ async function appendApprovalMessage(params: {
 
 export async function decideToolExecution(params: {
   approve: boolean;
+  config: AppConfig;
   dbClient: DbClient;
   executionId: string;
   traceId?: string;
@@ -1178,6 +1873,7 @@ export async function decideToolExecution(params: {
       traceId: params.traceId ?? execution.id,
     });
     const result = await executeToolRequest({
+      config: params.config,
       dbClient: params.dbClient,
       requestJson: execution.requestJson,
       requestedBy: execution.requestedBy,

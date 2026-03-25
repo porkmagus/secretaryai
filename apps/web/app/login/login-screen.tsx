@@ -60,9 +60,9 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
           width: "min(520px, 100%)",
           padding: 30,
           borderRadius: 32,
-          border: "1px solid rgba(64, 89, 112, 0.12)",
+          border: "1px solid var(--border)",
           background:
-            "linear-gradient(180deg, rgba(255, 252, 247, 0.98), rgba(248, 241, 232, 0.95))",
+            "linear-gradient(180deg, rgba(31, 26, 21, 0.98), rgba(17, 14, 11, 0.96))",
           boxShadow: "var(--shadow)",
           display: "grid",
           gap: 18,
@@ -78,7 +78,7 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
             width: 220,
             height: 220,
             borderRadius: "50%",
-            background: "rgba(15, 118, 110, 0.14)",
+            background: "rgba(164, 141, 100, 0.14)",
             filter: "blur(8px)",
             pointerEvents: "none",
           }}
@@ -107,8 +107,8 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
               style={{
                 borderRadius: 999,
                 padding: "6px 10px",
-                background: "rgba(15, 118, 110, 0.08)",
-                border: "1px solid rgba(15, 118, 110, 0.12)",
+                background: "var(--accent-soft)",
+                border: "1px solid rgba(164, 141, 100, 0.18)",
                 color: "var(--text)",
                 fontSize: 12,
               }}
@@ -119,9 +119,9 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
               style={{
                 borderRadius: 999,
                 padding: "6px 10px",
-                background: "rgba(198, 123, 42, 0.08)",
-                border: "1px solid rgba(198, 123, 42, 0.14)",
-                color: "#8f4e11",
+                background: "rgba(141, 95, 52, 0.16)",
+                border: "1px solid rgba(141, 95, 52, 0.22)",
+                color: "var(--surface-dark-text)",
                 fontSize: 12,
               }}
             >
@@ -150,7 +150,7 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
               }}
             />
           </label>
-          <p style={{ margin: 0, color: error ? "#b45309" : "var(--muted)", fontSize: 14 }}>
+          <p style={{ margin: 0, color: error ? "var(--warning-soft-text)" : "var(--muted)", fontSize: 14 }}>
             {error ?? "The session is stored in an HTTP-only cookie on this browser."}
           </p>
           <button

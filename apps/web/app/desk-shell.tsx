@@ -14,7 +14,7 @@ import type {
   ToolExecutionListResponse,
   ToolExecutionRecord,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid } from "./lib/ui";
+import { AppPage } from "./lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "./lib/presenters";
 
 type DeskMessage = {
@@ -30,6 +30,8 @@ const starterMessages: DeskMessage[] = [
     text: "Secretary is online with memory, channels, voice, and the new Phase 5 action layer. Ask for help, request a tool action, or approve a pending operation.",
   },
 ];
+
+const deskVoicePreferenceKey = "secretary.desk.autoSpeak";
 
 function formatApprovalRequest(requestJson: Record<string, unknown>) {
   const rendered = formatTracePayload(requestJson);
@@ -54,7 +56,91 @@ export function DeskShell() {
   const [pendingApprovals, setPendingApprovals] = useState<ToolExecutionRecord[]>([]);
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [sidebarError, setSidebarError] = useState<string | null>(null);
+  const [autoSpeakReplies, setAutoSpeakReplies] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [deskVoiceError, setDeskVoiceError] = useState<string | null>(null);
   const hasLoadedHistory = useRef<string | null>(null);
+  const lastPresencePingAtRef = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioObjectUrlRef = useRef<string | null>(null);
+  const selectedConversation = conversations.find(
+    (conversation) => conversation.id === conversationId,
+  );
+  const latestTrace = activity[0] ?? null;
+  const primaryPendingApproval = pendingApprovals[0] ?? null;
+
+  function stopMessagePlayback() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+
+    if (audioObjectUrlRef.current) {
+      URL.revokeObjectURL(audioObjectUrlRef.current);
+      audioObjectUrlRef.current = null;
+    }
+
+    setSpeakingMessageId(null);
+  }
+
+  async function playAssistantMessage(message: DeskMessage) {
+    if (message.role !== "assistant") {
+      return;
+    }
+
+    if (speakingMessageId === message.id) {
+      stopMessagePlayback();
+      return;
+    }
+
+    stopMessagePlayback();
+    setDeskVoiceError(null);
+    setSpeakingMessageId(message.id);
+
+    try {
+      const response = await fetch("/api/voice/preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: message.text,
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? "Desk voice preview failed.");
+      }
+
+      const audioBlob = await response.blob();
+      const objectUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(objectUrl);
+
+      audioRef.current = audio;
+      audioObjectUrlRef.current = objectUrl;
+
+      audio.onended = () => {
+        stopMessagePlayback();
+      };
+      audio.onerror = () => {
+        stopMessagePlayback();
+        setDeskVoiceError("Desk voice playback ran into an audio error.");
+      };
+
+      await audio.play();
+    } catch (playbackError) {
+      stopMessagePlayback();
+      setDeskVoiceError(
+        playbackError instanceof Error
+          ? playbackError.message
+          : "Desk voice playback is unavailable right now.",
+      );
+    }
+  }
 
   async function loadConversations() {
     try {
@@ -71,6 +157,33 @@ export function DeskShell() {
       setSidebarError(null);
     } catch {
       setSidebarError("Recent conversations are unavailable.");
+    }
+  }
+
+  async function reportDeskPresence() {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastPresencePingAtRef.current < 15_000) {
+      return;
+    }
+
+    lastPresencePingAtRef.current = now;
+
+    try {
+      await fetch("/api/integrations/telegram/presence", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          surface: "desk",
+        }),
+      });
+    } catch {
+      // Presence is best-effort and should never interrupt the Desk.
     }
   }
 
@@ -96,6 +209,65 @@ export function DeskShell() {
 
   useEffect(() => {
     void loadConversations();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const savedPreference = window.localStorage.getItem(deskVoicePreferenceKey);
+    setAutoSpeakReplies(savedPreference === "true");
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(deskVoicePreferenceKey, String(autoSpeakReplies));
+  }, [autoSpeakReplies]);
+
+  useEffect(() => {
+    return () => {
+      stopMessagePlayback();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return;
+    }
+
+    void reportDeskPresence();
+
+    const handleVisible = () => {
+      if (document.visibilityState === "visible") {
+        void reportDeskPresence();
+      }
+    };
+    const handleFocus = () => {
+      void reportDeskPresence();
+    };
+    const handlePointer = () => {
+      void reportDeskPresence();
+    };
+    const interval = window.setInterval(() => {
+      void reportDeskPresence();
+    }, 45_000);
+
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("pointerdown", handlePointer);
+    window.addEventListener("keydown", handlePointer);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("pointerdown", handlePointer);
+      window.removeEventListener("keydown", handlePointer);
+    };
   }, []);
 
   useEffect(() => {
@@ -195,9 +367,11 @@ export function DeskShell() {
     setTaskContext([]);
     setResearchContext(null);
     setLastTraceId(null);
+    setDeskVoiceError(null);
   }
 
   function startFreshConversation() {
+    stopMessagePlayback();
     setConversationId(undefined);
     setMessages(starterMessages);
     setActivity([]);
@@ -208,6 +382,7 @@ export function DeskShell() {
   }
 
   async function openConversation(nextConversationId: string) {
+    stopMessagePlayback();
     setConversationId(nextConversationId);
     setPendingApprovals([]);
     setError(null);
@@ -234,14 +409,19 @@ export function DeskShell() {
       const data = (await response.json()) as ToolApprovalDecisionResponse;
 
       if (data.assistantMessage) {
+        const assistantMessage: DeskMessage = {
+          id: data.assistantMessage.id,
+          role: "assistant",
+          text: data.assistantMessage.text,
+        };
+
         setMessages((current) => [
           ...current,
-          {
-            id: data.assistantMessage!.id,
-            role: "assistant",
-            text: data.assistantMessage!.text,
-          },
+          assistantMessage,
         ]);
+        if (autoSpeakReplies) {
+          void playAssistantMessage(assistantMessage);
+        }
       }
 
       if (data.conversationId) {
@@ -300,20 +480,21 @@ export function DeskShell() {
       }
 
       const data = (await response.json()) as RuntimeChatResponse;
+      const assistantMessage: DeskMessage = {
+        id: data.messageId,
+        role: "assistant",
+        text: data.outputText,
+      };
 
       setConversationId(data.conversationId);
       setLastTraceId(data.traceId);
       setMemoryContext(data.contextSummary?.memories ?? []);
       setTaskContext(data.contextSummary?.tasks ?? []);
       setResearchContext(data.contextSummary?.research ?? null);
-      setMessages((current) => [
-        ...current,
-        {
-          id: data.messageId,
-          role: "assistant",
-          text: data.outputText,
-        },
-      ]);
+      setMessages((current) => [...current, assistantMessage]);
+      if (autoSpeakReplies) {
+        void playAssistantMessage(assistantMessage);
+      }
       if (data.conversationId) {
         void loadPendingApprovals(data.conversationId);
       }
@@ -326,9 +507,8 @@ export function DeskShell() {
   }
 
   return (
-    <AppPage width="1280px">
-      <div style={{ order: 1 }}>
-      <section className="desk-grid">
+    <AppPage width="100%" className="app-page--desk">
+      <section className="desk-grid desk-grid--workspace">
           <aside className="desk-rail desk-rail--sticky">
             <article
               style={{
@@ -358,10 +538,10 @@ export function DeskShell() {
                 </button>
               </div>
               <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                {sidebarError ?? `${conversations.length} recent threads`}
+                {sidebarError ?? `${Math.min(conversations.length, 3)} recent threads in view`}
               </p>
-              <div className="desk-list desk-list--scroll">
-                {conversations.map((conversation) => (
+              <div className="desk-list">
+                {conversations.slice(0, 3).map((conversation) => (
                   <button
                     key={conversation.id}
                     type="button"
@@ -378,21 +558,26 @@ export function DeskShell() {
                           ? "rgba(164, 141, 100, 0.14)"
                           : "rgba(18, 15, 12, 0.82)",
                       color: "var(--text)",
-                      padding: 12,
+                      padding: 10,
                       cursor: "pointer",
                     }}
                   >
-                    <p style={{ margin: "0 0 5px", fontWeight: 700, fontSize: 14 }}>
+                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
                       {conversation.title ?? "Untitled conversation"}
                     </p>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.4, fontSize: 13 }}>
-                      {snippet(conversation.lastMessagePreview)}
+                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.35, fontSize: 12 }}>
+                      {snippet(conversation.lastMessagePreview).slice(0, 72)}
                     </p>
-                    <p style={{ margin: "7px 0 0", color: "var(--muted)", fontSize: 11 }}>
+                    <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 11 }}>
                       {conversation.channelType} · {conversation.messageCount} messages
                     </p>
                   </button>
                 ))}
+                {conversations.length > 3 ? (
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                    Showing the 3 most recent threads.
+                  </p>
+                ) : null}
               </div>
             </article>
 
@@ -406,12 +591,10 @@ export function DeskShell() {
                 gap: 10,
               }}
             >
-              <h2 style={{ margin: 0 }}>Quick Prompts</h2>
+              <h2 style={{ margin: 0 }}>Prompts</h2>
               {[
                 "Remember that I prefer short project updates.",
                 "What do you remember about my preferences?",
-                "Remind me to review the checkpoint tomorrow.",
-                "Compare Docker and Podman for this repo.",
               ].map((prompt) => (
                 <button
                   key={prompt}
@@ -447,30 +630,6 @@ export function DeskShell() {
               boxShadow: "var(--shadow-soft)",
             }}
           >
-            <div className="desk-live-row">
-              <div className="desk-live-chip">
-                <p className="desk-live-chip-label">Thread</p>
-                <p className="desk-live-chip-value">{conversationId ? "attached" : "fresh"}</p>
-              </div>
-              <div className="desk-live-chip">
-                <p className="desk-live-chip-label">Persistence</p>
-                <p className="desk-live-chip-value">
-                  {conversationId ? (isRefreshing ? "refreshing" : "history linked") : "not saved"}
-                </p>
-              </div>
-              <div className="desk-live-chip">
-                <p className="desk-live-chip-label">Memory</p>
-                <p className="desk-live-chip-value">{memoryContext.length} in context</p>
-              </div>
-              <div className="desk-live-chip">
-                <p className="desk-live-chip-label">Approvals</p>
-                <p className="desk-live-chip-value">{pendingApprovals.length} waiting</p>
-              </div>
-              <div className="desk-live-chip">
-                <p className="desk-live-chip-label">Trace feed</p>
-                <p className="desk-live-chip-value">{activity.length} events</p>
-              </div>
-            </div>
             <div className="desk-message-stream">
               {messages.map((message) => (
                 <article
@@ -505,6 +664,27 @@ export function DeskShell() {
                     {message.role}
                   </p>
                   <p style={{ margin: 0, lineHeight: 1.5, fontSize: 14 }}>{message.text}</p>
+                  {message.role === "assistant" ? (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        marginTop: 10,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => void playAssistantMessage(message)}
+                        className="button-secondary"
+                        style={{
+                          padding: "6px 10px",
+                          fontSize: 11,
+                        }}
+                      >
+                        {speakingMessageId === message.id ? "Stop" : "Speak"}
+                      </button>
+                    </div>
+                  ) : null}
                 </article>
               ))}
             </div>
@@ -533,12 +713,15 @@ export function DeskShell() {
                 }}
               >
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                  {error ??
+                  {deskVoiceError ??
+                    error ??
                     (isSending
                       ? "Sending through the worker..."
                       : isRefreshing
                         ? "Refreshing saved history..."
-                        : "Ready")}
+                        : conversationId
+                          ? "History linked and ready"
+                          : "Fresh conversation ready")}
                 </p>
                 <button
                   type="submit"
@@ -548,6 +731,22 @@ export function DeskShell() {
                   {isSending ? "Sending..." : "Send message"}
                 </button>
               </div>
+              <label
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  color: "var(--muted)",
+                  fontSize: 12,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={autoSpeakReplies}
+                  onChange={(event) => setAutoSpeakReplies(event.target.checked)}
+                />
+                Auto-voice Samantha replies
+              </label>
             </form>
           </div>
 
@@ -561,75 +760,26 @@ export function DeskShell() {
                 boxShadow: "var(--shadow-soft)",
               }}
             >
-              <h2 style={{ marginTop: 0 }}>Turn State</h2>
-              <dl
-                style={{
-                  display: "grid",
-                  gap: 12,
-                  margin: 0,
-                }}
-              >
-                <div>
-                  <dt style={{ color: "var(--muted)", fontSize: 12 }}>Conversation</dt>
-                  <dd style={{ margin: "6px 0 0", wordBreak: "break-word" }}>
-                    {conversationId ?? "Not started"}
-                  </dd>
-                </div>
-                <div>
-                  <dt style={{ color: "var(--muted)", fontSize: 12 }}>Last Trace</dt>
-                  <dd style={{ margin: "6px 0 0", wordBreak: "break-word" }}>
-                    {lastTraceId ?? "None yet"}
-                  </dd>
-                </div>
-                <div>
-                  <dt style={{ color: "var(--muted)", fontSize: 12 }}>Persistence</dt>
-                  <dd style={{ margin: "6px 0 0", wordBreak: "break-word" }}>
-                    {conversationId
-                      ? isRefreshing
-                        ? "Loading saved messages"
-                        : "Connected to conversation history"
-                      : "No persisted conversation yet"}
-                  </dd>
-                </div>
-              </dl>
-              <div className="desk-widget-separator" />
-              <div className="stack-sm">
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 12,
-                    color: "var(--muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.12em",
-                  }}
-                >
-                  Memory in play
-                </p>
-                {memoryContext.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                    No strong memory match on the latest turn.
+              <h2 style={{ marginTop: 0, marginBottom: 12 }}>Session</h2>
+              <div className="desk-live-row">
+                <div className="desk-live-chip">
+                  <p className="desk-live-chip-label">Thread</p>
+                  <p className="desk-live-chip-value">
+                    {selectedConversation?.title ?? (conversationId ? "Saved thread" : "Fresh thread")}
                   </p>
-                ) : (
-                  memoryContext.slice(0, 3).map((memory) => (
-                    <article
-                      key={memory.id}
-                      style={{
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px solid rgba(196, 180, 154, 0.12)",
-                        background: "rgba(24, 20, 16, 0.9)",
-                      }}
-                    >
-                      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-                        {memory.title ?? memory.summary ?? memory.contentText}
-                      </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-                        {memory.memoryType} · importance {memory.importanceScore}
-                        {memory.pinned ? " · pinned" : ""}
-                      </p>
-                    </article>
-                  ))
-                )}
+                </div>
+                <div className="desk-live-chip">
+                  <p className="desk-live-chip-label">Approvals</p>
+                  <p className="desk-live-chip-value">
+                    {pendingApprovals.length === 0 ? "Clear" : `${pendingApprovals.length} pending`}
+                  </p>
+                </div>
+                <div className="desk-live-chip">
+                  <p className="desk-live-chip-label">Traces</p>
+                  <p className="desk-live-chip-value">
+                    {activity.length === 0 ? "Quiet" : `${activity.length} recent events`}
+                  </p>
+                </div>
               </div>
               <div className="desk-widget-separator" />
               <div className="stack-sm">
@@ -642,132 +792,100 @@ export function DeskShell() {
                     letterSpacing: "0.12em",
                   }}
                 >
-                  Tasks and research
+                  Context pulse
                 </p>
-                {taskContext.length > 0 ? (
-                  taskContext.slice(0, 2).map((task) => (
-                    <article
-                      key={task.id}
-                      style={{
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px solid rgba(196, 180, 154, 0.12)",
-                        background: "rgba(24, 20, 16, 0.9)",
-                      }}
-                    >
-                      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-                        {task.title}
-                      </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-                        {task.status} · {formatTimestamp(task.reminderAt ?? task.dueAt)}
-                      </p>
-                    </article>
-                  ))
-                ) : (
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                    No active reminder hooks in context.
-                  </p>
-                )}
-                {researchContext ? (
-                  <article
-                    style={{
-                      padding: 10,
-                      borderRadius: 10,
-                      border: "1px solid rgba(196, 180, 154, 0.12)",
-                      background: "rgba(24, 20, 16, 0.9)",
-                    }}
-                  >
-                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-                      Research specialist used
-                    </p>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
+                  {memoryContext.length > 0
+                    ? `${memoryContext.length} memory cue${memoryContext.length === 1 ? "" : "s"}, `
+                    : "No memory cues, "}
+                  {taskContext.length > 0
+                    ? `${taskContext.length} task hook${taskContext.length === 1 ? "" : "s"}`
+                    : "no task hooks"}
+                  {researchContext ? ", research active." : "."}
+                </p>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
+                  {latestTrace
+                    ? `Latest event: ${latestTrace.eventName} at ${formatTimestamp(latestTrace.createdAt)}.`
+                    : conversationId
+                      ? "Saved thread loaded. Open Activity for the full runtime record."
+                      : "Nothing has executed yet in this fresh thread."}
+                </p>
+              </div>
+              {primaryPendingApproval ? (
+                <>
+                  <div className="desk-widget-separator" />
+                  <div className="stack-sm">
                     <p
                       style={{
                         margin: 0,
-                        color: "var(--muted)",
-                        lineHeight: 1.45,
                         fontSize: 12,
+                        color: "var(--muted)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.12em",
                       }}
                     >
-                      {researchContext.summary}
+                      Needs approval
                     </p>
-                  </article>
-                ) : null}
-              </div>
-            </article>
-
-            <article
-              style={{
-                padding: 16,
-                borderRadius: 16,
-                border: "1px solid var(--border)",
-                background: "rgba(16, 13, 11, 0.96)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Pending Approvals</h2>
-              <div style={{ display: "grid", gap: 12 }}>
-                {pendingApprovals.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--muted)" }}>
-                    No approval requests waiting in this conversation.
-                  </p>
-                ) : (
-                  pendingApprovals.map((execution) => (
-                    <article
-                      key={execution.id}
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
+                      {primaryPendingApproval.toolName}
+                    </p>
+                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                      {primaryPendingApproval.summary}
+                    </p>
+                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 11, lineHeight: 1.4 }}>
+                      {formatApprovalRequest(primaryPendingApproval.requestJson)}
+                    </p>
+                    <div
                       style={{
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px solid rgba(196, 180, 154, 0.12)",
-                        background: "rgba(24, 20, 16, 0.9)",
-                        display: "grid",
+                        display: "flex",
                         gap: 8,
+                        flexWrap: "wrap",
                       }}
                     >
-                      <div>
-                        <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-                          {execution.toolName}
-                        </p>
-                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-                          {execution.summary}
-                        </p>
-                        <p
-                          style={{
-                            margin: "6px 0 0",
-                            color: "var(--muted)",
-                            fontSize: 11,
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          Request: {formatApprovalRequest(execution.requestJson)}
-                        </p>
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 8,
-                          flexWrap: "wrap",
-                        }}
+                      <button
+                        type="button"
+                        onClick={() => void decideApproval(primaryPendingApproval.id, true)}
+                        disabled={approvalBusyId === primaryPendingApproval.id}
+                        className="button-primary"
                       >
-                        <button
-                          type="button"
-                          onClick={() => void decideApproval(execution.id, true)}
-                          disabled={approvalBusyId === execution.id}
-                          className="button-primary"
-                        >
-                          {approvalBusyId === execution.id ? "Working..." : "Approve"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void decideApproval(execution.id, false)}
-                          disabled={approvalBusyId === execution.id}
-                          className="button-danger"
-                        >
-                          Deny
-                        </button>
-                      </div>
-                    </article>
-                  ))
-                )}
+                        {approvalBusyId === primaryPendingApproval.id ? "Working..." : "Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void decideApproval(primaryPendingApproval.id, false)}
+                        disabled={approvalBusyId === primaryPendingApproval.id}
+                        className="button-danger"
+                      >
+                        Deny
+                      </button>
+                    </div>
+                    {pendingApprovals.length > 1 ? (
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
+                        {pendingApprovals.length - 1} more approval request
+                        {pendingApprovals.length - 1 === 1 ? "" : "s"} waiting in Tools.
+                      </p>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+              <div className="desk-widget-separator" />
+              <div
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <a
+                  href="/activity"
+                  style={{
+                    color: "var(--accent-strong)",
+                    fontSize: 12,
+                    textDecoration: "none",
+                  }}
+                >
+                  Open activity
+                </a>
                 <a
                   href="/tools"
                   style={{
@@ -776,95 +894,12 @@ export function DeskShell() {
                     textDecoration: "none",
                   }}
                 >
-                  Open full tools console
+                  Open tools
                 </a>
-              </div>
-            </article>
-
-            <article
-              style={{
-                padding: 16,
-                borderRadius: 16,
-                border: "1px solid var(--border)",
-                background: "rgba(16, 13, 11, 0.96)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            >
-              <h2 style={{ marginTop: 0 }}>Recent Trace Events</h2>
-              <div className="desk-list desk-list--scroll">
-                {activity.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--muted)" }}>
-                    No activity trace loaded yet.
-                  </p>
-                ) : (
-                  activity.map((trace) => (
-                    <article
-                      key={trace.id}
-                      style={{
-                        padding: 10,
-                        borderRadius: 10,
-                        border: "1px solid rgba(196, 180, 154, 0.12)",
-                        background: "rgba(24, 20, 16, 0.9)",
-                      }}
-                    >
-                      <p style={{ margin: "0 0 5px", fontWeight: 700, fontSize: 13 }}>
-                        {trace.eventName}
-                      </p>
-                      <p style={{ margin: "0 0 4px", color: "var(--muted)", fontSize: 11 }}>
-                        {formatTimestamp(trace.createdAt)}
-                      </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
-                        {formatTracePayload(trace.payload)}
-                      </p>
-                    </article>
-                  ))
-                )}
               </div>
             </article>
           </aside>
       </section>
-      </div>
-      <div style={{ order: 2, display: "grid", gap: 18 }}>
-        <PageHero
-          eyebrow="Secretary Desk"
-          title="Desk and live runtime"
-          description={
-            <p>
-              Live turns, current memory pressure, approvals, and runtime traces stay in
-              view here without making the whole page feel like a spreadsheet of cards.
-            </p>
-          }
-          meta={
-            <p>
-              {error ??
-                (isSending
-                  ? "Sending through the worker..."
-                  : isRefreshing
-                    ? "Refreshing saved history..."
-                    : "Ready for the next turn.")}
-            </p>
-          }
-          actions={
-            <button type="button" className="button-primary" onClick={startFreshConversation}>
-              New conversation
-            </button>
-          }
-        />
-
-        <StatGrid>
-          <StatCard label="Threads" value={conversations.length} detail="Recent saved conversations" />
-          <StatCard label="Pending approvals" value={pendingApprovals.length} detail="Actions waiting on you" />
-          <StatCard label="Memory hits" value={memoryContext.length} detail="Active memory items in the latest turn" />
-          <StatCard
-            label="Runtime traces"
-            value={activity.length}
-            detail={conversationId ? "Recent events for the active thread" : "Start a thread to inspect traces"}
-            tone="soft"
-          />
-        </StatGrid>
-
-        {error ? <NoticeBanner tone="warning">{error}</NoticeBanner> : null}
-      </div>
     </AppPage>
   );
 }

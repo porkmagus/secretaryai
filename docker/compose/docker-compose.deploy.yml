@@ -29,6 +29,13 @@ services:
     volumes:
       - ../../runtime/redis/data:/data
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: secretary-searxng
+    restart: unless-stopped
+    volumes:
+      - ../searxng/settings.yml:/etc/searxng/settings.yml:ro
+
   stt:
     build:
       context: ../..
@@ -90,6 +97,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      searxng:
+        condition: service_started
       stt:
         condition: service_started
       tts:

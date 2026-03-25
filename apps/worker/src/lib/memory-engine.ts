@@ -51,6 +51,8 @@ const stopWords = new Set([
   "did",
   "do",
   "does",
+  "feel",
+  "feeling",
   "for",
   "from",
   "have",
@@ -59,15 +61,20 @@ const stopWords = new Set([
   "is",
   "it",
   "me",
+  "more",
   "my",
+  "normal",
+  "not",
   "now",
   "remember",
+  "so",
   "that",
   "the",
   "this",
   "to",
   "what",
   "you",
+  "yet",
 ]);
 
 function tokenize(text: string) {
@@ -79,6 +86,28 @@ function tokenize(text: string) {
 
 function unique<T>(values: T[]) {
   return [...new Set(values)];
+}
+
+function normalizeTaskTitle(title: string) {
+  return cleanText(title)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function dedupeTaskRecords<T extends { title: string }>(records: T[]) {
+  const seen = new Set<string>();
+
+  return records.filter((record) => {
+    const normalizedTitle = normalizeTaskTitle(record.title);
+
+    if (seen.has(normalizedTitle)) {
+      return false;
+    }
+
+    seen.add(normalizedTitle);
+    return true;
+  });
 }
 
 function titleCase(value: string) {
@@ -175,6 +204,12 @@ function extractPreferenceMemory(text: string): MemoryCandidate[] {
   }
 
   const preferenceText = cleanText(preferenceMatch[1]).replace(/[.?!]+$/g, "");
+  const preferenceTokens = tokenize(preferenceText);
+
+  if (preferenceTokens.length < 2 || preferenceText.length < 8) {
+    return [];
+  }
+
   const positive = !/\b(hate|dislike)\b/i.test(text);
 
   return [
@@ -185,7 +220,7 @@ function extractPreferenceMemory(text: string): MemoryCandidate[] {
         ? `User preference noted: ${preferenceText}`
         : `User dislike noted: ${preferenceText}`,
       contentText: text,
-      tags: unique(["preference", ...tokenize(preferenceText).slice(0, 4)]),
+      tags: unique(["preference", ...preferenceTokens.slice(0, 4)]),
       canonicalKey: `semantic:preference:${preferenceText.toLowerCase()}`,
       importanceScore: /\bremember\b/i.test(text) ? 92 : 70,
       confidenceScore: 80,
@@ -472,7 +507,7 @@ export async function listTasksForUser(
   });
 
   return {
-    tasks: records.map(toTaskRecord),
+    tasks: dedupeTaskRecords(records).map(toTaskRecord),
   };
 }
 
@@ -511,6 +546,13 @@ export async function retrieveRelevantMemories(
   const queryTokens = tokenize(queryText);
   const scored = records
     .map((record) => {
+      const candidateTokens = unique(
+        tokenize(
+          [record.title ?? "", record.summary ?? "", record.contentText, ...(record.tags ?? [])].join(
+            " ",
+          ),
+        ),
+      );
       const haystack = [
         record.title ?? "",
         record.summary ?? "",
@@ -518,23 +560,46 @@ export async function retrieveRelevantMemories(
         ...(record.tags ?? []),
       ].join(" ").toLowerCase();
 
-      const overlap = queryTokens.filter((token) => haystack.includes(token)).length;
+      const overlapTokens = unique(
+        queryTokens.filter(
+          (token) =>
+            haystack.includes(token) || candidateTokens.some((candidate) => candidate === token),
+        ),
+      );
+      const overlap = overlapTokens.length;
+      const overlapRatio = queryTokens.length > 0 ? overlap / queryTokens.length : 0;
       const score =
         (record.pinned ? 120 : 0) +
         record.importanceScore +
-        overlap * 18 +
+        overlap * 22 +
         (record.memoryType === "project" && queryTokens.includes("project") ? 20 : 0);
 
       return {
         record,
         overlap,
+        overlapRatio,
         score,
       };
     })
-    .filter(({ record, overlap, score }) =>
+    .filter(({ record, overlap, overlapRatio, score }) => {
+      const recordTokens = tokenize(
+        [record.title ?? "", record.summary ?? "", record.contentText, ...(record.tags ?? [])].join(
+          " ",
+        ),
+      );
+      const lowSignalMemory =
+        record.memoryType === "semantic" &&
+        recordTokens.length < 2 &&
+        !record.pinned;
+
+      return !lowSignalMemory && (
       record.pinned ||
-      (queryTokens.length > 0 && overlap > 0 && score >= 45),
-    )
+      (queryTokens.length > 0 &&
+        ((queryTokens.length <= 2 && overlap >= 1) ||
+          overlap >= 2 ||
+          overlapRatio >= 0.6) &&
+        score >= 60));
+    })
     .sort((left, right) => right.score - left.score)
     .slice(0, 5);
 
@@ -560,10 +625,10 @@ export async function getActiveTaskContext(
   const records = await dbClient.db.query.tasks.findMany({
     where: and(eq(tasks.userId, userId), or(eq(tasks.status, "open"), eq(tasks.status, "in_progress"))),
     orderBy: [asc(tasks.reminderAt), asc(tasks.dueAt), desc(tasks.createdAt)],
-    limit: 5,
+    limit: 25,
   });
 
-  return records.map(toRuntimeTaskContextItem);
+  return dedupeTaskRecords(records).slice(0, 5).map(toRuntimeTaskContextItem);
 }
 
 export async function processMemoryCandidateJob(params: {
@@ -680,14 +745,19 @@ export async function processMemoryCandidateJob(params: {
   const taskCandidate = extractTaskCandidate(payload.text);
 
   if (taskCandidate) {
-    const existingTask = await dbClient.db.query.tasks.findFirst({
+    const openTasks = await dbClient.db.query.tasks.findMany({
       where: and(
         eq(tasks.userId, payload.userId),
-        eq(tasks.title, taskCandidate.title),
         or(eq(tasks.status, "open"), eq(tasks.status, "in_progress")),
       ),
       orderBy: desc(tasks.createdAt),
+      limit: 50,
     });
+    const existingTask =
+      openTasks.find(
+        (task) =>
+          normalizeTaskTitle(task.title) === normalizeTaskTitle(taskCandidate.title),
+      ) ?? null;
 
     if (existingTask) {
       createdTaskIds.push(existingTask.id);

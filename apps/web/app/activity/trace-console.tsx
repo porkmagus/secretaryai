@@ -13,8 +13,17 @@ export function ActivityConsole() {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [traces, setTraces] = useState<ActivityTraceResponse["traces"]>([]);
+  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const selectedConversation =
+    conversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  const selectedTrace = traces.find((trace) => trace.id === selectedTraceId) ?? traces[0] ?? null;
+  const tracePreview = traces.slice(0, 14);
+  const traceTypeCounts = traces.reduce<Record<string, number>>((counts, trace) => {
+    counts[trace.traceType] = (counts[trace.traceType] ?? 0) + 1;
+    return counts;
+  }, {});
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +88,8 @@ export function ActivityConsole() {
 
         if (!cancelled) {
           setTraces(data.traces.slice().reverse());
+          setSelectedTraceId(data.traces.slice().reverse()[0]?.id ?? null);
+          setError(null);
         }
       } catch {
         if (!cancelled) {
@@ -109,23 +120,22 @@ export function ActivityConsole() {
       />
 
       <section
-        style={{
-          display: "grid",
-          gap: 20,
-          gridTemplateColumns: "minmax(280px, 0.9fr) minmax(0, 1.7fr)",
-        }}
+        className="activity-grid"
       >
         <SurfaceCard
+          tone="dark"
           title="Recent conversations"
           description={
             <p>
               {error ??
-                (isLoading ? "Loading conversations..." : `${conversations.length} available`)}
+                (isLoading
+                  ? "Loading conversations..."
+                  : `${Math.min(conversations.length, 8)} recent threads ready to inspect`)}
             </p>
           }
-          className="stack-sm"
+          className="stack-sm activity-sidebar"
         >
-          {conversations.map((conversation) => (
+          {conversations.slice(0, 8).map((conversation) => (
             <button
               key={conversation.id}
               type="button"
@@ -135,12 +145,12 @@ export function ActivityConsole() {
                 borderRadius: 18,
                 border:
                   selectedConversationId === conversation.id
-                    ? "1px solid rgba(15, 118, 110, 0.26)"
-                    : "1px solid rgba(64, 89, 112, 0.12)",
+                    ? "1px solid rgba(164, 141, 100, 0.26)"
+                    : "1px solid var(--border)",
                 background:
                   selectedConversationId === conversation.id
-                    ? "rgba(15, 118, 110, 0.08)"
-                    : "rgba(255, 255, 255, 0.58)",
+                    ? "rgba(164, 141, 100, 0.1)"
+                    : "rgba(18, 15, 12, 0.86)",
                 color: "var(--text)",
                 padding: 14,
                 cursor: "pointer",
@@ -158,15 +168,14 @@ export function ActivityConsole() {
               </p>
             </button>
           ))}
+          {conversations.length > 8 ? (
+            <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+              Showing the 8 most recent threads.
+            </p>
+          ) : null}
         </SurfaceCard>
 
-        <div
-          style={{
-            display: "grid",
-            gap: 14,
-            alignContent: "start",
-          }}
-        >
+        <div className="activity-panel">
           {traces.length === 0 ? (
             <SurfaceCard>
               <p style={{ margin: 0, color: "var(--muted)" }}>
@@ -174,8 +183,53 @@ export function ActivityConsole() {
               </p>
             </SurfaceCard>
           ) : (
-            traces.map((trace) => (
-              <SurfaceCard key={trace.id} tone="dark" className="stack-sm">
+            <>
+              <SurfaceCard tone="dark" className="stack-sm">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 16,
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div className="stack-sm" style={{ gap: 6 }}>
+                    <p
+                      className="eyebrow"
+                      style={{ marginBottom: 0, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                    >
+                      Activity focus
+                    </p>
+                    <h2 style={{ margin: 0, fontSize: 24 }}>
+                      {selectedConversation?.title ?? "Conversation activity"}
+                    </h2>
+                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5, fontSize: 14 }}>
+                      {selectedConversation
+                        ? `${selectedConversation.channelType} thread · ${selectedConversation.messageCount} messages`
+                        : "Trace stream ready"}
+                    </p>
+                  </div>
+                  <div className="desk-live-row" style={{ minWidth: "min(100%, 360px)" }}>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Events</p>
+                      <p className="desk-live-chip-value">{traces.length}</p>
+                    </div>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Runtime</p>
+                      <p className="desk-live-chip-value">{traceTypeCounts.runtime ?? 0}</p>
+                    </div>
+                    <div className="desk-live-chip">
+                      <p className="desk-live-chip-label">Speech / tools</p>
+                      <p className="desk-live-chip-value">
+                        {(traceTypeCounts.speech ?? 0) + (traceTypeCounts.tool ?? 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </SurfaceCard>
+
+              <SurfaceCard tone="dark" className="stack-sm">
                 <div
                   style={{
                     display: "flex",
@@ -187,33 +241,110 @@ export function ActivityConsole() {
                   <div>
                     <p
                       className="eyebrow"
-                      style={{ marginBottom: 6, color: "#7dd3fc", letterSpacing: "0.08em" }}
+                      style={{ marginBottom: 6, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
                     >
-                      {trace.traceType}
+                      {selectedTrace?.traceType ?? "trace"}
                     </p>
-                    <h2 style={{ margin: 0, fontSize: 22 }}>{trace.eventName}</h2>
+                    <h2 style={{ margin: 0, fontSize: 22 }}>
+                      {selectedTrace?.eventName ?? "Select an event"}
+                    </h2>
                   </div>
-                  <p style={{ margin: 0, color: "rgba(237, 245, 255, 0.68)", fontSize: 13 }}>
-                    {formatTimestamp(trace.createdAt)}
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                    {selectedTrace ? formatTimestamp(selectedTrace.createdAt) : "n/a"}
                   </p>
                 </div>
                 <pre
+                  className="activity-trace-detail"
                   style={{
                     margin: 0,
                     padding: 14,
                     borderRadius: 16,
-                    background: "rgba(8, 15, 23, 0.38)",
-                    color: "#dbeafe",
+                    background: "rgba(15, 12, 10, 0.92)",
+                    color: "var(--surface-dark-text)",
                     overflowX: "auto",
                     whiteSpace: "pre-wrap",
                     fontSize: 13,
                     lineHeight: 1.55,
                   }}
                 >
-                  {formatTracePayload(trace.payload)}
+                  {selectedTrace ? formatTracePayload(selectedTrace.payload) : "No trace selected."}
                 </pre>
               </SurfaceCard>
-            ))
+
+              <SurfaceCard tone="dark" className="stack-sm">
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <h2 style={{ margin: 0 }}>Recent events</h2>
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                    Select an event to inspect its payload in detail.
+                  </p>
+                </div>
+                <div className="activity-trace-list">
+                  {tracePreview.map((trace) => (
+                    <button
+                      key={trace.id}
+                      type="button"
+                      onClick={() => setSelectedTraceId(trace.id)}
+                      className="activity-trace-row"
+                      style={{
+                        textAlign: "left",
+                        border:
+                          selectedTraceId === trace.id
+                            ? "1px solid rgba(164, 141, 100, 0.26)"
+                            : "1px solid rgba(196, 180, 154, 0.12)",
+                        background:
+                          selectedTraceId === trace.id
+                            ? "rgba(164, 141, 100, 0.1)"
+                            : "rgba(18, 15, 12, 0.86)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          alignItems: "flex-start",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div>
+                          <p
+                            style={{
+                              margin: "0 0 4px",
+                              color: "var(--accent-strong)",
+                              fontSize: 11,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.08em",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {trace.traceType}
+                          </p>
+                          <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>
+                            {trace.eventName}
+                          </p>
+                        </div>
+                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                          {formatTimestamp(trace.createdAt)}
+                        </p>
+                      </div>
+                      <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                        {snippet(formatTracePayload(trace.payload), 180)}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </SurfaceCard>
+            </>
           )}
         </div>
       </section>

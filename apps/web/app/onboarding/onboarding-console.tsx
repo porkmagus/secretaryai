@@ -65,21 +65,20 @@ export function OnboardingConsole() {
   return (
     <AppPage width="1180px">
       <PageHero
-        eyebrow="Onboarding"
-        title="Finish the daily-use setup"
+        eyebrow="Overview"
+        title="System overview"
         description={
           <p>
-            This page keeps the practical startup sequence visible: make sure the
-            stack is healthy, shape the Secretary persona, wire channels, review
-            tools, and confirm the voice path is actually usable.
+            This page is the broad view of what is configured, what still needs
+            attention, and which parts of the Secretary stack are ready for daily use.
           </p>
         }
         meta={
           <p>
             {error ??
               (data
-                ? `${data.completedSteps} of ${data.totalSteps} onboarding steps are complete.`
-                : "Loading onboarding state...")}
+                ? `${data.completedSteps} of ${data.totalSteps} setup areas are in a good state.`
+                : "Loading system overview...")}
           </p>
         }
       />
@@ -88,11 +87,20 @@ export function OnboardingConsole() {
         <StatCard
           label="Health"
           value={data ? `${data.completedSteps}/${data.totalSteps}` : "..."}
-          detail="Readiness across the current local install"
+          detail="Current setup readiness across the local install"
+        />
+        <StatCard
+          label="Conversation"
+          value={
+            data?.steps.find((step) => step.id === "conversation")?.status === "complete"
+              ? "Model-backed"
+              : "Fallback"
+          }
+          detail="Whether Samantha text chat is using a real model or local fallback logic"
         />
         <StatCard label="Primary channels" value="Web + Telegram" detail="Desk and bot are active entry points" />
         <StatCard label="Voice path" value="Local STT + TTS" detail="Speech stays inside the local stack" />
-        <StatCard label="Next habit" value="Backup first" detail="Snapshot before risky changes or imports" tone="soft" />
+        <StatCard label="Next habit" value="Backup first" detail="Take a snapshot before risky changes or imports" tone="soft" />
       </StatGrid>
 
       <section className="stack-md">

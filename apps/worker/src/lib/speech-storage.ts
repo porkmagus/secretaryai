@@ -1,7 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const runtimeRoot = resolve(process.cwd(), "runtime");
+const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
+const runtimeRoot = resolve(repoRoot, "runtime");
 const speechRoot = join(runtimeRoot, "speech");
 const inboundRoot = join(speechRoot, "inbound");
 const transcriptsRoot = join(speechRoot, "transcripts");

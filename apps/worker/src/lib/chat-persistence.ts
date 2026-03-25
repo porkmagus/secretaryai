@@ -1,4 +1,5 @@
 import { and, asc, desc, eq } from "drizzle-orm";
+import type { AppConfig } from "@secretary/config";
 import {
   activityTraces,
   conversations,
@@ -11,7 +12,6 @@ import {
 import {
   createConversationId,
   createMessageId,
-  createTurnResponse,
   type RuntimeContextMessage,
   type MemoryCandidateJobPayload,
   type RuntimeChatRequest,
@@ -21,11 +21,19 @@ import {
   retrieveRelevantMemories,
 } from "./memory-engine.js";
 import {
+  defaultSecretarySoul,
+  loadSecretaryPersonaProfile,
+  loadSecretarySoul,
+} from "./persona-soul.js";
+import {
   runResearchSpecialist,
   shouldUseResearchSpecialist,
 } from "./research-specialist.js";
+import { generateConversationReply } from "./conversation-model.js";
+import { getInferenceRuntimeConfig } from "./inference-settings.js";
 
 type PersistTurnParams = {
+  config: AppConfig;
   dbClient: DbClient;
   defaultPersonaId: string;
   defaultUserId: string;
@@ -52,6 +60,7 @@ function toRuntimeContextMessage(
 }
 
 export async function persistChatTurn({
+  config,
   dbClient,
   defaultPersonaId,
   defaultUserId,
@@ -94,12 +103,15 @@ export async function persistChatTurn({
         name: "Secretary",
         toneProfile: {
           mode: "calm",
+          gender: "female",
         },
-        behaviorRules: [
-          "Be helpful",
-          "Protect local-first privacy defaults",
+      behaviorRules: [
+          "Be warm, competent, and calm.",
+          "Answer naturally instead of narrating internal system state unless the user asks for it.",
+          "Protect local-first privacy defaults.",
         ],
-        promptTemplate: "Phase 1 placeholder",
+        promptTemplate:
+          defaultSecretarySoul,
         isDefault: true,
       })
       .onConflictDoNothing();
@@ -160,24 +172,55 @@ export async function persistChatTurn({
     request.message.text,
   );
   const activeTasks = await getActiveTaskContext(dbClient, userId);
+  const personaRecord =
+    (await dbClient.db.query.personas.findFirst({
+      where: eq(personas.id, defaultPersonaId),
+    })) ??
+    (await dbClient.db.query.personas.findFirst({
+      where: eq(personas.isDefault, true),
+    }));
+  const soulText = await loadSecretarySoul(
+    personaRecord?.promptTemplate ?? defaultSecretarySoul,
+  );
+  const personaProfileText = await loadSecretaryPersonaProfile();
   const researchResult = shouldUseResearchSpecialist(request.message.text)
     ? runResearchSpecialist(request.message.text)
     : null;
-  const response = createTurnResponse(
-      {
-        ...request,
-        conversationId,
-      },
-      {
-        conversationId,
-        recentMessages: recentMessages.map(toRuntimeContextMessage),
-        userDisplayName,
-        relevantMemories,
-        activeTasks,
-        researchResult,
+  const inference = await getInferenceRuntimeConfig();
+  const turnContext = {
+    conversationId,
+    recentMessages: recentMessages.map(toRuntimeContextMessage),
+    userDisplayName,
+    persona: personaRecord
+      ? {
+          name: personaRecord.name,
+          soul: soulText,
+          personaProfile: personaProfileText,
+          toneMode:
+            typeof personaRecord.toneProfile?.mode === "string"
+              ? personaRecord.toneProfile.mode
+              : null,
+          gender:
+            personaRecord.toneProfile?.gender === "male"
+              ? ("male" as const)
+              : ("female" as const),
+          behaviorRules: personaRecord.behaviorRules,
+        }
+      : undefined,
+    relevantMemories,
+    activeTasks,
+    researchResult,
+  };
+  const reply = await generateConversationReply({
+    inference,
+    request: {
+      ...request,
+      conversationId,
     },
+    context: turnContext,
     traceId,
-  );
+  });
+  const response = reply.response;
 
   await dbClient.db.transaction(async (tx) => {
     if (researchResult) {
@@ -203,6 +246,9 @@ export async function persistChatTurn({
         memoryIds: relevantMemories.map((memory) => memory.id),
         taskIds: activeTasks.map((task) => task.id),
         researchUsed: Boolean(researchResult),
+        replyMode: reply.mode,
+        replyModel: reply.model ?? null,
+        providerError: reply.providerError ?? null,
       },
     });
 
@@ -237,6 +283,9 @@ export async function persistChatTurn({
         memoryIds: relevantMemories.map((memory) => memory.id),
         taskIds: activeTasks.map((task) => task.id),
         researchUsed: Boolean(researchResult),
+        replyMode: reply.mode,
+        replyModel: reply.model ?? null,
+        providerError: reply.providerError ?? null,
         outputLength: response.outputText.length,
         traceId,
       },

@@ -22,6 +22,9 @@ for (const relativePath of [
   "runtime/caddy/config",
   "runtime/backups",
   "runtime/exports",
+  "runtime/generated",
+  "runtime/generated/documents",
+  "runtime/downloads",
   "runtime/venvs",
 ]) {
   const fullPath = resolve(root, relativePath);

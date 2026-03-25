@@ -17,6 +17,51 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
 
 ## Getting Started
 
+### Fastest Windows Start
+
+First time only:
+
+1. Double-click [`first-run-setup.cmd`](/f:/hamcult/first-run-setup.cmd)
+2. Open [`.env`](/f:/hamcult/.env) and fill in what you care about:
+   - `TELEGRAM_BOT_TOKEN` if you want the live Telegram bot
+   - `APP_AUTH_PASSWORD` and `APP_SESSION_SECRET` if you want the sign-in gate
+   - any inference provider keys you want Samantha to use
+3. Double-click [`start-secretary-dev.cmd`](/f:/hamcult/start-secretary-dev.cmd)
+
+Daily use after that:
+
+1. Double-click [`start-secretary-dev.cmd`](/f:/hamcult/start-secretary-dev.cmd)
+2. Open [http://localhost:3000](http://localhost:3000)
+3. When you are done, double-click [`stop-secretary-dev.cmd`](/f:/hamcult/stop-secretary-dev.cmd)
+
+What those scripts do:
+
+- `first-run-setup.cmd`
+  - creates `.env` from `.env.example` if needed
+  - runs `npm install`
+  - prepares storage
+  - starts Postgres / Redis / SearXNG
+  - runs DB migrations
+  - prepares local STT and TTS once
+
+- `start-secretary-dev.cmd`
+  - prepares storage
+  - starts Postgres / Redis / SearXNG
+  - runs DB migrations
+  - opens 4 terminal windows for:
+    - web
+    - worker
+    - STT
+    - TTS
+
+- `stop-secretary-dev.cmd`
+  - closes those 4 dev terminal windows
+  - shuts the local stack down
+
+### Manual Start
+
+If you prefer to do it by hand:
+
 1. Install dependencies with `npm install`
 2. Copy `.env.example` to `.env`
 3. Add your real `TELEGRAM_BOT_TOKEN` only in `.env` if you want to exercise the live Telegram path

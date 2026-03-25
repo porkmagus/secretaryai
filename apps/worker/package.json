@@ -12,16 +12,23 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/huggingface": "^1.0.39",
+    "@ai-sdk/moonshotai": "^2.0.12",
+    "@ai-sdk/openai": "^3.0.48",
     "@fastify/cors": "^11.0.0",
     "@fastify/multipart": "^9.4.0",
+    "@openrouter/ai-sdk-provider": "^2.3.3",
     "@secretary/config": "0.1.0",
     "@secretary/core-runtime": "0.1.0",
     "@secretary/db": "0.1.0",
     "@secretary/integrations": "0.1.0",
     "@secretary/observability": "0.1.0",
+    "ai": "^6.0.138",
+    "ai-sdk-provider-opencode-sdk": "^3.0.1",
     "bullmq": "^5.56.4",
     "dotenv": "17.3.1",
-    "fastify": "^5.3.2"
+    "fastify": "^5.3.2",
+    "ollama-ai-provider-v2": "^3.5.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.0",

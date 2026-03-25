@@ -13,7 +13,7 @@ import type {
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid } from "../lib/ui";
+import { AppPage, NoticeBanner, PageHero } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type VoicePageState = {
@@ -44,8 +44,8 @@ const panel = { border: "1px solid var(--border)", borderRadius: 20, background:
 const input = {
   width: "100%",
   borderRadius: 12,
-  border: "1px solid rgba(64, 89, 112, 0.16)",
-  background: "rgba(255, 255, 255, 0.76)",
+  border: "1px solid var(--field-border)",
+  background: "var(--field-bg)",
   color: "var(--text)",
   padding: "10px 12px",
   font: "inherit",
@@ -65,7 +65,7 @@ const ghostButton = {
   padding: "10px 16px",
   font: "inherit",
   color: "var(--text)",
-  background: "rgba(255, 255, 255, 0.68)",
+  background: "rgba(22, 18, 14, 0.92)",
 } as const;
 
 function isAudioMime(mimeType: string | null) {
@@ -127,6 +127,7 @@ export function VoiceConsole() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const sampleInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const activeProfile = useMemo(() => state.profiles.find((profile) => profile.isActive) ?? state.profiles[0] ?? null, [state.profiles]);
   const summary = useMemo(() => ({
@@ -222,6 +223,10 @@ export function VoiceConsole() {
 
   function updateDraft(profileId: string, patch: Partial<EditableProfile>) {
     setDrafts((current) => ({ ...current, [profileId]: { ...current[profileId], ...patch } }));
+  }
+
+  function openSamplePicker(profileId: string) {
+    sampleInputRefs.current[profileId]?.click();
   }
 
   async function createProfile() {
@@ -479,32 +484,25 @@ export function VoiceConsole() {
             </button>
           </div>
         }
+        tone="dark"
       />
 
-      <StatGrid>
-        <StatCard label="Profiles" value={summary.profiles} detail="Named Secretary voice presets" />
-        <StatCard label="Samples" value={summary.samples} detail="Profiles with uploaded reference audio" />
-        <StatCard label="Transcripts" value={summary.transcripts} detail="Speech-to-text artifacts" />
-        <StatCard label="TTS outputs" value={summary.tts} detail="Generated previews and replies" tone="soft" />
-      </StatGrid>
-
-      <section className="stat-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-        <StatCard
-          label="STT"
-          value={speechStatus?.stt.healthStatus ?? "loading"}
-          detail={speechStatus?.stt.summary ?? "Checking speech-to-text..."}
-        />
-        <StatCard
-          label="TTS"
-          value={speechStatus?.tts.healthStatus ?? "loading"}
-          detail={speechStatus?.tts.summary ?? "Checking voice synthesis..."}
-        />
-        <StatCard
-          label="ffmpeg"
-          value={speechStatus?.ffmpeg.available ? "ready" : "fallback"}
-          detail={speechStatus?.ffmpeg.summary ?? "Checking audio conversion..."}
-        />
-      </section>
+      <div className="summary-strip">
+        {[
+          ["Profiles", summary.profiles],
+          ["Samples", summary.samples],
+          ["Transcripts", summary.transcripts],
+          ["TTS outputs", summary.tts],
+          ["STT", speechStatus?.stt.healthStatus ?? "loading"],
+          ["TTS", speechStatus?.tts.healthStatus ?? "loading"],
+          ["ffmpeg", speechStatus?.ffmpeg.available ? "ready" : "fallback"],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="summary-chip">
+            <p className="summary-chip-label">{label}</p>
+            <p className="summary-chip-value">{value}</p>
+          </div>
+        ))}
+      </div>
 
       {notice ? (
         <NoticeBanner
@@ -535,7 +533,7 @@ export function VoiceConsole() {
       <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.5fr) minmax(320px, 0.95fr)" }}>
           <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
             <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Active Voice</h2>
+              <h2 style={{ margin: 0 }}>Voice setup</h2>
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 {activeProfile?.name ?? "No active profile"} · {activeProfile?.speakingStyle ?? "no style yet"}
               </p>
@@ -544,10 +542,10 @@ export function VoiceConsole() {
               ) : (
                 <p style={{ margin: 0, color: "var(--muted)" }}>Upload a sample to shape this voice.</p>
               )}
-            </article>
-
-            <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Create Voice Profile</h2>
+              <div className="section-rule" />
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                Create a fresh profile for testing before you make it the active Secretary voice.
+              </p>
               <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
                 <input value={createForm.name} onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))} placeholder="Voice profile name" style={input} />
                 <select value={createForm.engineId} onChange={(event) => setCreateForm((current) => ({ ...current, engineId: event.target.value }))} style={input}>
@@ -561,67 +559,89 @@ export function VoiceConsole() {
                 make active immediately
               </label>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>Use separate profiles for testing before the final voice polish pass.</p>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>New profiles stay local until you save and activate them.</p>
                 <button type="button" onClick={() => void createProfile()} disabled={creatingProfile} style={{ ...primaryButton, cursor: creatingProfile ? "wait" : "pointer" }}>
                   {creatingProfile ? "Creating..." : "Create Profile"}
                 </button>
               </div>
             </article>
 
-            {state.profiles.map((profile) => {
-              const draft = drafts[profile.id];
-              if (!draft) return null;
-              return (
-                <article key={profile.id} style={{ ...panel, display: "grid", gap: 12, background: profile.isActive ? "rgba(56, 189, 248, 0.1)" : "var(--panel-strong)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <div>
-                      <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                        {profile.isActive ? "Active Profile" : "Voice Profile"}
-                      </p>
-                      <h2 style={{ margin: "8px 0 0", fontSize: 22 }}>{profile.name}</h2>
-                    </div>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{formatTimestamp(profile.updatedAt)}</p>
-                  </div>
-                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                    <input value={draft.name} onChange={(event) => updateDraft(profile.id, { name: event.target.value })} placeholder="name" style={input} />
-                    <select value={draft.engineId} onChange={(event) => updateDraft(profile.id, { engineId: event.target.value })} style={input}>
-                      {engines.map((engine) => <option key={engine} value={engine}>{engine}</option>)}
-                    </select>
-                    <input value={draft.qualityPreset} onChange={(event) => updateDraft(profile.id, { qualityPreset: event.target.value })} placeholder="quality preset" style={input} />
-                    <input value={draft.speakingStyle} onChange={(event) => updateDraft(profile.id, { speakingStyle: event.target.value })} placeholder="speaking style" style={input} />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                    <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--muted)", fontSize: 14 }}>
-                      <input checked={draft.isActive} onChange={(event) => updateDraft(profile.id, { isActive: event.target.checked })} type="checkbox" />
-                      make active
-                    </label>
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      <label style={{ ...ghostButton, cursor: uploadingProfileId === profile.id ? "wait" : "pointer" }}>
-                        {uploadingProfileId === profile.id ? "Uploading..." : "Upload Sample"}
-                        <input
-                          type="file"
-                          accept="audio/*"
-                          style={{ display: "none" }}
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (file) void uploadSample(profile, file);
-                            event.target.value = "";
-                          }}
-                        />
-                      </label>
-                      <button type="button" onClick={() => void saveProfile(profile)} disabled={savingProfileId === profile.id} style={{ ...primaryButton, cursor: savingProfileId === profile.id ? "wait" : "pointer" }}>
-                        {savingProfileId === profile.id ? "Saving..." : "Save"}
-                      </button>
-                    </div>
-                  </div>
-                  {profile.sampleStorageKey ? (
-                    <audio controls src={buildFileUrl(profile.sampleStorageKey, profile.sampleMimeType)} style={{ width: "100%" }} />
-                  ) : (
-                    <p style={{ margin: 0, color: "var(--muted)" }}>No sample uploaded yet.</p>
-                  )}
-                </article>
-              );
-            })}
+            <article style={{ ...panel, display: "grid", gap: 12 }}>
+              <h2 style={{ margin: 0 }}>Voice profiles</h2>
+              {state.profiles.length === 0 ? (
+                <p style={{ margin: 0, color: "var(--muted)" }}>No saved profiles yet.</p>
+              ) : (
+                <div className="compact-list">
+                  {state.profiles.map((profile) => {
+                    const draft = drafts[profile.id];
+                    if (!draft) return null;
+                    return (
+                      <div key={profile.id} style={{ display: "grid", gap: 10, padding: "12px 0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                          <div>
+                            <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                              {profile.isActive ? "Active profile" : "Voice profile"}
+                            </p>
+                            <p style={{ margin: "6px 0 0", fontWeight: 700, fontSize: 16 }}>{profile.name}</p>
+                          </div>
+                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{formatTimestamp(profile.updatedAt)}</p>
+                        </div>
+                        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                          <input value={draft.name} onChange={(event) => updateDraft(profile.id, { name: event.target.value })} placeholder="name" style={input} />
+                          <select value={draft.engineId} onChange={(event) => updateDraft(profile.id, { engineId: event.target.value })} style={input}>
+                            {engines.map((engine) => <option key={engine} value={engine}>{engine}</option>)}
+                          </select>
+                          <input value={draft.qualityPreset} onChange={(event) => updateDraft(profile.id, { qualityPreset: event.target.value })} placeholder="quality preset" style={input} />
+                          <input value={draft.speakingStyle} onChange={(event) => updateDraft(profile.id, { speakingStyle: event.target.value })} placeholder="speaking style" style={input} />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--muted)", fontSize: 14 }}>
+                            <input checked={draft.isActive} onChange={(event) => updateDraft(profile.id, { isActive: event.target.checked })} type="checkbox" />
+                            make active
+                          </label>
+                          <div style={{ display: "grid", gap: 6, justifyItems: "end" }}>
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                              <input
+                                ref={(element) => {
+                                  sampleInputRefs.current[profile.id] = element;
+                                }}
+                                type="file"
+                                accept="audio/*"
+                                style={{ display: "none" }}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (file) void uploadSample(profile, file);
+                                  event.target.value = "";
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => openSamplePicker(profile.id)}
+                                disabled={uploadingProfileId === profile.id}
+                                style={{ ...ghostButton, cursor: uploadingProfileId === profile.id ? "wait" : "pointer" }}
+                              >
+                                {uploadingProfileId === profile.id ? "Uploading..." : "Upload Sample"}
+                              </button>
+                            <button type="button" onClick={() => void saveProfile(profile)} disabled={savingProfileId === profile.id} style={{ ...primaryButton, cursor: savingProfileId === profile.id ? "wait" : "pointer" }}>
+                              {savingProfileId === profile.id ? "Saving..." : "Save"}
+                            </button>
+                            </div>
+                            <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45, maxWidth: 320, textAlign: "right" }}>
+                              Audio only, up to 15 MB. A clean 10 to 60 second voice sample usually works best.
+                            </p>
+                          </div>
+                        </div>
+                        {profile.sampleStorageKey ? (
+                          <audio controls src={buildFileUrl(profile.sampleStorageKey, profile.sampleMimeType)} style={{ width: "100%" }} />
+                        ) : (
+                          <p style={{ margin: 0, color: "var(--muted)" }}>No sample uploaded yet.</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </article>
           </div>
 
           <aside style={{ display: "grid", gap: 20, alignContent: "start" }}>
@@ -653,7 +673,7 @@ export function VoiceConsole() {
                 <button type="button" onClick={() => void startRecording()} disabled={isRecording || isSubmittingRecording} style={{ ...ghostButton, cursor: isRecording || isSubmittingRecording ? "not-allowed" : "pointer" }}>
                   {isSubmittingRecording ? "Submitting..." : "Start Recording"}
                 </button>
-                <button type="button" onClick={stopRecording} disabled={!isRecording} style={{ ...primaryButton, cursor: isRecording ? "pointer" : "not-allowed", background: "linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)" }}>
+                <button type="button" onClick={stopRecording} disabled={!isRecording} style={{ ...primaryButton, cursor: isRecording ? "pointer" : "not-allowed", background: "linear-gradient(135deg, var(--warning) 0%, var(--danger) 100%)" }}>
                   Stop And Send
                 </button>
               </div>
@@ -661,7 +681,7 @@ export function VoiceConsole() {
                 {recordingError ?? (isRecording ? "Recording now. Stop when you want to transcribe and send." : "Run browser-side speech through the same STT and chat path as Telegram voice notes.")}
               </p>
               {pushToTalkResult ? (
-                <div style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(125, 211, 252, 0.28)", background: "rgba(56, 189, 248, 0.08)", display: "grid", gap: 8 }}>
+                <div style={{ padding: 12, borderRadius: 14, border: "1px solid var(--success-soft-border)", background: "var(--success-soft-bg)", display: "grid", gap: 8 }}>
                   <p style={{ margin: 0, fontWeight: 700 }}>Transcript: {pushToTalkResult.transcriptText}</p>
                   <p style={{ margin: 0, color: "var(--muted)" }}>Reply: {pushToTalkResult.replyText}</p>
                   <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>conversation {pushToTalkResult.conversationId} · artifact {pushToTalkResult.artifactId}</p>
@@ -680,21 +700,23 @@ export function VoiceConsole() {
               {state.artifacts.length === 0 ? (
                 <p style={{ margin: 0, color: "var(--muted)" }}>No speech artifacts yet for this view.</p>
               ) : (
-                state.artifacts.map((artifact) => (
-                  <article key={artifact.id} style={{ padding: 12, borderRadius: 14, border: "1px solid rgba(148, 163, 184, 0.14)", background: "rgba(2, 6, 23, 0.58)", display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{artifact.artifactKind}</p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>{formatTimestamp(artifact.createdAt)}</p>
+                <div className="compact-list">
+                  {state.artifacts.map((artifact) => (
+                    <div key={artifact.id} style={{ padding: "12px 0", display: "grid", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                        <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{artifact.artifactKind}</p>
+                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>{formatTimestamp(artifact.createdAt)}</p>
+                      </div>
+                      <p style={{ margin: 0, fontWeight: 700 }}>{artifact.status}</p>
+                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                        {artifact.transcriptText ? snippet(artifact.transcriptText, 180) : `${artifact.sourceChannel} · ${artifact.sourceRef ?? "n/a"}`}
+                      </p>
+                      {isAudioMime(artifact.mimeType) ? (
+                        <audio controls src={buildFileUrl(artifact.storageKey, artifact.mimeType)} style={{ width: "100%" }} />
+                      ) : null}
                     </div>
-                    <p style={{ margin: 0, fontWeight: 700 }}>{artifact.status}</p>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                      {artifact.transcriptText ? snippet(artifact.transcriptText, 180) : `${artifact.sourceChannel} · ${artifact.sourceRef ?? "n/a"}`}
-                    </p>
-                    {isAudioMime(artifact.mimeType) ? (
-                      <audio controls src={buildFileUrl(artifact.storageKey, artifact.mimeType)} style={{ width: "100%" }} />
-                    ) : null}
-                  </article>
-                ))
+                  ))}
+                </div>
               )}
             </article>
           </aside>

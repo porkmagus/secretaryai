@@ -43,6 +43,8 @@ export type TelegramWebhookInfo = {
   last_error_message?: string;
 };
 
+export type TelegramGetUpdatesResult = TelegramUpdate[];
+
 export type TelegramFile = {
   file_id: string;
   file_unique_id?: string;
@@ -238,6 +240,19 @@ export function createTelegramClient(options: {
     async deleteWebhook() {
       return callMethod<boolean>("deleteWebhook", {
         drop_pending_updates: false,
+      });
+    },
+    async getUpdates(params?: {
+      offset?: number;
+      timeoutSeconds?: number;
+      limit?: number;
+      allowedUpdates?: string[];
+    }) {
+      return callMethod<TelegramGetUpdatesResult>("getUpdates", {
+        offset: params?.offset,
+        timeout: params?.timeoutSeconds,
+        limit: params?.limit,
+        allowed_updates: params?.allowedUpdates,
       });
     },
     async sendMessage(chatId: string, text: string) {

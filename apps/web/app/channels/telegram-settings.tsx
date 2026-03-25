@@ -12,11 +12,14 @@ import type {
   TelegramSyncWebhookResponse,
   TelegramTestMessageResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
+import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type DraftState = {
+  deliveryMode: "web_only" | "mirror_all" | "telegram_when_away" | "important_only";
   enabled: boolean;
+  idleTimeoutMinutes: number;
+  mode: "webhook" | "polling";
   webhookUrl: string;
   defaultChatId: string;
 };
@@ -79,7 +82,10 @@ export function TelegramSettings() {
     tasks: [],
   });
   const [draft, setDraft] = useState<DraftState>({
+    deliveryMode: "web_only",
     enabled: false,
+    idleTimeoutMinutes: 15,
+    mode: "polling",
     webhookUrl: "",
     defaultChatId: "",
   });
@@ -143,7 +149,10 @@ export function TelegramSettings() {
         tasks: (tasksPayload as TaskListResponse).tasks,
       });
       setDraft({
+        deliveryMode: telegram.deliveryMode,
         enabled: telegram.enabled,
+        idleTimeoutMinutes: telegram.idleTimeoutMinutes,
+        mode: telegram.mode,
         webhookUrl: telegram.desiredWebhookUrl ?? "",
         defaultChatId: telegram.defaultChatId ?? "",
       });
@@ -166,6 +175,9 @@ export function TelegramSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           enabled: draft.enabled,
+          deliveryMode: draft.deliveryMode,
+          idleTimeoutMinutes: draft.idleTimeoutMinutes,
+          mode: draft.mode,
           webhookUrl: draft.webhookUrl.trim() || null,
           defaultChatId: draft.defaultChatId.trim() || null,
         }),
@@ -202,7 +214,13 @@ export function TelegramSettings() {
       }
 
       const result = payload as TelegramSyncWebhookResponse;
-      setNotice(result.webhookUrl ? `Webhook synced to ${result.webhookUrl}.` : "Webhook removed because Telegram is disabled.");
+      setNotice(
+        draft.mode === "polling"
+          ? "Polling mode applied. Telegram inbound now comes from local long-polling."
+          : result.webhookUrl
+            ? `Webhook synced to ${result.webhookUrl}.`
+            : "Webhook removed because Telegram is disabled.",
+      );
       await refresh();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "Unable to sync webhook.");
@@ -268,7 +286,7 @@ export function TelegramSettings() {
     { label: "Bot token in environment", done: Boolean(state.telegram?.envConfigured) },
     { label: "Bot identity resolves", done: Boolean(state.telegram?.botConfigured) },
     { label: "Integration enabled", done: Boolean(state.telegram?.enabled) },
-    { label: "Webhook target saved", done: Boolean(state.telegram?.desiredWebhookUrl) },
+    { label: draft.mode === "polling" ? "Polling selected" : "Webhook target saved", done: draft.mode === "polling" ? true : Boolean(state.telegram?.desiredWebhookUrl) },
     { label: "Fallback chat id set", done: Boolean(state.telegram?.defaultChatId) },
   ];
 
@@ -293,44 +311,80 @@ export function TelegramSettings() {
             Telegram status: {isLoading ? "loading" : tone.label}
           </div>
         }
+        tone="dark"
       />
 
-      <StatGrid>
+      <div className="summary-strip">
         {[
-          { label: "Health", value: state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown") },
-          { label: "Telegram conversations", value: String(state.telegram?.conversationCount ?? 0) },
-          { label: "Telegram messages", value: String(state.telegram?.messageCount ?? 0) },
-          { label: "Due reminders", value: String(state.telegram?.dueReminderCount ?? 0) },
-        ].map((card) => (
-          <StatCard key={card.label} label={card.label} value={card.value} detail="Current integration snapshot" />
+          ["Health", state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown")],
+          ["Mode", state.telegram?.mode ?? draft.mode],
+          [
+            "Delivery",
+            draft.deliveryMode === "mirror_all"
+              ? "mirror"
+              : draft.deliveryMode === "telegram_when_away"
+                ? "when away"
+                : draft.deliveryMode === "important_only"
+                  ? "important only"
+                  : "web only",
+          ],
+          ["Conversations", String(state.telegram?.conversationCount ?? 0)],
+          ["Messages", String(state.telegram?.messageCount ?? 0)],
+          ["Due reminders", String(state.telegram?.dueReminderCount ?? 0)],
+        ].map(([label, value]) => (
+          <div key={label} className="summary-chip">
+            <p className="summary-chip-label">{label}</p>
+            <p className="summary-chip-value">{value}</p>
+          </div>
         ))}
-      </StatGrid>
+      </div>
 
       {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
       {!error && notice ? <NoticeBanner tone="info">{notice}</NoticeBanner> : null}
 
       <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.95fr)" }}>
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-            <SurfaceCard title="Integration settings" description={<p>{state.telegram?.healthSummary ?? "Loading Telegram integration health..."}</p>} className="stack-md">
+            <SurfaceCard title="Telegram settings" description={<p>{state.telegram?.healthSummary ?? "Loading Telegram integration health..."}</p>} className="stack-md">
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text)", fontWeight: 600 }}>
+                  <input checked={draft.enabled} onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))} type="checkbox" />
+                  <span>Enable Telegram integration</span>
+                </label>
                 <button type="button" onClick={() => void refresh()} className="button-secondary">
                   Refresh
                 </button>
               </div>
 
-              <label style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text)", fontWeight: 600 }}>
-                <input checked={draft.enabled} onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))} type="checkbox" />
-                Enable Telegram integration
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>Inbound transport mode</span>
+                <select
+                  value={draft.mode}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      mode: event.target.value as "webhook" | "polling",
+                    }))
+                  }
+                >
+                  <option value="polling">Polling (best for local computer use)</option>
+                  <option value="webhook">Webhook / tunnel (best for public worker URLs)</option>
+                </select>
               </label>
 
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>Public worker URL or full webhook URL</span>
-                <input
-                  value={draft.webhookUrl}
-                  onChange={(event) => setDraft((current) => ({ ...current, webhookUrl: event.target.value }))}
-                  placeholder="https://your-worker-host.example.com"
-                />
-              </label>
+              {draft.mode === "webhook" ? (
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>Public worker URL or full webhook URL</span>
+                  <input
+                    value={draft.webhookUrl}
+                    onChange={(event) => setDraft((current) => ({ ...current, webhookUrl: event.target.value }))}
+                    placeholder="https://your-worker-host.example.com"
+                  />
+                </label>
+              ) : (
+                <div className="notice-banner notice-banner--info">
+                  Polling mode keeps Telegram inbound local. No public worker URL is required.
+                </div>
+              )}
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>Default Telegram chat id for tests and fallback reminders</span>
@@ -341,42 +395,88 @@ export function TelegramSettings() {
                 />
               </label>
 
+              <div className="section-rule" />
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                  Outbound delivery policy
+                </p>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>How Samantha should reach you</span>
+                  <select
+                    value={draft.deliveryMode}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        deliveryMode: event.target.value as DraftState["deliveryMode"],
+                      }))
+                    }
+                  >
+                    <option value="web_only">Web only</option>
+                    <option value="mirror_all">Mirror every Samantha reply to Telegram</option>
+                    <option value="telegram_when_away">Send to Telegram when the Desk has gone idle</option>
+                    <option value="important_only">Telegram only for approvals, heartbeat, and important items</option>
+                  </select>
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>Desk idle timeout before Telegram takes over</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={480}
+                    value={draft.idleTimeoutMinutes}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        idleTimeoutMinutes: Number(event.target.value) || 15,
+                      }))
+                    }
+                  />
+                </label>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
+                  The Desk reports light presence while it is open and visible. In <strong style={{ color: "var(--text)" }}>when away</strong> mode,
+                  Samantha mirrors replies to Telegram after that idle window passes.
+                </p>
+              </div>
+
+              <div className="section-rule" />
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                  Quick outbound test
+                </p>
+                <input
+                  value={testChatId}
+                  onChange={(event) => setTestChatId(event.target.value)}
+                  placeholder="Test chat id"
+                />
+                <textarea
+                  value={testText}
+                  onChange={(event) => setTestText(event.target.value)}
+                  rows={3}
+                  placeholder="Optional custom test message"
+                />
+              </div>
+
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => void saveSettings()} disabled={isSaving} className="button-primary" style={{ opacity: isSaving ? 0.7 : 1 }}>
                   {isSaving ? "Saving..." : "Save Settings"}
                 </button>
                 <button type="button" onClick={() => void syncWebhook()} disabled={isSyncing} className="button-secondary" style={{ opacity: isSyncing ? 0.7 : 1 }}>
-                  {isSyncing ? "Syncing..." : "Sync Webhook"}
+                  {isSyncing ? "Applying..." : draft.mode === "polling" ? "Apply Polling" : "Sync Webhook"}
                 </button>
                 <button type="button" onClick={() => void dispatchReminders()} disabled={isDispatching} className="button-secondary" style={{ opacity: isDispatching ? 0.7 : 1 }}>
                   {isDispatching ? "Dispatching..." : "Deliver Due Reminders"}
+                </button>
+                <button type="button" onClick={() => void sendTestMessage()} disabled={isTesting} className="button-secondary" style={{ opacity: isTesting ? 0.7 : 1 }}>
+                  {isTesting ? "Sending..." : "Send Test Message"}
                 </button>
               </div>
 
               <div className="notice-banner notice-banner--info">
                 {error ?? notice ?? "The bot token stays in your local environment. This page only manages runtime state and webhook-facing configuration."}
-              </div>
-            </SurfaceCard>
-
-            <SurfaceCard title="Outbound test" description={<p>Send a real Telegram message without waiting for an inbound webhook event.</p>} className="stack-md">
-              <input
-                value={testChatId}
-                onChange={(event) => setTestChatId(event.target.value)}
-                placeholder="Test chat id"
-              />
-              <textarea
-                value={testText}
-                onChange={(event) => setTestText(event.target.value)}
-                rows={3}
-                placeholder="Optional custom test message"
-              />
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => void sendTestMessage()} disabled={isTesting} className="button-secondary" style={{ opacity: isTesting ? 0.7 : 1 }}>
-                  {isTesting ? "Sending..." : "Send Test Message"}
-                </button>
-                <button type="button" onClick={() => setTestText("Secretary test: live outbound Telegram delivery is working from the Channels page.")} className="button-secondary">
-                  Fill Sample
-                </button>
               </div>
             </SurfaceCard>
 
@@ -394,39 +494,44 @@ export function TelegramSettings() {
               {telegramConversations.length === 0 ? (
                 <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram conversations have been recorded yet.</p>
               ) : (
-                telegramConversations.map((conversation) => (
-                  <article key={conversation.id} style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(64, 89, 112, 0.12)", background: "rgba(255, 255, 255, 0.68)", display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                      <p style={{ margin: 0, fontWeight: 700 }}>{conversation.title ?? "Telegram conversation"}</p>
-                      <span style={{ padding: "4px 8px", borderRadius: 999, background: "rgba(15, 118, 110, 0.08)", color: "var(--accent)", fontSize: 12, fontWeight: 700 }}>
-                        {conversation.messageCount} messages
-                      </span>
+                <div className="compact-list">
+                  {telegramConversations.map((conversation) => (
+                    <div key={conversation.id} style={{ display: "grid", gap: 6, padding: "12px 0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{conversation.title ?? "Telegram conversation"}</p>
+                        <span style={{ color: "var(--accent-strong)", fontSize: 12, fontWeight: 700 }}>
+                          {conversation.messageCount} messages
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                        {snippet(conversation.lastMessagePreview, 140)}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                        Last activity {formatTimestamp(conversation.lastMessageAt)}
+                      </p>
                     </div>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                      {snippet(conversation.lastMessagePreview, 140)}
-                    </p>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                      Last activity {formatTimestamp(conversation.lastMessageAt)}
-                    </p>
-                  </article>
-                ))
+                  ))}
+                </div>
               )}
             </SurfaceCard>
           </div>
 
           <aside style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <SurfaceCard title="Readiness checklist" className="stack-sm">
-              {readiness.map((entry) => (
-                <div key={entry.label} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--muted)" }}>
-                  <span>{entry.label}</span>
-                  <strong style={{ color: entry.done ? "var(--success)" : "var(--danger)" }}>
-                    {entry.done ? "ready" : "missing"}
-                  </strong>
-                </div>
-              ))}
-            </SurfaceCard>
-
-            <SurfaceCard title="Current bot state" className="stack-sm">
+            <SurfaceCard title="Connection snapshot" className="stack-md">
+              <div className="compact-list">
+                {readiness.map((entry) => (
+                  <div key={entry.label} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--muted)", padding: "9px 0" }}>
+                    <span>{entry.label}</span>
+                    <strong style={{ color: entry.done ? "var(--success-soft-text)" : "var(--warning-soft-text)" }}>
+                      {entry.done ? "ready" : "missing"}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+              <div className="section-rule" />
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Mode: <strong style={{ color: "var(--text)" }}>{state.telegram?.mode ?? draft.mode}</strong>
+              </p>
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 Bot user: <strong style={{ color: "var(--text)" }}>{state.telegram?.botUser?.displayName ?? "not resolved yet"}</strong>
               </p>
@@ -437,17 +542,36 @@ export function TelegramSettings() {
                 Pending updates: <strong style={{ color: "var(--text)" }}>{state.telegram?.pendingUpdateCount ?? "n/a"}</strong>
               </p>
               <p style={{ margin: 0, color: "var(--muted)" }}>
+                Delivery: <strong style={{ color: "var(--text)" }}>
+                  {state.telegram?.deliveryMode === "mirror_all"
+                    ? "Mirror every reply"
+                    : state.telegram?.deliveryMode === "telegram_when_away"
+                      ? "Send when away"
+                      : state.telegram?.deliveryMode === "important_only"
+                        ? "Important only"
+                        : "Web only"}
+                </strong>
+              </p>
+              <p style={{ margin: 0, color: "var(--muted)" }}>
+                Desk last seen: <strong style={{ color: "var(--text)" }}>{formatTimestamp(state.telegram?.lastWebPresenceAt ?? null)}</strong>
+              </p>
+              <p style={{ margin: 0, color: "var(--muted)" }}>
                 Last check: <strong style={{ color: "var(--text)" }}>{formatTimestamp(state.telegram?.lastCheckedAt ?? null)}</strong>
               </p>
-            </SurfaceCard>
-
-            <SurfaceCard title="Webhook" className="stack-sm">
-              <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
-                Saved target: {state.telegram?.desiredWebhookUrl ?? "not set"}
-              </p>
-              <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
-                Healthy target: {state.telegram?.webhookUrl ?? "not synced"}
-              </p>
+              {state.telegram?.mode === "webhook" ? (
+                <>
+                  <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
+                    Saved target: {state.telegram?.desiredWebhookUrl ?? "not set"}
+                  </p>
+                  <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
+                    Healthy target: {state.telegram?.webhookUrl ?? "not synced"}
+                  </p>
+                </>
+              ) : (
+                <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
+                  Polling mode is active, so no webhook target is needed.
+                </p>
+              )}
               {state.telegram?.lastError ? (
                 <p style={{ margin: 0, color: "var(--danger)", lineHeight: 1.6 }}>
                   Last Telegram error: {state.telegram.lastError}
@@ -459,27 +583,29 @@ export function TelegramSettings() {
               {telegramTasks.length === 0 ? (
                 <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram reminder tasks are visible yet.</p>
               ) : (
-                telegramTasks.map((task) => {
-                  const reminder = describeReminder(task);
+                <div className="compact-list">
+                  {telegramTasks.map((task) => {
+                    const reminder = describeReminder(task);
 
-                  return (
-                    <article key={task.id} style={{ padding: 14, borderRadius: 18, border: "1px solid rgba(64, 89, 112, 0.12)", background: "rgba(255, 255, 255, 0.68)", display: "grid", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                        <p style={{ margin: 0, fontWeight: 700 }}>{task.title}</p>
-                        <span style={{ color: reminder.color, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          {reminder.label}
-                        </span>
+                    return (
+                      <div key={task.id} style={{ display: "grid", gap: 6, padding: "12px 0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                          <p style={{ margin: 0, fontWeight: 700 }}>{task.title}</p>
+                          <span style={{ color: reminder.color, fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                            {reminder.label}
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                          {task.detail ?? "No extra reminder detail."}
+                        </p>
+                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{reminder.detail}</p>
+                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                          target chat {task.deliveryTargetRef ?? state.telegram?.defaultChatId ?? "n/a"}
+                        </p>
                       </div>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                        {task.detail ?? "No extra reminder detail."}
-                      </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{reminder.detail}</p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                        target chat {task.deliveryTargetRef ?? state.telegram?.defaultChatId ?? "n/a"}
-                      </p>
-                    </article>
-                  );
-                })
+                    );
+                  })}
+                </div>
               )}
             </SurfaceCard>
           </aside>

@@ -7,12 +7,14 @@ function joinClasses(...values: Array<string | false | null | undefined>) {
 export function AppPage({
   children,
   width = "1220px",
+  className,
 }: {
   children: ReactNode;
   width?: string;
+  className?: string;
 }) {
   return (
-    <main className="app-page">
+    <main className={joinClasses("app-page", className)}>
       <section className="page-stack" style={{ width: `min(${width}, 100%)` }}>
         {children}
       </section>
