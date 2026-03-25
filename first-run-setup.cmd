@@ -18,12 +18,12 @@ if not exist ".env" (
   echo .env already exists. Leaving it in place.
 )
 
-call :run "Install dependencies" npm install || goto :error
-call :run "Prepare runtime storage" npm run storage:prepare || goto :error
-call :run "Start Postgres/Redis/SearXNG" npm run stack:up || goto :error
-call :run "Apply database migrations" npm run db:migrate || goto :error
-call :run "Prepare local STT service" npm run stt:setup || goto :error
-call :run "Prepare local TTS service" npm run tts:setup || goto :error
+call :run "Install dependencies" "npm install" || goto :error
+call :run "Prepare runtime storage" "npm run storage:prepare" || goto :error
+call :run "Start Postgres/Redis/SearXNG" "npm run stack:up" || goto :error
+call :run "Apply database migrations" "npm run db:migrate" || goto :error
+call :run "Prepare local STT service" "npm run stt:setup" || goto :error
+call :run "Prepare local TTS service" "npm run tts:setup" || goto :error
 
 echo.
 echo First-run setup is complete.
@@ -33,14 +33,14 @@ exit /b 0
 
 :run
 set "_label=%~1"
-shift
+set "_command=%~2"
 echo.
 echo [%_label%]
 if defined DRY_RUN (
-  echo [DRY RUN] %*
+  echo [DRY RUN] %_command%
   exit /b 0
 )
-call %*
+call %_command%
 exit /b %errorlevel%
 
 :error

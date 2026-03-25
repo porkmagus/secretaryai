@@ -12,9 +12,9 @@ if not exist ".env" (
   exit /b 1
 )
 
-call :run "Prepare runtime storage" npm run storage:prepare || goto :error
-call :run "Start Postgres/Redis/SearXNG" npm run stack:up || goto :error
-call :run "Apply database migrations" npm run db:migrate || goto :error
+call :run "Prepare runtime storage" "npm run storage:prepare" || goto :error
+call :run "Start Postgres/Redis/SearXNG" "npm run stack:up" || goto :error
+call :run "Apply database migrations" "npm run db:migrate" || goto :error
 
 call :launch "Secretary Web" "npm run dev:web" || goto :error
 call :launch "Secretary Worker" "npm run dev:worker" || goto :error
@@ -34,14 +34,14 @@ exit /b 0
 
 :run
 set "_label=%~1"
-shift
+set "_command=%~2"
 echo.
 echo [%_label%]
 if defined DRY_RUN (
-  echo [DRY RUN] %*
+  echo [DRY RUN] %_command%
   exit /b 0
 )
-call %*
+call %_command%
 exit /b %errorlevel%
 
 :launch
