@@ -34,6 +34,7 @@ import { createTelegramClient } from "@secretary/integrations";
 import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
 import { findConversationIdByChannelRef, getConversationMessages } from "./chat-persistence.js";
 import { parseSecretaryCustomization } from "./admin-runtime.js";
+import { sendConfiguredEmail } from "./outbound-channel-integrations.js";
 import { defaultSecretaryName, defaultSecretarySoul } from "./persona-soul.js";
 import {
   buildTaskDraft,
@@ -172,10 +173,8 @@ const builtInTools: BuiltInTool[] = [
   {
     key: "email_send",
     name: "Send Email",
-    description: "Send a real outbound email once an email adapter exists.",
-    approvalMode: "deny",
-    enabled: false,
-    healthStatus: "not_configured",
+    description: "Send a real outbound email through the configured email channel.",
+    approvalMode: "ask_first",
   },
 ];
 
@@ -647,6 +646,34 @@ function parseEmailDraftIntent(text: string) {
   };
 }
 
+function parseEmailSendIntent(text: string) {
+  const match =
+    text.match(/\b(?:send)\s+(?:an?\s+)?email\s+to\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i) ??
+    text.match(/\bsend\s+email\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i);
+
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const to = cleanTaskText(match[1]).replace(/[.?!]+$/, "");
+  const subject = cleanTaskText(match[2] ?? "").replace(/[.?!]+$/, "");
+  const body = cleanTaskText(match[3] ?? "").replace(/[.?!]+$/, "");
+
+  if (!to || (!subject && !body)) {
+    return null;
+  }
+
+  return {
+    requestJson: {
+      body,
+      subject: subject || `Follow-up: ${shortSnippet(body || to, 48)}`,
+      to,
+    },
+    summary: `Send email to ${to}`,
+    toolKey: "email_send" as const,
+  };
+}
+
 function parseDurationMinutes(text: string) {
   const hoursMatch = text.match(/\bfor\s+(\d+)\s+hours?\b/i);
   if (hoursMatch?.[1]) {
@@ -718,6 +745,7 @@ function detectToolIntent(text: string): ToolIntent | null {
     parseTaskUpdateIntent(text) ??
     parseSearchIntent(text) ??
     parseBrowserOpenIntent(text) ??
+    parseEmailSendIntent(text) ??
     parseFileWriteIntent(text) ??
     parseFileIntent(text) ??
     parseDocumentCreateIntent(text) ??
@@ -1772,6 +1800,37 @@ async function executeEmailDraft(requestJson: Record<string, unknown>) {
   };
 }
 
+async function executeEmailSend(
+  config: AppConfig,
+  dbClient: DbClient,
+  requestJson: Record<string, unknown>,
+) {
+  const to = typeof requestJson.to === "string" ? requestJson.to.trim() : "";
+  const subject = typeof requestJson.subject === "string" ? requestJson.subject.trim() : "";
+  const body = typeof requestJson.body === "string" ? requestJson.body.trim() : "";
+
+  if (!to || !subject) {
+    throw new Error("Email sends need a recipient and subject.");
+  }
+
+  const result = await sendConfiguredEmail({
+    config,
+    dbClient,
+    recipient: to,
+    subject,
+    text: body || subject,
+  });
+
+  return {
+    responseJson: {
+      messageId: result.messageId,
+      subject,
+      to: result.recipient,
+    },
+    text: `I sent the email to ${result.recipient}.`,
+  };
+}
+
 async function resolveTaskExecutionContext(
   dbClient: DbClient,
   conversationId: string | null | undefined,
@@ -1839,7 +1898,7 @@ async function executeToolRequest(params: {
     case "email_draft":
       return executeEmailDraft(params.requestJson);
     case "email_send":
-      throw new Error("Email sending is not configured yet.");
+      return executeEmailSend(params.config, params.dbClient, params.requestJson);
     default:
       throw new Error(`Unsupported tool key ${params.toolKey}.`);
   }

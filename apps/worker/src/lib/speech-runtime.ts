@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import {
   activityTraces,
@@ -15,6 +16,10 @@ import {
   type VoiceProfileListResponse,
   type VoiceProfileRecord,
 } from "@secretary/core-runtime";
+import {
+  normalizeSpeechStorageKey,
+  resolveManagedSpeechStoragePath,
+} from "./speech-storage.js";
 
 const builtInVoiceProfiles: Record<
   PersonaGender,
@@ -49,7 +54,7 @@ function toSpeechArtifactRecord(
     messageId: record.messageId,
     artifactKind: record.artifactKind as SpeechArtifactRecord["artifactKind"],
     status: record.status as SpeechArtifactRecord["status"],
-    storageKey: record.storageKey,
+    storageKey: normalizeSpeechStorageKey(record.storageKey),
     mimeType: record.mimeType,
     durationMs: record.durationMs,
     transcriptText: record.transcriptText,
@@ -67,7 +72,9 @@ function toVoiceProfileRecord(
     id: record.id,
     name: record.name,
     engineId: record.engineId,
-    sampleStorageKey: record.sampleStorageKey,
+    sampleStorageKey: record.sampleStorageKey
+      ? normalizeSpeechStorageKey(record.sampleStorageKey)
+      : null,
     sampleMimeType: record.sampleMimeType,
     sampleDurationMs: record.sampleDurationMs,
     qualityPreset: record.qualityPreset,
@@ -75,6 +82,49 @@ function toVoiceProfileRecord(
     isActive: record.isActive,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+async function hasManagedSpeechFile(storageKey: string) {
+  try {
+    await access(resolveManagedSpeechStoragePath(storageKey));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sanitizeVoiceProfileRecord(
+  dbClient: DbClient,
+  record: typeof voiceProfiles.$inferSelect,
+): Promise<VoiceProfileRecord> {
+  const normalizedRecord = toVoiceProfileRecord(record);
+
+  if (!normalizedRecord.sampleStorageKey) {
+    return normalizedRecord;
+  }
+
+  const sampleExists = await hasManagedSpeechFile(normalizedRecord.sampleStorageKey);
+
+  if (sampleExists) {
+    return normalizedRecord;
+  }
+
+  await dbClient.db
+    .update(voiceProfiles)
+    .set({
+      sampleStorageKey: null,
+      sampleMimeType: null,
+      sampleDurationMs: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(voiceProfiles.id, record.id));
+
+  return {
+    ...normalizedRecord,
+    sampleStorageKey: null,
+    sampleMimeType: null,
+    sampleDurationMs: null,
   };
 }
 
@@ -106,7 +156,7 @@ export async function listVoiceProfiles(
   });
 
   return {
-    profiles: records.map(toVoiceProfileRecord),
+    profiles: await Promise.all(records.map((record) => sanitizeVoiceProfileRecord(dbClient, record))),
   };
 }
 
@@ -232,6 +282,9 @@ export async function updateVoiceProfile(
     .set({
       name: request.name ?? existing.name,
       engineId: request.engineId ?? existing.engineId,
+      sampleStorageKey: request.clearSample ? null : existing.sampleStorageKey,
+      sampleMimeType: request.clearSample ? null : existing.sampleMimeType,
+      sampleDurationMs: request.clearSample ? null : existing.sampleDurationMs,
       qualityPreset:
         request.qualityPreset !== undefined ? request.qualityPreset : existing.qualityPreset,
       speakingStyle:
@@ -278,8 +331,21 @@ export async function listSpeechArtifacts(
     limit: 50,
   });
 
+  const artifacts = await Promise.all(
+    records.map(async (record) => {
+      const artifact = toSpeechArtifactRecord(record);
+
+      if (!artifact.mimeType?.startsWith("audio/")) {
+        return artifact;
+      }
+
+      const exists = await hasManagedSpeechFile(artifact.storageKey);
+      return exists ? artifact : null;
+    }),
+  );
+
   return {
-    artifacts: records.map(toSpeechArtifactRecord),
+    artifacts: artifacts.filter((artifact): artifact is SpeechArtifactRecord => artifact !== null),
   };
 }
 

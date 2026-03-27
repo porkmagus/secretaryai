@@ -59,39 +59,19 @@ export async function createVoicePreview(params: {
   const storagePath = await ensureSpeechStoragePath(storageKey);
   await writeFile(storagePath, synthesis.audio);
 
-  const artifactId = await createSpeechArtifact({
-    dbClient: params.dbClient,
-    conversationId: null,
-    messageId: null,
-    artifactKind: "tts_output",
-    status: "synthesized",
-    storageKey,
-    mimeType: synthesis.mimeType,
-    durationMs: synthesis.durationMs,
-    transcriptText: text,
-    sourceChannel: "web",
-    sourceRef: voiceProfile?.id ?? "preview",
-    metadataJson: {
-      engineId: voiceProfile?.engineId ?? "chatterbox",
-      modelName: synthesis.modelName,
-      preview: true,
-      voiceProfileId: voiceProfile?.id ?? null,
-    },
-  });
-
   await recordSpeechTrace({
     dbClient: params.dbClient,
     conversationId: null,
     eventName: "speech.preview.generated",
     payload: {
-      artifactId,
+      storageKey,
       engineId: voiceProfile?.engineId ?? "chatterbox",
+      modelName: synthesis.modelName,
       voiceProfileId: voiceProfile?.id ?? null,
     },
   });
 
   return {
-    artifactId,
     audio: synthesis.audio,
     mimeType: synthesis.mimeType ?? "audio/wav",
   };

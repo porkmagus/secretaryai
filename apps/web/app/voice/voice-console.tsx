@@ -4,29 +4,41 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationListItem,
   ConversationListResponse,
-  CreateVoiceProfileRequest,
   SpeechArtifactListResponse,
   SpeechArtifactRecord,
   SpeechServiceStatusResponse,
+  UpdateVoiceProfileRequest,
   VoiceProfileListResponse,
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
-import { AppPage, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import {
+  ActionRow,
+  AppPage,
+  EmptyState,
+  FieldHint,
+  NoticeBanner,
+  SurfaceCard,
+} from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
-type VoicePageState = {
+type VoiceWorkspaceState = {
   conversations: ConversationListItem[];
   profiles: VoiceProfileRecord[];
-  artifacts: SpeechArtifactRecord[];
 };
 
-type EditableProfile = {
+type ActiveVoiceDraft = {
   name: string;
   engineId: string;
   qualityPreset: string;
   speakingStyle: string;
-  isActive: boolean;
+};
+
+type DiagnosticsState = {
+  artifacts: SpeechArtifactRecord[];
+  isLoading: boolean;
+  isLoaded: boolean;
+  selectedConversationId: string;
 };
 
 type PushToTalkResult = {
@@ -39,7 +51,12 @@ type PushToTalkResult = {
 type SpeechStatusState = SpeechServiceStatusResponse["services"] | null;
 
 const engines = ["chatterbox", "chatterbox-turbo", "chatterbox-multilingual"] as const;
-const panel = { border: "1px solid var(--border)", borderRadius: 20, background: "var(--panel-strong)", padding: 18 } as const;
+const qualityPresets = [
+  { value: "balanced", label: "Balanced" },
+  { value: "clear", label: "Clear" },
+  { value: "expressive", label: "Expressive" },
+  { value: "gentle", label: "Gentle" },
+] as const;
 const input = {
   width: "100%",
   borderRadius: 12,
@@ -78,77 +95,76 @@ function buildFileUrl(storageKey: string, mimeType: string | null) {
   return url.toString();
 }
 
-function draftFromProfile(profile: VoiceProfileRecord): EditableProfile {
+function draftFromProfile(profile: VoiceProfileRecord): ActiveVoiceDraft {
   return {
     name: profile.name,
     engineId: profile.engineId,
     qualityPreset: profile.qualityPreset ?? "",
     speakingStyle: profile.speakingStyle ?? "",
-    isActive: profile.isActive,
   };
 }
 
-function toneColor(tone: "info" | "success" | "warning" | "error") {
-  switch (tone) {
-    case "success":
-      return "var(--success-soft-text)";
-    case "warning":
-      return "var(--warning-soft-text)";
-    case "error":
-      return "var(--danger-soft-text)";
-    default:
-      return "var(--muted)";
-  }
-}
-
 export function VoiceConsole() {
-  const [state, setState] = useState<VoicePageState>({ conversations: [], profiles: [], artifacts: [] });
+  const [state, setState] = useState<VoiceWorkspaceState>({ conversations: [], profiles: [] });
   const [speechStatus, setSpeechStatus] = useState<SpeechStatusState>(null);
-  const [drafts, setDrafts] = useState<Record<string, EditableProfile>>({});
-  const [selectedConversationId, setSelectedConversationId] = useState("all");
+  const [draft, setDraft] = useState<ActiveVoiceDraft | null>(null);
+  const [clearSampleOnSave, setClearSampleOnSave] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
+    artifacts: [],
+    isLoading: false,
+    isLoaded: false,
+    selectedConversationId: "all",
+  });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: "info" | "success" | "warning" | "error"; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [savingProfileId, setSavingProfileId] = useState<string | null>(null);
-  const [uploadingProfileId, setUploadingProfileId] = useState<string | null>(null);
-  const [creatingProfile, setCreatingProfile] = useState(false);
-  const [createForm, setCreateForm] = useState<CreateVoiceProfileRequest>({ name: "", engineId: "chatterbox", qualityPreset: "balanced", speakingStyle: "warm and clear", isActive: false });
-  const [previewText, setPreviewText] = useState("Secretary voice preview. This confirms the local cloned voice path is ready.");
-  const [previewProfileId, setPreviewProfileId] = useState("active");
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingSample, setIsUploadingSample] = useState(false);
+  const [previewText, setPreviewText] = useState(
+    "Secretary voice preview. This confirms the active voice path is ready.",
+  );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewArtifactId, setPreviewArtifactId] = useState<string | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [recordingConversationId, setRecordingConversationId] = useState("new");
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isSubmittingRecording, setIsSubmittingRecording] = useState(false);
   const [pushToTalkResult, setPushToTalkResult] = useState<PushToTalkResult | null>(null);
+  const sampleInputRef = useRef<HTMLInputElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const sampleInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const activeProfile = useMemo(() => state.profiles.find((profile) => profile.isActive) ?? state.profiles[0] ?? null, [state.profiles]);
-  const summary = useMemo(() => ({
-    profiles: state.profiles.length,
-    samples: state.profiles.filter((profile) => profile.sampleStorageKey).length,
-    transcripts: state.artifacts.filter((artifact) => artifact.transcriptText).length,
-    tts: state.artifacts.filter((artifact) => artifact.artifactKind === "tts_output").length,
-  }), [state.artifacts, state.profiles]);
+  const activeProfile = useMemo(
+    () => state.profiles.find((profile) => profile.isActive) ?? state.profiles[0] ?? null,
+    [state.profiles],
+  );
+  const activeVoiceMode = clearSampleOnSave || !activeProfile?.sampleStorageKey ? "default" : "custom";
+  const summaryItems = useMemo(
+    () => [
+      ["Active voice", activeProfile?.name ?? "not set"],
+      ["Mode", activeVoiceMode === "custom" ? "custom sample" : "default voice"],
+      ["STT", speechStatus?.stt.healthStatus ?? "loading"],
+      ["TTS", speechStatus?.tts.healthStatus ?? "loading"],
+      ["ffmpeg", speechStatus?.ffmpeg.available ? "ready" : "fallback"],
+    ],
+    [activeProfile?.name, activeVoiceMode, speechStatus],
+  );
   const readinessNotes = useMemo(() => {
     const notes: Array<{ tone: "warning" | "info"; text: string }> = [];
 
     if (!speechStatus?.stt || speechStatus.stt.healthStatus !== "ok") {
       notes.push({
         tone: "warning",
-        text: "STT is not fully ready, so browser speech and Telegram voice-note transcription may fail.",
+        text: "Speech-to-text is not fully ready, so browser and Telegram voice transcription may fail.",
       });
     }
 
     if (!speechStatus?.tts || speechStatus.tts.healthStatus !== "ok") {
       notes.push({
         tone: "warning",
-        text: "TTS is not fully ready, so previews and spoken replies may fail.",
+        text: "Text-to-speech is not fully ready, so previews and spoken replies may fail.",
       });
     }
 
@@ -159,18 +175,19 @@ export function VoiceConsole() {
       });
     }
 
-    if (activeProfile && !activeProfile.sampleStorageKey) {
+    if (activeVoiceMode === "default") {
       notes.push({
         tone: "info",
-        text: "The active voice profile has no uploaded sample yet, so Secretary is using the engine's default voice character.",
+        text: "No custom sample is active right now, so the secretary is using the selected engine's built-in voice.",
       });
     }
 
     return notes;
-  }, [activeProfile, speechStatus]);
+  }, [activeVoiceMode, speechStatus]);
 
   useEffect(() => {
-    void refresh("all");
+    void refreshCore();
+
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       recorderRef.current?.stop();
@@ -178,158 +195,148 @@ export function VoiceConsole() {
     };
   }, []);
 
-  async function refresh(conversationId = selectedConversationId) {
+  async function refreshCore() {
     setIsLoading(true);
     setError(null);
     try {
-      const artifactsUrl = conversationId === "all" ? "/api/speech/artifacts" : `/api/speech/artifacts?conversationId=${encodeURIComponent(conversationId)}`;
-      const [profilesResponse, artifactsResponse, conversationsResponse, statusResponse] = await Promise.all([
+      const [profilesResponse, conversationsResponse, statusResponse] = await Promise.all([
         fetch("/api/voice/profiles", { cache: "no-store" }),
-        fetch(artifactsUrl, { cache: "no-store" }),
         fetch("/api/conversations", { cache: "no-store" }),
         fetch("/api/speech/status", { cache: "no-store" }),
       ]);
-      const [profilesPayload, artifactsPayload, conversationsPayload, statusPayload] = await Promise.all([
+      const [profilesPayload, conversationsPayload, statusPayload] = await Promise.all([
         profilesResponse.json(),
-        artifactsResponse.json(),
         conversationsResponse.json(),
         statusResponse.json(),
       ]);
-      if (!profilesResponse.ok) throw new Error(profilesPayload.error ?? "Unable to load voice profiles.");
-      if (!artifactsResponse.ok) throw new Error(artifactsPayload.error ?? "Unable to load speech artifacts.");
+      if (!profilesResponse.ok) throw new Error(profilesPayload.error ?? "Unable to load voice settings.");
       if (!conversationsResponse.ok) throw new Error(conversationsPayload.error ?? "Unable to load conversations.");
-      if (!statusResponse.ok) throw new Error(statusPayload.error ?? "Unable to load speech service status.");
+      if (!statusResponse.ok) throw new Error(statusPayload.error ?? "Unable to load speech status.");
+
       const profiles = (profilesPayload as VoiceProfileListResponse).profiles;
-      setState({
-        profiles,
-        artifacts: (artifactsPayload as SpeechArtifactListResponse).artifacts,
-        conversations: (conversationsPayload as ConversationListResponse).conversations,
-      });
+      const conversations = (conversationsPayload as ConversationListResponse).conversations;
+      const active = profiles.find((profile) => profile.isActive) ?? profiles[0] ?? null;
+
+      setState({ profiles, conversations });
       setSpeechStatus((statusPayload as SpeechServiceStatusResponse).services);
-      setDrafts((current) => {
-        const next = { ...current };
-        for (const profile of profiles) next[profile.id] = current[profile.id] ?? draftFromProfile(profile);
-        return next;
-      });
-      setSelectedConversationId(conversationId);
-      if (previewProfileId !== "active" && !profiles.some((profile) => profile.id === previewProfileId)) setPreviewProfileId("active");
+      setDraft(active ? draftFromProfile(active) : null);
+      setClearSampleOnSave(false);
+      if (recordingConversationId !== "new" && !conversations.some((conversation) => conversation.id === recordingConversationId)) {
+        setRecordingConversationId("new");
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load voice workspace.");
+      setError(loadError instanceof Error ? loadError.message : "Unable to load the voice workspace.");
     } finally {
       setIsLoading(false);
     }
   }
 
-  function updateDraft(profileId: string, patch: Partial<EditableProfile>) {
-    setDrafts((current) => ({ ...current, [profileId]: { ...current[profileId], ...patch } }));
+  async function loadDiagnostics(conversationId = diagnostics.selectedConversationId) {
+    setDiagnostics((current) => ({ ...current, isLoading: true }));
+    try {
+      const artifactsUrl =
+        conversationId === "all"
+          ? "/api/speech/artifacts"
+          : `/api/speech/artifacts?conversationId=${encodeURIComponent(conversationId)}`;
+      const response = await fetch(artifactsUrl, { cache: "no-store" });
+      const payload = (await response.json()) as SpeechArtifactListResponse & { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Unable to load recent speech activity.");
+      setDiagnostics({
+        artifacts: payload.artifacts,
+        isLoading: false,
+        isLoaded: true,
+        selectedConversationId: conversationId,
+      });
+    } catch (loadError) {
+      setDiagnostics((current) => ({ ...current, isLoading: false }));
+      setError(loadError instanceof Error ? loadError.message : "Unable to load recent speech activity.");
+    }
   }
 
-  function openSamplePicker(profileId: string) {
-    sampleInputRefs.current[profileId]?.click();
-  }
-
-  async function createProfile() {
-    if (!createForm.name.trim()) {
-      setError("Voice profile name is required.");
+  async function saveActiveVoice() {
+    if (!activeProfile || !draft) {
+      setError("No active voice profile is available yet.");
       return;
     }
-    setCreatingProfile(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch("/api/voice/profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...createForm,
-          name: createForm.name.trim(),
-          qualityPreset: createForm.qualityPreset?.trim() || null,
-          speakingStyle: createForm.speakingStyle?.trim() || null,
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Unable to create voice profile.");
-      setCreateForm({ name: "", engineId: "chatterbox", qualityPreset: "balanced", speakingStyle: "warm and clear", isActive: false });
-      setNotice({
-        tone: createForm.isActive ? "success" : "info",
-        text: createForm.isActive
-          ? "Voice profile created and made active."
-          : "Voice profile created.",
-      });
-      await refresh(selectedConversationId);
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Voice profile creation failed.");
-    } finally {
-      setCreatingProfile(false);
+    if (!draft.name.trim()) {
+      setError("Voice label is required.");
+      return;
     }
-  }
-
-  async function saveProfile(profile: VoiceProfileRecord) {
-    const draft = drafts[profile.id];
-    if (!draft) return;
-    setSavingProfileId(profile.id);
+    setIsSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/voice/profiles/${profile.id}`, {
+      const request: UpdateVoiceProfileRequest = {
+        name: draft.name.trim(),
+        engineId: draft.engineId.trim(),
+        qualityPreset: draft.qualityPreset.trim() || null,
+        speakingStyle: draft.speakingStyle.trim() || null,
+        isActive: true,
+        clearSample: clearSampleOnSave,
+      };
+      const response = await fetch(`/api/voice/profiles/${activeProfile.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: draft.name.trim(),
-          engineId: draft.engineId.trim(),
-          qualityPreset: draft.qualityPreset.trim() || null,
-          speakingStyle: draft.speakingStyle.trim() || null,
-          isActive: draft.isActive,
-        }),
+        body: JSON.stringify(request),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Unable to update voice profile.");
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to save the active voice.");
+      }
       setNotice({
-        tone: draft.isActive ? "success" : "info",
-        text: draft.isActive
-          ? `${draft.name || profile.name} is now the active Secretary voice.`
-          : `${draft.name || profile.name} was updated.`,
+        tone: "success",
+        text: request.clearSample
+          ? "The secretary is back on the default engine voice."
+          : "Active voice settings saved.",
       });
-      await refresh(selectedConversationId);
+      await refreshCore();
+      if (diagnosticsOpen && diagnostics.isLoaded) {
+        await loadDiagnostics(diagnostics.selectedConversationId);
+      }
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Voice profile update failed.");
+      setError(saveError instanceof Error ? saveError.message : "Unable to save the active voice.");
     } finally {
-      setSavingProfileId(null);
+      setIsSaving(false);
     }
   }
 
-  async function uploadSample(profile: VoiceProfileRecord, file: File) {
+  async function uploadSample(file: File) {
+    if (!activeProfile) {
+      setError("No active voice profile is available yet.");
+      return;
+    }
     if (!file.type.startsWith("audio/")) {
       setError("Voice samples must be audio files.");
       return;
     }
-
     if (file.size > 15 * 1024 * 1024) {
       setError("Voice samples must be 15 MB or smaller.");
       return;
     }
-
-    setUploadingProfileId(profile.id);
+    setIsUploadingSample(true);
     setError(null);
     setNotice(null);
     try {
       const form = new FormData();
       form.set("file", file, file.name);
-      const response = await fetch(`/api/voice/profiles/${profile.id}/sample`, {
+      const response = await fetch(`/api/voice/profiles/${activeProfile.id}/sample`, {
         method: "POST",
         body: form,
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "Unable to upload voice sample.");
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to upload the voice sample.");
+      }
+      setClearSampleOnSave(false);
       setNotice({
         tone: "success",
-        text: `Sample uploaded for ${profile.name}. Save or activate the profile if you want Secretary to speak with it.`,
+        text: "Custom sample uploaded. Save the voice if you want these settings to become the active path.",
       });
-      await refresh(selectedConversationId);
+      await refreshCore();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Voice sample upload failed.");
+      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload the voice sample.");
     } finally {
-      setUploadingProfileId(null);
+      setIsUploadingSample(false);
     }
   }
 
@@ -347,26 +354,21 @@ export function VoiceConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: previewText.trim(),
-          profileId: previewProfileId === "active" ? null : previewProfileId,
+          profileId: activeProfile?.id ?? null,
         }),
       });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({ error: "Unable to generate preview." }));
-        throw new Error(payload.error ?? "Unable to generate preview.");
+        const payload = await response.json().catch(() => ({ error: "Unable to generate voice preview." }));
+        throw new Error(payload.error ?? "Unable to generate voice preview.");
       }
       const blob = await response.blob();
       const nextUrl = URL.createObjectURL(blob);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(nextUrl);
-      setPreviewArtifactId(response.headers.get("X-Secretary-Artifact-Id"));
       setNotice({
         tone: "success",
-        text:
-          previewProfileId === "active"
-            ? "Preview generated with the active Secretary voice."
-            : "Preview generated for the selected voice profile.",
+        text: "Preview generated with the active secretary voice settings.",
       });
-      await refresh(selectedConversationId);
     } catch (previewError) {
       setError(previewError instanceof Error ? previewError.message : "Voice preview failed.");
     } finally {
@@ -424,7 +426,14 @@ export function VoiceConsole() {
     setIsSubmittingRecording(true);
     setRecordingError(null);
     try {
-      const extension = mimeType.includes("ogg") ? "ogg" : mimeType.includes("mpeg") ? "mp3" : "webm";
+      const extension =
+        mimeType.includes("ogg")
+          ? "ogg"
+          : mimeType.includes("mpeg")
+            ? "mp3"
+            : mimeType.includes("wav")
+              ? "wav"
+              : "webm";
       const form = new FormData();
       form.set("audio", blob, `voice-console-recording.${extension}`);
       if (recordingConversationId !== "new") form.set("conversationId", recordingConversationId);
@@ -442,12 +451,16 @@ export function VoiceConsole() {
       });
       setNotice({
         tone: "success",
-        text: "Browser speech turn transcribed and routed through Secretary successfully.",
+        text: "Voice turn transcribed and routed through the secretary successfully.",
       });
       setRecordingConversationId(payload.reply.conversationId);
-      await refresh(payload.reply.conversationId);
+      if (diagnosticsOpen) {
+        await loadDiagnostics(payload.reply.conversationId);
+      }
     } catch (submitError) {
-      setRecordingError(submitError instanceof Error ? submitError.message : "Voice turn submission failed.");
+      setRecordingError(
+        submitError instanceof Error ? submitError.message : "Voice turn submission failed.",
+      );
     } finally {
       setIsSubmittingRecording(false);
     }
@@ -458,33 +471,28 @@ export function VoiceConsole() {
       <SurfaceCard
         tone="dark"
         title="Voice"
-        description={<p>Manage the speaking voice, test it quickly, and keep the speech pipeline readable from one place.</p>}
+        description={
+          <p>
+            Keep one reliable speaking voice for the secretary, test it quickly, and only open
+            deeper diagnostics when you actually need them.
+          </p>
+        }
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <ActionRow align="between">
           <div className="persona-summary-strip">
-            {[
-              ["Active", activeProfile?.name ?? "none"],
-              ["Profiles", summary.profiles],
-              ["Samples", summary.samples],
-              ["STT", speechStatus?.stt.healthStatus ?? "loading"],
-              ["TTS", speechStatus?.tts.healthStatus ?? "loading"],
-              ["ffmpeg", speechStatus?.ffmpeg.available ? "ready" : "fallback"],
-            ].map(([label, value], index) => (
+            {summaryItems.map(([label, value]) => (
               <div key={String(label)} className="persona-summary-item">
                 <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
                   {label}
                 </span>
                 <span
                   className="summary-chip-value"
-                  style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  style={{
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
                 >
                   {value}
                 </span>
@@ -492,20 +500,22 @@ export function VoiceConsole() {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" onClick={() => void refresh(selectedConversationId)} style={{ ...primaryButton, cursor: "pointer" }}>
-              {isLoading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-        </div>
+          <button
+            type="button"
+            onClick={() => void refreshCore()}
+            style={{ ...primaryButton, cursor: isLoading ? "wait" : "pointer" }}
+          >
+            {isLoading ? "Refreshing..." : "Refresh"}
+          </button>
+        </ActionRow>
 
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
           {error ??
             (isLoading
-              ? "Loading voice workspace..."
+              ? "Loading the active voice path..."
               : activeProfile
-                ? `Active profile: ${activeProfile.name} via ${activeProfile.engineId}.`
-                : "No voice profile found yet.")}
+                ? `Active voice: ${activeProfile.name} via ${activeProfile.engineId}.`
+                : "No active voice is available yet.")}
         </p>
       </SurfaceCard>
 
@@ -535,214 +545,427 @@ export function VoiceConsole() {
         </div>
       ) : null}
 
-      <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.5fr) minmax(320px, 0.95fr)" }}>
-          <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Profile manager</h2>
-              <p style={{ margin: 0, color: "var(--muted)" }}>
-                {activeProfile?.name ?? "No active profile"} · {activeProfile?.speakingStyle ?? "no style yet"}
-              </p>
-              {activeProfile?.sampleStorageKey ? (
-                <audio controls src={buildFileUrl(activeProfile.sampleStorageKey, activeProfile.sampleMimeType)} style={{ width: "100%" }} />
-              ) : (
-                <p style={{ margin: 0, color: "var(--muted)" }}>Upload a sample to shape this voice.</p>
-              )}
-              <div className="section-rule" />
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                Create a fresh profile for testing before you make it the active Secretary voice.
-              </p>
-              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                <input value={createForm.name} onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))} placeholder="Voice profile name" style={input} />
-                <select value={createForm.engineId} onChange={(event) => setCreateForm((current) => ({ ...current, engineId: event.target.value }))} style={input}>
-                  {engines.map((engine) => <option key={engine} value={engine}>{engine}</option>)}
-                </select>
-                <input value={createForm.qualityPreset ?? ""} onChange={(event) => setCreateForm((current) => ({ ...current, qualityPreset: event.target.value }))} placeholder="quality preset" style={input} />
-                <input value={createForm.speakingStyle ?? ""} onChange={(event) => setCreateForm((current) => ({ ...current, speakingStyle: event.target.value }))} placeholder="speaking style" style={input} />
-              </div>
-              <ToggleField
-                checked={Boolean(createForm.isActive)}
-                onChange={(next) => setCreateForm((current) => ({ ...current, isActive: next }))}
-                label="Make active immediately"
-                hint="Useful when this profile is intended to replace the current voice right away."
-              />
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>New profiles stay local until you save and activate them.</p>
-                <button type="button" onClick={() => void createProfile()} disabled={creatingProfile} style={{ ...primaryButton, cursor: creatingProfile ? "wait" : "pointer" }}>
-                  {creatingProfile ? "Creating..." : "Create Profile"}
-                </button>
-              </div>
-              <div className="section-rule" />
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                <h3 style={{ margin: 0, fontSize: 18 }}>Saved profiles</h3>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                  {state.profiles.length} profile{state.profiles.length === 1 ? "" : "s"} on disk
-                </p>
-              </div>
-              {state.profiles.length === 0 ? (
-                <EmptyState
-                  title="No saved voice profiles yet"
-                  description={<p>Create a profile above to give the secretary a speaking voice and store its sample.</p>}
-                />
-              ) : (
-                <div className="compact-list">
-                  {state.profiles.map((profile) => {
-                    const draft = drafts[profile.id];
-                    if (!draft) return null;
-                    return (
-                      <div key={profile.id} style={{ display: "grid", gap: 10, padding: "12px 0" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                          <div>
-                            <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                              {profile.isActive ? "Active profile" : "Voice profile"}
-                            </p>
-                            <p style={{ margin: "6px 0 0", fontWeight: 700, fontSize: 16 }}>{profile.name}</p>
-                          </div>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>{formatTimestamp(profile.updatedAt)}</p>
-                        </div>
-                        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                          <input value={draft.name} onChange={(event) => updateDraft(profile.id, { name: event.target.value })} placeholder="name" style={input} />
-                          <select value={draft.engineId} onChange={(event) => updateDraft(profile.id, { engineId: event.target.value })} style={input}>
-                            {engines.map((engine) => <option key={engine} value={engine}>{engine}</option>)}
-                          </select>
-                          <input value={draft.qualityPreset} onChange={(event) => updateDraft(profile.id, { qualityPreset: event.target.value })} placeholder="quality preset" style={input} />
-                          <input value={draft.speakingStyle} onChange={(event) => updateDraft(profile.id, { speakingStyle: event.target.value })} placeholder="speaking style" style={input} />
-                        </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                          <ToggleField
-                            checked={draft.isActive}
-                            onChange={(next) => updateDraft(profile.id, { isActive: next })}
-                            label="Make active"
-                            hint="Switch Secretary to this profile on save."
-                          />
-                          <div style={{ display: "grid", gap: 6, justifyItems: "end" }}>
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                              <input
-                                ref={(element) => {
-                                  sampleInputRefs.current[profile.id] = element;
-                                }}
-                                type="file"
-                                accept="audio/*"
-                                style={{ display: "none" }}
-                                onChange={(event) => {
-                                  const file = event.target.files?.[0];
-                                  if (file) void uploadSample(profile, file);
-                                  event.target.value = "";
-                                }}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => openSamplePicker(profile.id)}
-                                disabled={uploadingProfileId === profile.id}
-                                style={{ ...ghostButton, cursor: uploadingProfileId === profile.id ? "wait" : "pointer" }}
-                              >
-                                {uploadingProfileId === profile.id ? "Uploading..." : "Upload Sample"}
-                              </button>
-                            <button type="button" onClick={() => void saveProfile(profile)} disabled={savingProfileId === profile.id} style={{ ...primaryButton, cursor: savingProfileId === profile.id ? "wait" : "pointer" }}>
-                              {savingProfileId === profile.id ? "Saving..." : "Save"}
-                            </button>
-                            </div>
-                            <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45, maxWidth: 320, textAlign: "right" }}>
-                              Audio only, up to 15 MB. A clean 10 to 60 second voice sample usually works best.
-                            </p>
-                          </div>
-                        </div>
-                        {profile.sampleStorageKey ? (
-                          <audio controls src={buildFileUrl(profile.sampleStorageKey, profile.sampleMimeType)} style={{ width: "100%" }} />
-                        ) : (
-                          <EmptyState
-                            title="No sample uploaded yet"
-                            description={<p>Upload a reference sample if you want this profile to sound like a specific voice.</p>}
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </article>
-          </div>
+      <section
+        style={{
+          display: "grid",
+          gap: 20,
+          gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.95fr)",
+        }}
+      >
+        <SurfaceCard
+          tone="soft"
+          title="Active voice"
+          description={
+            <p>
+              Keep one voice path active. Use the engine’s default voice or add a custom sample if
+              you want cloning.
+            </p>
+          }
+        >
+          {!activeProfile || !draft ? (
+            <EmptyState
+              title="No active voice yet"
+              description={<p>The worker has not prepared an active voice profile yet.</p>}
+              tone="warm"
+            />
+          ) : (
+            <div className="stack-md">
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                  gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1.1fr)",
+                }}
+              >
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                    Voice label
+                  </span>
+                  <input
+                    value={draft.name}
+                    onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))}
+                    placeholder="Secretary voice"
+                    style={input}
+                  />
+                  <FieldHint>This is just the local label for the one active voice path.</FieldHint>
+                </label>
 
-          <aside style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Speech testing</h2>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                Preview the current voice, then run browser push-to-talk through the same speech path.
-              </p>
-              <select value={previewProfileId} onChange={(event) => setPreviewProfileId(event.target.value)} style={input}>
-                <option value="active">active profile</option>
-                {state.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-              </select>
-              <textarea value={previewText} onChange={(event) => setPreviewText(event.target.value)} rows={5} style={{ ...input, resize: "vertical" }} />
-              <button type="button" onClick={() => void previewVoice()} disabled={isPreviewing} style={{ ...primaryButton, cursor: isPreviewing ? "wait" : "pointer" }}>
-                {isPreviewing ? "Synthesizing..." : "Generate Preview"}
-              </button>
-              {previewUrl ? (
-                <>
-                  <audio controls src={previewUrl} style={{ width: "100%" }} />
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>artifact {previewArtifactId ?? "stored"}</p>
-                </>
-              ) : null}
-              <div className="section-rule" />
-              <h3 style={{ margin: 0, fontSize: 18 }}>Web push to talk</h3>
-              <select value={recordingConversationId} onChange={(event) => setRecordingConversationId(event.target.value)} style={input}>
-                <option value="new">new conversation</option>
-                {state.conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title ?? snippet(conversation.lastMessagePreview)}</option>)}
-              </select>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => void startRecording()} disabled={isRecording || isSubmittingRecording} style={{ ...ghostButton, cursor: isRecording || isSubmittingRecording ? "not-allowed" : "pointer" }}>
-                  {isSubmittingRecording ? "Submitting..." : "Start Recording"}
-                </button>
-                <button type="button" onClick={stopRecording} disabled={!isRecording} style={{ ...primaryButton, cursor: isRecording ? "pointer" : "not-allowed", background: "linear-gradient(135deg, var(--warning) 0%, var(--danger) 100%)" }}>
-                  Stop And Send
-                </button>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                    Engine
+                  </span>
+                  <select
+                    value={draft.engineId}
+                    onChange={(event) => setDraft((current) => (current ? { ...current, engineId: event.target.value } : current))}
+                    style={input}
+                  >
+                    {engines.map((engine) => (
+                      <option key={engine} value={engine}>
+                        {engine}
+                      </option>
+                    ))}
+                  </select>
+                  <FieldHint>The active engine voice is used whenever you are not cloning from a sample.</FieldHint>
+                </label>
               </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gap: 12,
+                  gridTemplateColumns: "minmax(0, 0.75fr) minmax(0, 1.25fr)",
+                }}
+              >
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                    Quality preset
+                  </span>
+                  <select
+                    value={draft.qualityPreset || "balanced"}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, qualityPreset: event.target.value } : current,
+                      )
+                    }
+                    style={input}
+                  >
+                    {qualityPresets.map((preset) => (
+                      <option key={preset.value} value={preset.value}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  <FieldHint>Choose a known preset instead of typing free-form engine tuning.</FieldHint>
+                </label>
+
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                    Speaking style
+                  </span>
+                  <input
+                    value={draft.speakingStyle}
+                    onChange={(event) => setDraft((current) => (current ? { ...current, speakingStyle: event.target.value } : current))}
+                    placeholder="Warm, poised, and clear"
+                    style={input}
+                  />
+                  <FieldHint>Short traits work best here: calm, warm, direct, clear.</FieldHint>
+                </label>
+              </div>
+
+              <div className="section-rule" />
+
+              <div className="stack-sm">
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    <p style={{ margin: 0, fontWeight: 700 }}>
+                      {activeVoiceMode === "custom" ? "Custom sample active" : "Default voice active"}
+                    </p>
+                    <FieldHint>
+                      Upload one clean sample if you want cloning. Otherwise the secretary will use
+                      the selected engine’s default voice.
+                    </FieldHint>
+                  </div>
+
+                  <ActionRow align="start">
+                    <input
+                      ref={sampleInputRef}
+                      type="file"
+                      accept="audio/*"
+                      style={{ display: "none" }}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void uploadSample(file);
+                        event.target.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => sampleInputRef.current?.click()}
+                      disabled={isUploadingSample}
+                      style={{ ...ghostButton, cursor: isUploadingSample ? "wait" : "pointer" }}
+                    >
+                      {isUploadingSample
+                        ? "Uploading..."
+                        : activeProfile.sampleStorageKey && !clearSampleOnSave
+                          ? "Replace sample"
+                          : "Upload sample"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setClearSampleOnSave(true)}
+                      disabled={activeVoiceMode === "default"}
+                      style={{ ...ghostButton, cursor: activeVoiceMode === "default" ? "not-allowed" : "pointer" }}
+                    >
+                      Use default voice
+                    </button>
+                  </ActionRow>
+                </div>
+
+                {activeProfile.sampleStorageKey && !clearSampleOnSave ? (
+                  <audio
+                    controls
+                    src={buildFileUrl(activeProfile.sampleStorageKey, activeProfile.sampleMimeType)}
+                    style={{ width: "100%" }}
+                  />
+                ) : (
+                  <EmptyState
+                    title="No custom sample loaded"
+                    description={
+                      <p>
+                        The voice page is running in the lightest setup: one active profile and the
+                        engine’s built-in voice. Add a sample only if you want cloning.
+                      </p>
+                    }
+                    tone="warm"
+                  />
+                )}
+
+                <FieldHint>
+                  Best results usually come from a clean 10 to 60 second sample with one speaker,
+                  little background noise, and no music underneath.
+                </FieldHint>
+              </div>
+
+              <ActionRow>
+                <button
+                  type="button"
+                  onClick={() => void saveActiveVoice()}
+                  disabled={isSaving}
+                  style={{ ...primaryButton, cursor: isSaving ? "wait" : "pointer" }}
+                >
+                  {isSaving ? "Saving..." : "Save voice"}
+                </button>
+              </ActionRow>
+            </div>
+          )}
+        </SurfaceCard>
+
+        <SurfaceCard
+          tone="soft"
+          title="Speech testing"
+          description={
+            <p>
+              Test the active voice quickly, then send a browser push-to-talk turn through the same
+              transcription path used for real voice messages.
+            </p>
+          }
+        >
+          <div className="stack-md">
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                Preview script
+              </span>
+              <textarea
+                value={previewText}
+                onChange={(event) => setPreviewText(event.target.value)}
+                rows={5}
+                style={{ ...input, resize: "vertical" }}
+              />
+              <FieldHint>
+                Preview audio is generated on demand and is not kept as long-term artifact clutter.
+              </FieldHint>
+            </label>
+
+            <ActionRow>
+              <button
+                type="button"
+                onClick={() => void previewVoice()}
+                disabled={isPreviewing}
+                style={{ ...primaryButton, cursor: isPreviewing ? "wait" : "pointer" }}
+              >
+                {isPreviewing ? "Synthesizing..." : "Generate preview"}
+              </button>
+            </ActionRow>
+
+            {previewUrl ? <audio controls src={previewUrl} style={{ width: "100%" }} /> : null}
+
+            <div className="section-rule" />
+
+            <div className="stack-sm">
+              <h3 style={{ margin: 0, fontSize: 18 }}>Browser push to talk</h3>
+              <FieldHint>
+                This records in the browser, transcribes through STT, and sends the text through the
+                normal secretary chat path.
+              </FieldHint>
+              <select
+                value={recordingConversationId}
+                onChange={(event) => setRecordingConversationId(event.target.value)}
+                style={input}
+              >
+                <option value="new">new conversation</option>
+                {state.conversations.map((conversation) => (
+                  <option key={conversation.id} value={conversation.id}>
+                    {conversation.title ?? snippet(conversation.lastMessagePreview)}
+                  </option>
+                ))}
+              </select>
+              <ActionRow align="start">
+                <button
+                  type="button"
+                  onClick={() => void startRecording()}
+                  disabled={isRecording || isSubmittingRecording}
+                  style={{
+                    ...ghostButton,
+                    cursor: isRecording || isSubmittingRecording ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {isSubmittingRecording ? "Submitting..." : "Start recording"}
+                </button>
+                <button
+                  type="button"
+                  onClick={stopRecording}
+                  disabled={!isRecording}
+                  style={{
+                    ...primaryButton,
+                    cursor: isRecording ? "pointer" : "not-allowed",
+                    background: "linear-gradient(135deg, var(--warning) 0%, var(--danger) 100%)",
+                  }}
+                >
+                  Stop and send
+                </button>
+              </ActionRow>
               <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                {recordingError ?? (isRecording ? "Recording now. Stop when you want to transcribe and send." : "Run browser-side speech through the same STT and chat path as Telegram voice notes.")}
+                {recordingError ??
+                  (isRecording
+                    ? "Recording now. Stop when you want to send the turn."
+                    : "Use this for a full voice-path test, not just a synthetic preview.")}
               </p>
               {pushToTalkResult ? (
-                <div style={{ padding: 12, borderRadius: 14, border: "1px solid var(--success-soft-border)", background: "var(--success-soft-bg)", display: "grid", gap: 8 }}>
+                <div
+                  style={{
+                    padding: 12,
+                    borderRadius: 14,
+                    border: "1px solid var(--success-soft-border)",
+                    background: "var(--success-soft-bg)",
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
                   <p style={{ margin: 0, fontWeight: 700 }}>Transcript: {pushToTalkResult.transcriptText}</p>
                   <p style={{ margin: 0, color: "var(--muted)" }}>Reply: {pushToTalkResult.replyText}</p>
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>conversation {pushToTalkResult.conversationId} · artifact {pushToTalkResult.artifactId}</p>
+                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                    conversation {pushToTalkResult.conversationId} · artifact {pushToTalkResult.artifactId}
+                  </p>
                 </div>
               ) : null}
-            </article>
+            </div>
+          </div>
+        </SurfaceCard>
+      </section>
 
-            <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                <h2 style={{ margin: 0 }}>Speech Artifacts</h2>
-                <select value={selectedConversationId} onChange={(event) => void refresh(event.target.value)} style={input}>
-                  <option value="all">all conversations</option>
-                  {state.conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title ?? snippet(conversation.lastMessagePreview)}</option>)}
-                </select>
+      <SurfaceCard
+        tone="soft"
+        title="Diagnostics"
+        description={
+          <p>
+            Open this only when you want to inspect recent speech files or service readiness. It
+            stays out of the way during normal use.
+          </p>
+        }
+      >
+        <details
+          open={diagnosticsOpen}
+          onToggle={(event) => {
+            const nextOpen = event.currentTarget.open;
+            setDiagnosticsOpen(nextOpen);
+            if (nextOpen && !diagnostics.isLoaded && !diagnostics.isLoading) {
+              void loadDiagnostics();
+            }
+          }}
+        >
+          <summary style={{ cursor: "pointer", fontWeight: 700, color: "var(--accent)" }}>
+            {diagnosticsOpen ? "Hide diagnostics" : "Open diagnostics"}
+          </summary>
+          <div className="stack-md" style={{ marginTop: 16 }}>
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                gridTemplateColumns: "minmax(0, 0.9fr) minmax(0, 1.1fr)",
+                alignItems: "end",
+              }}
+            >
+              <div className="compact-list">
+                {[
+                  ["STT", speechStatus?.stt.summary ?? "loading"],
+                  ["TTS", speechStatus?.tts.summary ?? "loading"],
+                  ["ffmpeg", speechStatus?.ffmpeg.summary ?? "loading"],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ padding: "10px 0", display: "grid", gap: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent)" }}>
+                      {label}
+                    </span>
+                    <span style={{ color: "var(--muted)", fontSize: 13 }}>{value}</span>
+                  </div>
+                ))}
               </div>
-              {state.artifacts.length === 0 ? (
-                <EmptyState
-                  title="No speech artifacts for this view"
-                  description={<p>Previews, transcripts, and TTS outputs will collect here after you test or use voice.</p>}
-                />
-              ) : (
-                <div className="compact-list">
-                  {state.artifacts.map((artifact) => (
-                    <div key={artifact.id} style={{ padding: "12px 0", display: "grid", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                        <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>{artifact.artifactKind}</p>
-                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>{formatTimestamp(artifact.createdAt)}</p>
-                      </div>
-                      <p style={{ margin: 0, fontWeight: 700 }}>{artifact.status}</p>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                        {artifact.transcriptText ? snippet(artifact.transcriptText, 180) : `${artifact.sourceChannel} · ${artifact.sourceRef ?? "n/a"}`}
-                      </p>
-                      {isAudioMime(artifact.mimeType) ? (
-                        <audio controls src={buildFileUrl(artifact.storageKey, artifact.mimeType)} style={{ width: "100%" }} />
-                      ) : null}
-                    </div>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  Artifact scope
+                </span>
+                <select
+                  value={diagnostics.selectedConversationId}
+                  onChange={(event) => void loadDiagnostics(event.target.value)}
+                  style={input}
+                >
+                  <option value="all">all conversations</option>
+                  {state.conversations.map((conversation) => (
+                    <option key={conversation.id} value={conversation.id}>
+                      {conversation.title ?? snippet(conversation.lastMessagePreview)}
+                    </option>
                   ))}
-                </div>
-              )}
-            </article>
-          </aside>
-        </section>
+                </select>
+                <FieldHint>
+                  Missing files are filtered out automatically, so this list only shows playable
+                  recent audio that still exists on disk.
+                </FieldHint>
+              </label>
+            </div>
+
+            {diagnostics.isLoading ? (
+              <EmptyState
+                title="Loading recent speech activity"
+                description={<p>Pulling the latest transcripts, recordings, and spoken replies.</p>}
+              />
+            ) : diagnostics.artifacts.length === 0 ? (
+              <EmptyState
+                title="No recent speech activity in this view"
+                description={<p>Once you run previews or voice turns, the recent surviving artifacts will appear here.</p>}
+                tone="warm"
+              />
+            ) : (
+              <div className="compact-list">
+                {diagnostics.artifacts.map((artifact) => (
+                  <div key={artifact.id} style={{ padding: "12px 0", display: "grid", gap: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        {artifact.artifactKind}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
+                        {formatTimestamp(artifact.createdAt)}
+                      </p>
+                    </div>
+                    <p style={{ margin: 0, fontWeight: 700 }}>{artifact.status}</p>
+                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                      {artifact.transcriptText
+                        ? snippet(artifact.transcriptText, 180)
+                        : `${artifact.sourceChannel} · ${artifact.sourceRef ?? "n/a"}`}
+                    </p>
+                    {isAudioMime(artifact.mimeType) ? (
+                      <audio
+                        controls
+                        src={buildFileUrl(artifact.storageKey, artifact.mimeType)}
+                        style={{ width: "100%" }}
+                      />
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
+      </SurfaceCard>
     </AppPage>
   );
 }

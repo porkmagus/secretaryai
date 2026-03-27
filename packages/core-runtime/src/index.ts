@@ -429,6 +429,7 @@ export type AgentJobSettingsResponse = {
 
 export type AdminMaintenanceAction =
   | "clear_stale_agent_jobs"
+  | "clear_stale_speech_media"
   | "clear_finished_agent_jobs"
   | "cancel_active_agent_jobs"
   | "flush_agent_queue"
@@ -698,6 +699,10 @@ export type AdminMaintenanceOverviewResponse = {
     staleWorkspaceJobs: number;
     staleWorkspaceLaunchIntents: number;
   };
+  speech: {
+    staleArtifacts: number;
+    staleProfileSamples: number;
+  };
   queue: {
     wait: number;
     active: number;
@@ -778,6 +783,7 @@ export type UpdateVoiceProfileRequest = {
   qualityPreset?: string | null;
   speakingStyle?: string | null;
   isActive?: boolean;
+  clearSample?: boolean;
 };
 
 export type VoicePreviewRequest = {
@@ -1016,6 +1022,98 @@ export type TelegramReminderDispatchResponse = {
   failed: number;
   taskIds: string[];
   errors: string[];
+};
+
+export type OutboundChannelKey = "discord" | "slack" | "email" | "sms";
+
+export type OutboundChannelHealthStatus =
+  | "ok"
+  | "disabled"
+  | "degraded"
+  | "not_configured";
+
+export type OutboundChannelStatusRecord = {
+  channelKey: OutboundChannelKey;
+  label: string;
+  enabled: boolean;
+  envConfigured: boolean;
+  healthStatus: OutboundChannelHealthStatus;
+  healthSummary: string;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+  providerLabel: string;
+  supportsSubject: boolean;
+  supportsRichText: boolean;
+  targetLabel: string | null;
+  defaultRecipient: string | null;
+  senderIdentity: string | null;
+  deliverySummary: string;
+};
+
+export type OutboundChannelStatusResponse = {
+  integration: OutboundChannelStatusRecord;
+};
+
+export type UpdateDiscordIntegrationRequest = {
+  enabled?: boolean;
+  targetLabel?: string | null;
+};
+
+export type DiscordTestMessageRequest = {
+  text?: string | null;
+};
+
+export type DiscordTestMessageResponse = {
+  ok: boolean;
+  deliveredTo: string;
+};
+
+export type UpdateSlackIntegrationRequest = {
+  enabled?: boolean;
+  targetLabel?: string | null;
+};
+
+export type SlackTestMessageRequest = {
+  text?: string | null;
+};
+
+export type SlackTestMessageResponse = {
+  ok: boolean;
+  deliveredTo: string;
+};
+
+export type UpdateEmailIntegrationRequest = {
+  enabled?: boolean;
+  defaultRecipient?: string | null;
+};
+
+export type EmailTestMessageRequest = {
+  to?: string | null;
+  subject?: string | null;
+  text?: string | null;
+};
+
+export type EmailTestMessageResponse = {
+  ok: boolean;
+  messageId: string | null;
+  recipient: string;
+};
+
+export type UpdateSmsIntegrationRequest = {
+  enabled?: boolean;
+  defaultRecipient?: string | null;
+  senderLabel?: string | null;
+};
+
+export type SmsTestMessageRequest = {
+  to?: string | null;
+  text?: string | null;
+};
+
+export type SmsTestMessageResponse = {
+  ok: boolean;
+  recipient: string;
+  sid: string | null;
 };
 
 export type HeartbeatIntegrationStatusResponse = {

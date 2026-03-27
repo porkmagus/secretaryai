@@ -9,6 +9,8 @@ import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
+  type DiscordTestMessageRequest,
+  type DiscordTestMessageResponse,
   type AdminMaintenanceAction,
   type AdminMaintenanceActionResponse,
   type AdminMaintenanceOverviewResponse,
@@ -23,11 +25,14 @@ import {
   type AgentJobSettingsResponse,
   type CreateAgentJobRequest,
   type ConversationHistoryResponse,
+  type EmailTestMessageRequest,
+  type EmailTestMessageResponse,
   type HeartbeatIntegrationStatusResponse,
   type HeartbeatRunResponse,
   type InferenceProviderId,
   type MemoryListResponse,
   type OnboardingStatusResponse,
+  type OutboundChannelStatusResponse,
   type PersonaSettingsResponse,
   type InferenceSettingsResponse,
   type InferenceModelListResponse,
@@ -36,6 +41,10 @@ import {
   type SettingsExportResponse,
   type SettingsImportRequest,
   type SettingsImportResponse,
+  type SlackTestMessageRequest,
+  type SlackTestMessageResponse,
+  type SmsTestMessageRequest,
+  type SmsTestMessageResponse,
   type SystemHealthResponse,
   type TaskListResponse,
   type ToolApprovalDecisionResponse,
@@ -46,6 +55,10 @@ import {
   type TelegramPresenceUpdateResponse,
   type UpdateAgentJobSettingsRequest,
   type UpdateHeartbeatIntegrationRequest,
+  type UpdateDiscordIntegrationRequest,
+  type UpdateEmailIntegrationRequest,
+  type UpdateSlackIntegrationRequest,
+  type UpdateSmsIntegrationRequest,
   type UpdateToolRequest,
   type UpdatePersonaSettingsRequest,
   type UpdateInferenceSettingsRequest,
@@ -97,6 +110,20 @@ import {
   touchTelegramWebPresence,
   updateTelegramIntegrationSettings,
 } from "./lib/telegram-integration.js";
+import {
+  getDiscordIntegrationStatus,
+  getEmailIntegrationStatus,
+  getSlackIntegrationStatus,
+  getSmsIntegrationStatus,
+  sendDiscordTestMessage,
+  sendEmailTestMessage,
+  sendSlackTestMessage,
+  sendSmsTestMessage,
+  updateDiscordIntegrationSettings,
+  updateEmailIntegrationSettings,
+  updateSlackIntegrationSettings,
+  updateSmsIntegrationSettings,
+} from "./lib/outbound-channel-integrations.js";
 import {
   attachVoiceProfileSample,
   createSpeechArtifact,
@@ -1369,12 +1396,11 @@ export async function buildServer() {
         config,
         dbClient: infrastructure.dbClient,
         request: request.body,
-      });
+        });
 
-      reply.header("Content-Type", preview.mimeType);
-      reply.header("X-Secretary-Artifact-Id", preview.artifactId);
+        reply.header("Content-Type", preview.mimeType);
 
-      return reply.send(preview.audio);
+        return reply.send(preview.audio);
     } catch (error) {
       logger.error("runtime.voice.preview_failed", {
         error: error instanceof Error ? error.message : error,
@@ -1569,6 +1595,270 @@ export async function buildServer() {
       });
     }
   });
+
+  app.get("/runtime/integrations/discord", async (_, reply) => {
+    try {
+      const response: OutboundChannelStatusResponse = await getDiscordIntegrationStatus(
+        infrastructure.dbClient,
+        config,
+      );
+      return response;
+    } catch (error) {
+      logger.error("runtime.integrations.discord.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load Discord integration state.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateDiscordIntegrationRequest }>(
+    "/runtime/integrations/discord",
+    async (request, reply) => {
+      try {
+        const response: OutboundChannelStatusResponse =
+          await updateDiscordIntegrationSettings({
+            dbClient: infrastructure.dbClient,
+            config,
+            patch: request.body,
+          });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.discord.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to update Discord integration settings.",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: DiscordTestMessageRequest }>(
+    "/runtime/integrations/discord/test-message",
+    async (request, reply) => {
+      try {
+        const response: DiscordTestMessageResponse = await sendDiscordTestMessage({
+          dbClient: infrastructure.dbClient,
+          config,
+          request: request.body,
+        });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.discord.test_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to send Discord test message.",
+        });
+      }
+    },
+  );
+
+  app.get("/runtime/integrations/slack", async (_, reply) => {
+    try {
+      const response: OutboundChannelStatusResponse = await getSlackIntegrationStatus(
+        infrastructure.dbClient,
+        config,
+      );
+      return response;
+    } catch (error) {
+      logger.error("runtime.integrations.slack.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load Slack integration state.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateSlackIntegrationRequest }>(
+    "/runtime/integrations/slack",
+    async (request, reply) => {
+      try {
+        const response: OutboundChannelStatusResponse =
+          await updateSlackIntegrationSettings({
+            dbClient: infrastructure.dbClient,
+            config,
+            patch: request.body,
+          });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.slack.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to update Slack integration settings.",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: SlackTestMessageRequest }>(
+    "/runtime/integrations/slack/test-message",
+    async (request, reply) => {
+      try {
+        const response: SlackTestMessageResponse = await sendSlackTestMessage({
+          dbClient: infrastructure.dbClient,
+          config,
+          request: request.body,
+        });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.slack.test_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to send Slack test message.",
+        });
+      }
+    },
+  );
+
+  app.get("/runtime/integrations/email", async (_, reply) => {
+    try {
+      const response: OutboundChannelStatusResponse = await getEmailIntegrationStatus(
+        infrastructure.dbClient,
+        config,
+      );
+      return response;
+    } catch (error) {
+      logger.error("runtime.integrations.email.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load email integration state.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateEmailIntegrationRequest }>(
+    "/runtime/integrations/email",
+    async (request, reply) => {
+      try {
+        const response: OutboundChannelStatusResponse =
+          await updateEmailIntegrationSettings({
+            dbClient: infrastructure.dbClient,
+            config,
+            patch: request.body,
+          });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.email.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to update email integration settings.",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: EmailTestMessageRequest }>(
+    "/runtime/integrations/email/test-message",
+    async (request, reply) => {
+      try {
+        const response: EmailTestMessageResponse = await sendEmailTestMessage({
+          dbClient: infrastructure.dbClient,
+          config,
+          request: request.body,
+        });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.email.test_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to send email test message.",
+        });
+      }
+    },
+  );
+
+  app.get("/runtime/integrations/sms", async (_, reply) => {
+    try {
+      const response: OutboundChannelStatusResponse = await getSmsIntegrationStatus(
+        infrastructure.dbClient,
+        config,
+      );
+      return response;
+    } catch (error) {
+      logger.error("runtime.integrations.sms.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load SMS integration state.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateSmsIntegrationRequest }>(
+    "/runtime/integrations/sms",
+    async (request, reply) => {
+      try {
+        const response: OutboundChannelStatusResponse =
+          await updateSmsIntegrationSettings({
+            dbClient: infrastructure.dbClient,
+            config,
+            patch: request.body,
+          });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.sms.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to update SMS integration settings.",
+        });
+      }
+    },
+  );
+
+  app.post<{ Body: SmsTestMessageRequest }>(
+    "/runtime/integrations/sms/test-message",
+    async (request, reply) => {
+      try {
+        const response: SmsTestMessageResponse = await sendSmsTestMessage({
+          dbClient: infrastructure.dbClient,
+          config,
+          request: request.body,
+        });
+        return response;
+      } catch (error) {
+        logger.error("runtime.integrations.sms.test_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unable to send SMS test message.",
+        });
+      }
+    },
+  );
 
   app.get("/runtime/integrations/heartbeat", async (_, reply) => {
     try {

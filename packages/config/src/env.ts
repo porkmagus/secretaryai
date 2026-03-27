@@ -50,6 +50,47 @@ const appConfigSchema = z.object({
     emptyStringToUndefined,
     z.string().min(1).optional(),
   ),
+  DISCORD_WEBHOOK_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  SLACK_WEBHOOK_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  RESEND_API_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  RESEND_API_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  EMAIL_FROM_ADDRESS: z.preprocess(
+    emptyStringToUndefined,
+    z.string().email().optional(),
+  ),
+  EMAIL_DEFAULT_TO: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).optional(),
+  ),
+  TWILIO_API_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
+  TWILIO_ACCOUNT_SID: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).optional(),
+  ),
+  TWILIO_AUTH_TOKEN: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).optional(),
+  ),
+  TWILIO_FROM_NUMBER: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).optional(),
+  ),
+  SMS_DEFAULT_TO: z.preprocess(
+    emptyStringToUndefined,
+    z.string().min(1).optional(),
+  ),
   STT_BASE_URL: z.preprocess(
     emptyStringToUndefined,
     z.string().url().optional(),
@@ -80,6 +121,27 @@ export type AppConfig = {
   speech: {
     sttBaseUrl: string | null;
     ttsBaseUrl: string | null;
+  };
+  channels: {
+    discord: {
+      webhookUrl: string | null;
+    };
+    email: {
+      apiBaseUrl: string;
+      apiKey: string | null;
+      defaultTo: string | null;
+      fromAddress: string | null;
+    };
+    slack: {
+      webhookUrl: string | null;
+    };
+    sms: {
+      apiBaseUrl: string;
+      accountSid: string | null;
+      authToken: string | null;
+      defaultTo: string | null;
+      fromNumber: string | null;
+    };
   };
   telegram: {
     apiBaseUrl: string;
@@ -120,6 +182,27 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     speech: {
       sttBaseUrl: parsed.STT_BASE_URL ?? null,
       ttsBaseUrl: parsed.TTS_BASE_URL ?? null,
+    },
+    channels: {
+      discord: {
+        webhookUrl: parsed.DISCORD_WEBHOOK_URL ?? null,
+      },
+      email: {
+        apiBaseUrl: parsed.RESEND_API_BASE_URL ?? "https://api.resend.com",
+        apiKey: parsed.RESEND_API_KEY ?? null,
+        defaultTo: parsed.EMAIL_DEFAULT_TO ?? null,
+        fromAddress: parsed.EMAIL_FROM_ADDRESS ?? null,
+      },
+      slack: {
+        webhookUrl: parsed.SLACK_WEBHOOK_URL ?? null,
+      },
+      sms: {
+        apiBaseUrl: parsed.TWILIO_API_BASE_URL ?? "https://api.twilio.com",
+        accountSid: parsed.TWILIO_ACCOUNT_SID ?? null,
+        authToken: parsed.TWILIO_AUTH_TOKEN ?? null,
+        defaultTo: parsed.SMS_DEFAULT_TO ?? null,
+        fromNumber: parsed.TWILIO_FROM_NUMBER ?? null,
+      },
     },
     telegram: {
       apiBaseUrl: parsed.TELEGRAM_API_BASE_URL,

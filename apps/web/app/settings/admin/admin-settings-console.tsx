@@ -21,6 +21,12 @@ const actions: Array<{
     tone: "dark",
   },
   {
+    action: "clear_stale_speech_media",
+    title: "Clear stale speech residue",
+    description: "Remove speech artifact records and broken voice sample references that point at files no longer on disk.",
+    tone: "dark",
+  },
+  {
     action: "cancel_active_agent_jobs",
     title: "Cancel active jobs",
     description: "Stop every queued, running, or waiting job so the system can return to an idle state.",
@@ -131,6 +137,8 @@ export function AdminSettingsConsole() {
                 ["Finished jobs", overview.jobs.finished],
                 ["Stale jobs", overview.jobs.staleWorkspaceJobs],
                 ["Stale intents", overview.jobs.staleWorkspaceLaunchIntents],
+                ["Stale speech", overview.speech.staleArtifacts],
+                ["Broken samples", overview.speech.staleProfileSamples],
               ].map(([label, value]) => (
                 <div key={String(label)} className="summary-chip">
                   <p className="summary-chip-label">{label}</p>

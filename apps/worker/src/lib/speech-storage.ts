@@ -1,14 +1,14 @@
 import { mkdir } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 const runtimeRoot = resolve(repoRoot, "runtime");
-const speechRoot = join(runtimeRoot, "speech");
-const inboundRoot = join(speechRoot, "inbound");
-const transcriptsRoot = join(speechRoot, "transcripts");
-const ttsRoot = join(speechRoot, "tts");
-const profilesRoot = join(speechRoot, "profiles");
+const speechRoot = resolve(runtimeRoot, "speech");
+const inboundRoot = resolve(speechRoot, "inbound");
+const transcriptsRoot = resolve(speechRoot, "transcripts");
+const ttsRoot = resolve(speechRoot, "tts");
+const profilesRoot = resolve(speechRoot, "profiles");
 
 async function ensureDir(path: string) {
   await mkdir(path, { recursive: true });
@@ -33,23 +33,35 @@ export async function ensureSpeechStorageLayout() {
   };
 }
 
+export function normalizeSpeechStorageKey(storageKey: string) {
+  return storageKey
+    .trim()
+    .replace(/[\\/]+/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\.\.(?:\/|\\)/g, "");
+}
+
+function buildSpeechStorageKey(parts: string[]) {
+  return normalizeSpeechStorageKey(parts.join("/"));
+}
+
 export function createSpeechStorageKey(kind: "telegram" | "web" | "tts" | "profile", filename: string) {
   const normalized = filename.replace(/[^a-zA-Z0-9._-]+/g, "-");
 
   switch (kind) {
     case "telegram":
-      return join("speech", "inbound", normalized);
+      return buildSpeechStorageKey(["speech", "inbound", normalized]);
     case "web":
-      return join("speech", "inbound", normalized);
+      return buildSpeechStorageKey(["speech", "inbound", normalized]);
     case "tts":
-      return join("speech", "tts", normalized);
+      return buildSpeechStorageKey(["speech", "tts", normalized]);
     case "profile":
-      return join("speech", "profiles", normalized);
+      return buildSpeechStorageKey(["speech", "profiles", normalized]);
   }
 }
 
 export function resolveSpeechStoragePath(storageKey: string) {
-  return resolve(runtimeRoot, storageKey);
+  return resolve(runtimeRoot, normalizeSpeechStorageKey(storageKey));
 }
 
 export function resolveManagedSpeechStoragePath(storageKey: string) {

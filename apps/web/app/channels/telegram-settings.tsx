@@ -75,7 +75,7 @@ function describeReminder(task: TaskRecord) {
   };
 }
 
-export function TelegramSettings() {
+export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
   const [state, setState] = useState<PageState>({
     telegram: null,
     conversations: [],
@@ -290,8 +290,8 @@ export function TelegramSettings() {
     { label: "Fallback chat id set", done: Boolean(state.telegram?.defaultChatId) },
   ];
 
-  return (
-    <AppPage>
+  const content = (
+    <>
       <SurfaceCard
         tone="dark"
         title="Channels"
@@ -636,7 +636,9 @@ export function TelegramSettings() {
               )}
             </SurfaceCard>
           </aside>
-        </section>
-    </AppPage>
+      </section>
+    </>
   );
+
+  return embedded ? content : <AppPage>{content}</AppPage>;
 }

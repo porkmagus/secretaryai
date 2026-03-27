@@ -28,6 +28,7 @@ import {
   personas,
   jobs,
   activityTraces,
+  speechArtifacts,
   tools,
   users,
   voiceProfiles,
@@ -60,6 +61,7 @@ import { getHeartbeatIntegrationStatus } from "./heartbeat-runtime.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";
 import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage.js";
 import { cancelAgentJob } from "./agent-jobs.js";
+import { resolveManagedSpeechStoragePath } from "./speech-storage.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
@@ -323,6 +325,61 @@ async function findStaleLaunchIntentIds(dbClient: DbClient) {
   return staleRows;
 }
 
+type StaleSpeechArtifactRow = {
+  id: string;
+  storageKey: string;
+};
+
+type StaleVoiceProfileSampleRow = {
+  id: string;
+  sampleStorageKey: string;
+};
+
+async function findStaleSpeechArtifacts(dbClient: DbClient) {
+  const records = await dbClient.db.query.speechArtifacts.findMany({
+    orderBy: (fields) => [asc(fields.createdAt)],
+  });
+  const staleRows: StaleSpeechArtifactRow[] = [];
+
+  for (const record of records) {
+    try {
+      const path = resolveManagedSpeechStoragePath(record.storageKey);
+      if (!(await pathExists(path))) {
+        staleRows.push({ id: record.id, storageKey: record.storageKey });
+      }
+    } catch {
+      staleRows.push({ id: record.id, storageKey: record.storageKey });
+    }
+  }
+
+  return staleRows;
+}
+
+async function findStaleVoiceProfileSamples(dbClient: DbClient) {
+  const records = await dbClient.db.query.voiceProfiles.findMany({
+    where: (fields, { isNotNull }) => isNotNull(fields.sampleStorageKey),
+    orderBy: (fields) => [asc(fields.updatedAt)],
+  });
+  const staleRows: StaleVoiceProfileSampleRow[] = [];
+
+  for (const record of records) {
+    if (!record.sampleStorageKey) {
+      continue;
+    }
+
+    try {
+      const path = resolveManagedSpeechStoragePath(record.sampleStorageKey);
+      if (!(await pathExists(path))) {
+        staleRows.push({ id: record.id, sampleStorageKey: record.sampleStorageKey });
+      }
+    } catch {
+      staleRows.push({ id: record.id, sampleStorageKey: record.sampleStorageKey });
+    }
+  }
+
+  return staleRows;
+}
+
 async function removeArtifactFilesByJobIds(dbClient: DbClient, jobIds: string[]) {
   if (jobIds.length === 0) {
     return 0;
@@ -375,12 +432,23 @@ async function getAdminMaintenanceOverview(params: {
   config: AppConfig;
   infrastructure: Infrastructure;
 }): Promise<AdminMaintenanceOverviewResponse> {
-  const [settings, health, jobRows, staleJobs, staleLaunchIntents, queueCounts] = await Promise.all([
+  const [
+    settings,
+    health,
+    jobRows,
+    staleJobs,
+    staleLaunchIntents,
+    staleSpeechArtifacts,
+    staleVoiceProfileSamples,
+    queueCounts,
+  ] = await Promise.all([
     loadAgentJobSettings(),
     getSystemHealth(params),
     getAgentJobWorkspaceRows(params.infrastructure.dbClient),
     findStaleAgentJobIds(params.infrastructure.dbClient),
     findStaleLaunchIntentIds(params.infrastructure.dbClient),
+    findStaleSpeechArtifacts(params.infrastructure.dbClient),
+    findStaleVoiceProfileSamples(params.infrastructure.dbClient),
     params.infrastructure.agentJobQueue.queue.getJobCounts(
       "wait",
       "active",
@@ -401,6 +469,10 @@ async function getAdminMaintenanceOverview(params: {
       finished: jobRows.filter((row) => ["completed", "failed", "cancelled"].includes(row.status)).length,
       staleWorkspaceJobs: staleJobs.length,
       staleWorkspaceLaunchIntents: staleLaunchIntents.length,
+    },
+    speech: {
+      staleArtifacts: staleSpeechArtifacts.length,
+      staleProfileSamples: staleVoiceProfileSamples.length,
     },
     queue: {
       wait: queueCounts.wait ?? 0,
@@ -443,6 +515,35 @@ export async function runAdminMaintenanceAction(params: {
       staleJobsCleared: staleJobs.length,
       staleLaunchIntentsCleared: staleLaunchIntents.length,
       artifactFilesDeleted: deleted.deletedArtifactFiles,
+      };
+  } else if (params.action === "clear_stale_speech_media") {
+    const staleArtifacts = await findStaleSpeechArtifacts(dbClient);
+    const staleProfileSamples = await findStaleVoiceProfileSamples(dbClient);
+
+    if (staleArtifacts.length > 0) {
+      await dbClient.db
+        .delete(speechArtifacts)
+        .where(inArray(speechArtifacts.id, staleArtifacts.map((row) => row.id)));
+    }
+
+    if (staleProfileSamples.length > 0) {
+      await dbClient.db
+        .update(voiceProfiles)
+        .set({
+          sampleStorageKey: null,
+          sampleMimeType: null,
+          sampleDurationMs: null,
+          updatedAt: new Date(),
+        })
+        .where(inArray(voiceProfiles.id, staleProfileSamples.map((row) => row.id)));
+    }
+
+    summary = staleArtifacts.length || staleProfileSamples.length
+      ? "Cleared stale speech artifacts and broken voice sample references."
+      : "No stale speech artifacts or broken voice sample references were found.";
+    details = {
+      staleSpeechArtifactsCleared: staleArtifacts.length,
+      staleVoiceProfileSamplesCleared: staleProfileSamples.length,
     };
   } else if (params.action === "clear_finished_agent_jobs") {
     const result = await dbClient.pool.query<{ id: string }>(

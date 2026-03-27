@@ -1,5 +1,5 @@
-import { TelegramSettings } from "../../channels/telegram-settings";
+import { ChannelsConsole } from "../../channels/channels-console";
 
 export default function SettingsChannelsPage() {
-  return <TelegramSettings />;
+  return <ChannelsConsole />;
 }
