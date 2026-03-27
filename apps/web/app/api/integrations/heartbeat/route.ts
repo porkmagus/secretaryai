@@ -7,9 +7,13 @@ import type {
 const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
 
 export async function GET() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
   try {
     const response = await fetch(`${workerBaseUrl}/runtime/integrations/heartbeat`, {
       cache: "no-store",
+      signal: controller.signal,
     });
     const payload = await response.json();
 
@@ -20,6 +24,8 @@ export async function GET() {
     return NextResponse.json(payload satisfies HeartbeatIntegrationStatusResponse);
   } catch {
     return NextResponse.json({ error: "Worker is unavailable." }, { status: 503 });
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
