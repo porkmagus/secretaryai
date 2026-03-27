@@ -2,7 +2,12 @@
 
 ## 1. Executive Summary
 
-This document defines the architecture, technology stack, product model, implementation phases, and validation checkpoints for a self-hosted personal secretary assistant system. The system is designed for a single primary user and is intended to run primarily on a Mac mini M4 with 24 GB RAM, with optional migration or split deployment to a VPS later.
+This document defines the architecture, technology stack, product model, implementation phases, and validation checkpoints for a self-hosted personal secretary assistant system. The system is designed for a single primary user and is intended to run primarily on one operator-managed host with optional migration or split deployment to a VPS later.
+
+Implementation status note:
+- the repository now contains a Phase 1 through Phase 6 checkpoint rather than only an initial scaffold
+- the current codebase is Windows-friendly for local operator workflows while keeping Docker-based deployment paths portable
+- historical phase-planning sections below are preserved as design history and should not be read as the current runtime behavior where they conflict with the implemented repo
 
 The product is not a general-purpose multi-user SaaS in v1. It is a secretary-first personal assistant platform with one front-facing assistant personality and a small set of hidden specialist helpers. The secretary is the main relationship interface across web chat, Telegram, and voice. Specialist agents are internal subsystems used only when necessary.
 
@@ -85,7 +90,12 @@ Primary user model:
 ### 3.2 Deployment Targets
 
 Primary host:
-- Mac mini M4, 24 GB RAM
+- operator-managed local machine with Docker support and enough CPU/RAM for PostgreSQL, Redis, web, worker, faster-whisper STT, and Chatterbox TTS
+
+Current repo bias:
+- Windows-first local setup via `.cmd` entrypoints for development and daily use
+- Docker-based topology for local always-on and deploy-style operation
+- portable enough to run on Linux or macOS later with the same service layout
 
 Optional future host:
 - VPS for selective remote hosting, ingress, or split services
@@ -175,7 +185,7 @@ Reasons:
 
 ### 4.8 Text-to-Speech / Voice Cloning
 
-**Self-hosted cloning-capable TTS service** behind a local internal speech API
+**Self-hosted Chatterbox-based TTS service** behind a local internal speech API
 
 Design guidance:
 - start with a local model/service combination optimized for acceptable quality and simpler operations rather than best-in-world voice realism
@@ -260,8 +270,8 @@ Reasons:
    - response formatting and sending
 
 7. **Speech Services**
-   - STT service
-   - TTS/voice clone service
+   - faster-whisper STT service
+   - Chatterbox-backed TTS/voice clone service
 
 8. **Persistence Layer**
    - PostgreSQL + pgvector
@@ -691,7 +701,7 @@ Default `ask_first` for:
 
 ### 9.4 v1 Tool Candidates
 
-Include stubs or real integrations for:
+Include placeholders or real integrations for:
 - web search
 - local file access
 - shell execution wrapper
@@ -1096,7 +1106,7 @@ Add local voice note processing and cloned Secretary voice responses.
 - [x] cloned voice is good enough and stable
 - [x] speech files remain local
 - [x] speech pipeline errors are debuggable
-- [ ] performance remains acceptable on Mac mini host
+- [ ] performance remains acceptable on the primary operator host
 
 #### Stop condition
 Do not proceed until voice feels truly usable, not just technically present.
@@ -1304,7 +1314,7 @@ Recommended order:
 6. create web app shell and Desk page
 7. implement message send API from web to worker
 8. persist conversations and messages
-9. return stub Secretary responses
+9. return deterministic fallback Secretary responses
 10. enqueue memory-candidate job after each assistant turn
 11. add activity trace logging for end-to-end visibility
 
@@ -1402,7 +1412,7 @@ The worker should expose a small, stable interface surface:
 Behavior guidance:
 - `POST /runtime/chat` accepts a normalized chat request
 - the worker persists the inbound message
-- the worker generates a stub or simple assistant reply
+- the worker generates a deterministic fallback or provider-backed assistant reply
 - the worker persists the assistant reply
 - the worker enqueues a memory candidate job
 - the worker records a trace chain for the turn
@@ -1522,7 +1532,7 @@ Define at least:
 - `local-production`
 - `vps-split` later
 
-`local-production` should represent the real Mac mini deployment shape as closely as possible.
+`local-production` should represent the real operator-host deployment shape as closely as possible.
 
 ### 22.3 Core Environment Variables
 
@@ -1679,12 +1689,12 @@ Recommendation:
 ### ADR 5: Initial Model Routing Policy
 
 Decide whether the first runnable build uses:
-- all-local stubbed reasoning
+- all-local deterministic fallback reasoning
 - local helper models plus optional cloud primary model
 - cloud-first temporary reasoning with local memory only
 
 Recommendation:
-- start with deterministic or stub responses in Phase 1
+- start with deterministic fallback responses in Phase 1
 - add the first real reasoning provider only after persistence and traces are stable
 
 ---
@@ -1698,7 +1708,7 @@ If implementation starts now, the first concrete work items should be:
 3. choose DB/query stack and record it as ADR 1
 4. implement typed config loader and startup validation
 5. create first DB migrations for conversations, messages, jobs, and traces
-6. build worker `POST /runtime/chat` with stub response
+6. build worker `POST /runtime/chat` with deterministic fallback response
 7. build Desk UI with send/receive flow
 8. persist chat records and display conversation history
 9. enqueue and inspect a placeholder memory extraction job

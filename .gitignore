@@ -7,9 +7,19 @@ coverage/
 .env.local
 .env.*.local
 *.log
+*.pyc
+*.tsbuildinfo
+__pycache__/
 
 # Generated artifacts
 drizzle/
+apps/worker/runtime/
+runtime/generated/documents/*
+runtime/secrets/*
+runtime/postgres-mounttest/
+runtime/chmod-test/
+runtime/perm-repro/
+runtime/wsl-chmod-test
 runtime/postgres/data/*
 runtime/redis/data/*
 runtime/speech/inbound/*
@@ -25,7 +35,9 @@ runtime/venvs/*
 !runtime/postgres/.gitkeep
 !runtime/redis/.gitkeep
 !runtime/README.md
+!runtime/secrets/README.md
 
 # OS / editor
 .DS_Store
 Thumbs.db
+.idea/

@@ -93,7 +93,7 @@ function trimToNull(value: string | null | undefined) {
   return normalized ? normalized : null;
 }
 
-export function formatTelegramDisplayName(
+function formatTelegramDisplayName(
   firstName?: string,
   lastName?: string,
   username?: string,
@@ -101,7 +101,7 @@ export function formatTelegramDisplayName(
   return trimToNull([firstName, lastName].filter(Boolean).join(" ")) ?? username ?? "Telegram user";
 }
 
-export function formatTelegramChatLabel(chat: TelegramChat) {
+function formatTelegramChatLabel(chat: TelegramChat) {
   return (
     trimToNull(chat.title) ??
     formatTelegramDisplayName(chat.first_name, chat.last_name, chat.username)

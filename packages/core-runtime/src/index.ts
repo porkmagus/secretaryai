@@ -1026,46 +1026,6 @@ export function generateSecretaryReply(
   return researchLead || "Alright. I'm with you.";
 }
 
-export function createTurnResponse(
-  request: RuntimeChatRequest,
-  context: RuntimeTurnContext,
-  traceId = createTraceId(),
-): RuntimeChatResponse {
-  const conversationId = request.conversationId ?? context.conversationId;
-
-  return {
-    conversationId,
-    messageId: createMessageId(),
-    outputText: generateSecretaryReply(request, context),
-    traceId,
-    contextSummary: {
-      memories: context.relevantMemories,
-      tasks: context.activeTasks,
-      research: context.researchResult ?? undefined,
-    },
-    actions: [
-      {
-        kind: "memory_candidate_queued",
-        payload: {
-          source: request.channel,
-          status: "queued",
-        },
-      },
-      ...(context.researchResult
-        ? [
-            {
-              kind: "research_specialist_used" as const,
-              payload: {
-                mode: context.researchResult.mode,
-                specialist: context.researchResult.specialist,
-              },
-            },
-          ]
-        : []),
-    ],
-  };
-}
-
 export function createTurnResponseFromText(params: {
   request: RuntimeChatRequest;
   context: RuntimeTurnContext;

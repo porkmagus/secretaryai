@@ -12,7 +12,7 @@ This project now supports a packaged always-on deployment topology built around:
 
 ## 1. Prepare the deployment env file
 
-1. Copy [`.env.deploy.example`](/f:/hamcult/.env.deploy.example) to `.env.deploy`
+1. Copy [`.env.deploy.example`](../../.env.deploy.example) to `.env.deploy`
 2. Set:
    - `APP_BASE_URL=https://your-public-host`
    - `WORKER_BASE_URL=http://worker:4000`

@@ -7,7 +7,7 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
 - `apps/web`: Next.js Desk UI and thin web-facing APIs
 - `apps/worker`: Fastify runtime for chat orchestration and async processing
 - `packages/config`: shared environment parsing and runtime config helpers
-- `packages/core-runtime`: normalized runtime contracts and stub Secretary logic
+- `packages/core-runtime`: normalized runtime contracts and deterministic fallback reply logic
 - `packages/db`: database schema and migration home
 - `packages/observability`: logger and trace helpers
 - `services/stt-faster-whisper`: local CPU-first STT service for Phase 4 voice intake
@@ -21,18 +21,18 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
 
 First time only:
 
-1. Double-click [`first-run-setup.cmd`](/f:/hamcult/first-run-setup.cmd)
-2. Open [`.env`](/f:/hamcult/.env) and fill in what you care about:
+1. Double-click [`first-run-setup.cmd`](./first-run-setup.cmd)
+2. Open [`.env`](./.env) and fill in what you care about:
    - `TELEGRAM_BOT_TOKEN` if you want the live Telegram bot
    - `APP_AUTH_PASSWORD` and `APP_SESSION_SECRET` if you want the sign-in gate
    - any inference provider keys you want Samantha to use
-3. Double-click [`start-secretary-dev.cmd`](/f:/hamcult/start-secretary-dev.cmd)
+3. Double-click [`start-secretary-dev.cmd`](./start-secretary-dev.cmd)
 
 Daily use after that:
 
-1. Double-click [`start-secretary-dev.cmd`](/f:/hamcult/start-secretary-dev.cmd)
+1. Double-click [`start-secretary-dev.cmd`](./start-secretary-dev.cmd)
 2. Open [http://localhost:3000](http://localhost:3000)
-3. When you are done, double-click [`stop-secretary-dev.cmd`](/f:/hamcult/stop-secretary-dev.cmd)
+3. When you are done, double-click [`stop-secretary-dev.cmd`](./stop-secretary-dev.cmd)
 
 What those scripts do:
 
@@ -92,10 +92,10 @@ This repo now includes a packaged always-on deployment path with:
 
 Deployment files:
 
-- [`docker-compose.deploy.yml`](/f:/hamcult/docker/compose/docker-compose.deploy.yml)
-- [`Caddyfile`](/f:/hamcult/docker/caddy/Caddyfile)
-- [`deployment.md`](/f:/hamcult/docs/runbooks/deployment.md)
-- [`.env.deploy.example`](/f:/hamcult/.env.deploy.example)
+- [`docker-compose.deploy.yml`](./docker/compose/docker-compose.deploy.yml)
+- [`Caddyfile`](./docker/caddy/Caddyfile)
+- [`deployment.md`](./docs/runbooks/deployment.md)
+- [`.env.deploy.example`](./.env.deploy.example)
 
 Basic deployment flow:
 
