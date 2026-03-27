@@ -7,12 +7,8 @@ import {
   type VoicePreviewRequest,
   type WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
-import {
-  createQueuedMemoryJob,
-  markMemoryJobEnqueueFailed,
-  persistChatTurn,
-} from "./chat-persistence.js";
 import type { MemoryQueueAdapter } from "./memory-queue.js";
+import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import {
   createSpeechArtifact,
   getActiveVoiceProfile,
@@ -23,6 +19,7 @@ import {
 import { createSpeechStorageKey, ensureSpeechStoragePath } from "./speech-storage.js";
 import { transcribeAudioFile } from "./stt-service.js";
 import { synthesizeSpeech } from "./tts-service.js";
+import { enqueueTurnMemoryFollowup, processRuntimeTurn } from "./turn-orchestrator.js";
 
 export async function createVoicePreview(params: {
   config: AppConfig;
@@ -102,6 +99,7 @@ export async function createVoicePreview(params: {
 
 export async function processWebSpeechTurn(params: {
   audio: Buffer;
+  agentJobQueue: AgentJobQueueAdapter;
   config: AppConfig;
   conversationId?: string | null;
   dbClient: DbClient;
@@ -195,9 +193,10 @@ export async function processWebSpeechTurn(params: {
     },
   });
 
-  const persistedTurn = await persistChatTurn({
+  const persistedTurn = await processRuntimeTurn({
     config: params.config,
     dbClient: params.dbClient,
+    queue: params.agentJobQueue,
     defaultPersonaId: params.defaultPersonaId,
     defaultUserId: params.defaultUserId,
     request: {
@@ -225,26 +224,15 @@ export async function processWebSpeechTurn(params: {
     dbClient: params.dbClient,
     artifactId,
     conversationId: persistedTurn.response.conversationId,
-    messageId: persistedTurn.userMessageId,
+    messageId: persistedTurn.userMessageId ?? null,
   });
 
-  const jobId = await createQueuedMemoryJob({
+  await enqueueTurnMemoryFollowup({
     dbClient: params.dbClient,
-    payload: persistedTurn.memoryPayload,
+    memoryPayload: persistedTurn.memoryPayload,
+    memoryQueue: params.memoryQueue,
     traceId,
   });
-
-  try {
-    await params.memoryQueue.enqueue(jobId, persistedTurn.memoryPayload);
-  } catch (error) {
-    await markMemoryJobEnqueueFailed(
-      params.dbClient,
-      jobId,
-      error instanceof Error ? error.message : "Unknown enqueue error",
-    );
-
-    throw error;
-  }
 
   return {
     artifactId,

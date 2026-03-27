@@ -17,6 +17,7 @@ import { createAgentJob } from "./agent-jobs.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";
 import { finalizeChatTurn, findConversationIdByChannelRef, prepareChatTurn } from "./chat-persistence.js";
 import { normalizeWorkspacePath } from "./agent-job-executor.js";
+import { detectConversationDecision, extractWorkspacePathHint } from "./conversation-decisions.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
@@ -31,8 +32,6 @@ type MaybeHandleAgentJobLaunchTurnParams = {
   traceId: string;
 };
 
-const affirmativePattern = /^(?:yes|yep|yeah|sure|okay|ok|go ahead|do it|start it|run it|please do|proceed|sounds good)\b/i;
-const negativePattern = /^(?:no|nope|not now|don't|do not|stop|cancel|never mind|keep it here)\b/i;
 const buildIntentPatterns = [
   /\b(?:build|create|make|scaffold|generate|spin up|set up|setup|code)\b[\s\S]{0,80}\b(?:app|application|site|website|dashboard|bot|service|api|plugin|tool|project|repo)\b/i,
   /\b(?:implement|add|ship|wire up)\b[\s\S]{0,80}\b(?:feature|flow|screen|page|endpoint|integration|component)\b/i,
@@ -48,14 +47,6 @@ function looksLikeAgentJobRequest(text: string) {
   }
 
   return buildIntentPatterns.some((pattern) => pattern.test(trimmed));
-}
-
-function isAffirmative(text: string) {
-  return affirmativePattern.test(text.trim());
-}
-
-function isNegative(text: string) {
-  return negativePattern.test(text.trim());
 }
 
 function deriveJobTitle(goal: string) {
@@ -74,14 +65,14 @@ function buildConfirmationText(params: { title: string; workspacePath: string; c
   const workspaceNote = params.workspacePath ? ` in ${params.workspacePath}` : "";
   const channelNote =
     params.channel === "telegram"
-      ? "Reply yes to start it as an agent job, or no to keep this in normal chat."
-      : "Reply yes to start it as an agent job, or no to keep this as normal chat.";
+      ? "Say yes, go for it, or use this folder to start it as an agent job, or say no to keep this in normal chat."
+      : "Say yes, go for it, or use this folder to start it as an agent job, or say no to keep this as normal chat.";
 
   return `That sounds like a larger build job. Do you want me to start \"${params.title}\"${workspaceNote}? ${channelNote}`;
 }
 
 function buildPendingClarificationText() {
-  return "I still have that build job ready to launch. Reply yes to start it, or no to keep this in normal chat.";
+  return "I still have that build job ready to launch. Say yes, go for it, or use this folder to start it, or say no to keep this in normal chat.";
 }
 
 function buildCancellationText() {
@@ -196,12 +187,27 @@ function getFallbackWorkspacePath(
   return normalizeWorkspacePath(defaultWorkspacePath?.trim() || repoRoot, executionBackend);
 }
 
+async function updatePendingLaunchIntentWorkspace(params: {
+  dbClient: DbClient;
+  intentId: string;
+  workspacePath: string;
+}) {
+  await params.dbClient.db
+    .update(agentJobLaunchIntents)
+    .set({
+      workspacePath: params.workspacePath,
+      updatedAt: new Date(),
+    })
+    .where(eq(agentJobLaunchIntents.id, params.intentId));
+}
+
 export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobLaunchTurnParams) {
   const text = params.request.message.text.trim();
   const existingConversationId = await resolveConversationId(params.dbClient, params.request);
   const pendingIntent = existingConversationId
     ? await getPendingLaunchIntent(params.dbClient, existingConversationId)
     : null;
+  const decision = detectConversationDecision(text);
 
   if (!pendingIntent && !looksLikeAgentJobRequest(text)) {
     return null;
@@ -217,7 +223,28 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
   });
 
   if (pendingIntent) {
-    if (isNegative(text)) {
+    const workspaceHint =
+      extractWorkspacePathHint(text) ??
+      (typeof pendingIntent.payloadJson?.workspacePath === "string"
+        ? pendingIntent.payloadJson.workspacePath
+        : null);
+    const resolvedWorkspacePath = workspaceHint
+      ? normalizeWorkspacePath(workspaceHint, pendingIntent.payloadJson?.executionBackend === "host_native" ||
+        pendingIntent.payloadJson?.executionBackend === "docker_sandbox" ||
+        pendingIntent.payloadJson?.executionBackend === "wsl_bash"
+          ? pendingIntent.payloadJson.executionBackend
+          : "host_native")
+      : pendingIntent.workspacePath;
+
+    if (resolvedWorkspacePath !== pendingIntent.workspacePath) {
+      await updatePendingLaunchIntentWorkspace({
+        dbClient: params.dbClient,
+        intentId: pendingIntent.id,
+        workspacePath: resolvedWorkspacePath,
+      });
+    }
+
+    if (decision === "deny") {
       await params.dbClient.db
         .update(agentJobLaunchIntents)
         .set({
@@ -245,7 +272,7 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
       });
     }
 
-    if (isAffirmative(text)) {
+    if (decision === "approve") {
       const job = await createAgentJob({
         config: params.config,
         dbClient: params.dbClient,
@@ -253,7 +280,7 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
         request: {
           title: pendingIntent.title,
           goal: pendingIntent.goal,
-          workspacePath: pendingIntent.workspacePath,
+          workspacePath: resolvedWorkspacePath,
           conversationId: preparedTurn.conversationId,
           approvalMode:
             pendingIntent.approvalMode === "restrictive" ||
@@ -303,8 +330,9 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
     if (looksLikeAgentJobRequest(text)) {
       const settings = await loadAgentJobSettings();
       const title = deriveJobTitle(text);
-      const workspacePath = getFallbackWorkspacePath(
-        settings.defaultWorkspacePath,
+      const workspacePath = normalizeWorkspacePath(
+        extractWorkspacePathHint(text) ??
+          getFallbackWorkspacePath(settings.defaultWorkspacePath, settings.executionBackend),
         settings.executionBackend,
       );
       await createPendingLaunchIntent({
@@ -320,6 +348,8 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
           sourceChannel: preparedTurn.request.channel,
           originalRequestText: text,
           sourceMessageId: preparedTurn.userMessageId,
+          executionBackend: settings.executionBackend,
+          workspacePath,
         },
       });
 
@@ -341,6 +371,32 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
         outputText: buildConfirmationText({
           title,
           workspacePath,
+          channel: preparedTurn.request.channel,
+        }),
+        mode: "tool",
+        providerError: null,
+      });
+    }
+
+    if (workspaceHint) {
+      await recordLaunchIntentTrace({
+        dbClient: params.dbClient,
+        conversationId: preparedTurn.conversationId,
+        traceId: params.traceId,
+        eventName: "agent_job.launch_intent.workspace_updated",
+        payload: {
+          intentId: pendingIntent.id,
+          workspacePath: resolvedWorkspacePath,
+        },
+      });
+
+      return finalizeChatTurn({
+        dbClient: params.dbClient,
+        preparedTurn,
+        assistantMessageId: createMessageId(),
+        outputText: buildConfirmationText({
+          title: pendingIntent.title,
+          workspacePath: resolvedWorkspacePath,
           channel: preparedTurn.request.channel,
         }),
         mode: "tool",
@@ -370,8 +426,9 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
 
   const settings = await loadAgentJobSettings();
   const title = deriveJobTitle(text);
-  const workspacePath = getFallbackWorkspacePath(
-    settings.defaultWorkspacePath,
+  const workspacePath = normalizeWorkspacePath(
+    extractWorkspacePathHint(text) ??
+      getFallbackWorkspacePath(settings.defaultWorkspacePath, settings.executionBackend),
     settings.executionBackend,
   );
   const intentId = await createPendingLaunchIntent({
@@ -387,6 +444,8 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
       sourceChannel: preparedTurn.request.channel,
       originalRequestText: text,
       sourceMessageId: preparedTurn.userMessageId,
+      executionBackend: settings.executionBackend,
+      workspacePath,
     },
   });
 

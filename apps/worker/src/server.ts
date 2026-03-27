@@ -9,6 +9,9 @@ import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
+  type AdminMaintenanceAction,
+  type AdminMaintenanceActionResponse,
+  type AdminMaintenanceOverviewResponse,
   type CreateVoiceProfileRequest,
   type DeskChatMessageMetadata,
   type ConversationListResponse,
@@ -53,8 +56,6 @@ import {
   type VoicePreviewResponse,
   type VoiceProfileListResponse,
   type WebSpeechTurnResponse,
-  type MemoryCandidateJobPayload,
-  type RuntimeChatResponse,
   createMessageId,
   createTraceId,
   type RuntimeChatRequest,
@@ -63,12 +64,9 @@ import {
 import type { TelegramUpdate } from "@secretary/integrations";
 import { createInfrastructure } from "./lib/infrastructure.js";
 import {
-  createQueuedMemoryJob,
   finalizeChatTurn,
   getConversationMessages,
   listRecentConversations,
-  markMemoryJobEnqueueFailed,
-  persistChatTurn,
   prepareChatTurn,
 } from "./lib/chat-persistence.js";
 import { createLogger } from "@secretary/observability";
@@ -88,8 +86,6 @@ import {
   resumeAgentJob,
   updateAgentJobSettings,
 } from "./lib/agent-jobs.js";
-import { maybeHandleAgentJobLaunchTurn } from "./lib/agent-job-launch-intents.js";
-import { maybeHandleAgentJobRequirementTurn } from "./lib/agent-job-requirement-turns.js";
 import { resolveManagedAgentJobArtifactPath } from "./lib/agent-job-artifact-storage.js";
 import {
   dispatchDueTelegramReminders,
@@ -120,10 +116,12 @@ import { getSpeechServiceStatus } from "./lib/speech-health.js";
 import { createVoicePreview, processWebSpeechTurn } from "./lib/web-speech.js";
 import {
   exportSettingsSnapshot,
+  getAdminMaintenanceSnapshot,
   getOnboardingStatus,
   getPersonaSettings,
   getSystemHealth,
   importSettingsSnapshot,
+  runAdminMaintenanceAction,
   updatePersonaAvatar,
   updatePersonaSettings,
 } from "./lib/admin-runtime.js";
@@ -139,11 +137,16 @@ import {
 } from "./lib/inference-settings.js";
 import {
   decideToolExecution,
-  handleToolAwareTurn,
   listToolExecutions,
   listTools,
   updateTool,
 } from "./lib/tools-runtime.js";
+import {
+  enqueueTurnMemoryFollowup,
+  processRuntimeTurn,
+  resolveImmediateRuntimeTurn,
+  type RuntimeTurnPersistence,
+} from "./lib/turn-orchestrator.js";
 import { createConversationReplyStream } from "./lib/conversation-model.js";
 import {
   createPersonaAvatarStorageKey,
@@ -199,32 +202,15 @@ export async function buildServer() {
 
   async function finalizePersistedTurn(params: {
     body: RuntimeChatRequest;
-    persistedTurn: {
-      memoryPayload: MemoryCandidateJobPayload;
-      response: RuntimeChatResponse;
-    };
+    persistedTurn: RuntimeTurnPersistence;
     traceId: string;
   }) {
-    const jobId = await createQueuedMemoryJob({
+    const jobId = await enqueueTurnMemoryFollowup({
       dbClient: infrastructure.dbClient,
-      payload: params.persistedTurn.memoryPayload,
+      memoryPayload: params.persistedTurn.memoryPayload,
+      memoryQueue: infrastructure.memoryQueue,
       traceId: params.traceId,
     });
-
-    try {
-      await infrastructure.memoryQueue.enqueue(
-        jobId,
-        params.persistedTurn.memoryPayload,
-      );
-    } catch (error) {
-      await markMemoryJobEnqueueFailed(
-        infrastructure.dbClient,
-        jobId,
-        error instanceof Error ? error.message : "Unknown enqueue error",
-      );
-
-      throw error;
-    }
 
     logger.info("runtime.chat.completed", {
       channel: params.body.channel,
@@ -942,6 +928,44 @@ export async function buildServer() {
     }
   });
 
+  app.get("/runtime/admin/maintenance", async (_, reply) => {
+    try {
+      const response: AdminMaintenanceOverviewResponse = await getAdminMaintenanceSnapshot({
+        config,
+        infrastructure,
+      });
+      return response;
+    } catch (error) {
+      logger.error("runtime.admin_maintenance.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load admin maintenance status.",
+      });
+    }
+  });
+
+  app.post<{ Body: { action: AdminMaintenanceAction } }>("/runtime/admin/maintenance", async (request, reply) => {
+    try {
+      const response: AdminMaintenanceActionResponse = await runAdminMaintenanceAction({
+        action: request.body.action,
+        config,
+        infrastructure,
+      });
+      return response;
+    } catch (error) {
+      logger.error("runtime.admin_maintenance.action_failed", {
+        error: error instanceof Error ? error.message : error,
+        action: request.body?.action ?? null,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to run admin maintenance action.",
+      });
+    }
+  });
+
   app.get("/runtime/tools", async (_, reply) => {
     try {
       const response: ToolListResponse = await listTools(infrastructure.dbClient);
@@ -1397,6 +1421,7 @@ export async function buildServer() {
           : null;
       const response: WebSpeechTurnResponse = await processWebSpeechTurn({
         audio: audioBuffer,
+        agentJobQueue: infrastructure.agentJobQueue,
         config,
         conversationId,
         dbClient: infrastructure.dbClient,
@@ -1642,50 +1667,15 @@ export async function buildServer() {
     const traceId = body.metadata?.requestId ?? createTraceId();
 
     try {
-      const toolHandledTurn = await handleToolAwareTurn({
+      const persistedTurn = await processRuntimeTurn({
         config,
         dbClient: infrastructure.dbClient,
+        queue: infrastructure.agentJobQueue,
         defaultPersonaId: config.defaultPersonaId,
         defaultUserId: config.defaultUserId,
         request: body,
         traceId,
       });
-      const requirementHandledTurn =
-        toolHandledTurn
-          ? null
-          : await maybeHandleAgentJobRequirementTurn({
-              config,
-              dbClient: infrastructure.dbClient,
-              queue: infrastructure.agentJobQueue,
-              defaultPersonaId: config.defaultPersonaId,
-              defaultUserId: config.defaultUserId,
-              request: body,
-              traceId,
-            });
-      const launchHandledTurn =
-        toolHandledTurn || requirementHandledTurn
-          ? null
-          : await maybeHandleAgentJobLaunchTurn({
-              config,
-              dbClient: infrastructure.dbClient,
-              queue: infrastructure.agentJobQueue,
-              defaultPersonaId: config.defaultPersonaId,
-              defaultUserId: config.defaultUserId,
-              request: body,
-              traceId,
-            });
-      const persistedTurn =
-        toolHandledTurn ??
-        requirementHandledTurn ??
-        launchHandledTurn ??
-        (await persistChatTurn({
-          config,
-          dbClient: infrastructure.dbClient,
-          defaultPersonaId: config.defaultPersonaId,
-          defaultUserId: config.defaultUserId,
-          request: body,
-          traceId,
-        }));
 
       await finalizePersistedTurn({
         body,
@@ -1733,40 +1723,15 @@ export async function buildServer() {
       };
 
       try {
-        const toolHandledTurn = await handleToolAwareTurn({
+        const immediateHandledTurn = await resolveImmediateRuntimeTurn({
           config,
           dbClient: infrastructure.dbClient,
+          queue: infrastructure.agentJobQueue,
           defaultPersonaId: config.defaultPersonaId,
           defaultUserId: config.defaultUserId,
           request: runtimeRequest,
           traceId,
         });
-        const requirementHandledTurn =
-          toolHandledTurn
-            ? null
-            : await maybeHandleAgentJobRequirementTurn({
-                config,
-                dbClient: infrastructure.dbClient,
-                queue: infrastructure.agentJobQueue,
-                defaultPersonaId: config.defaultPersonaId,
-                defaultUserId: config.defaultUserId,
-                request: runtimeRequest,
-                traceId,
-              });
-        const launchHandledTurn =
-          toolHandledTurn || requirementHandledTurn
-            ? null
-            : await maybeHandleAgentJobLaunchTurn({
-                config,
-                dbClient: infrastructure.dbClient,
-                queue: infrastructure.agentJobQueue,
-                defaultPersonaId: config.defaultPersonaId,
-                defaultUserId: config.defaultUserId,
-                request: runtimeRequest,
-                traceId,
-              });
-        const immediateHandledTurn =
-          toolHandledTurn ?? requirementHandledTurn ?? launchHandledTurn;
 
         if (immediateHandledTurn) {
           await finalizePersistedTurn({
@@ -1850,6 +1815,7 @@ export async function buildServer() {
                     }
 
                     if (part.type === "finish") {
+                      const replyMode = streamPlan.guardState.mode;
                       return buildDeskChatMetadata({
                         response: {
                           conversationId: preparedTurn.conversationId,
@@ -1860,14 +1826,16 @@ export async function buildServer() {
                           },
                           traceId,
                         },
-                        mode: "model",
-                        model: streamPlan.model ?? null,
+                        mode: replyMode,
+                        model: replyMode === "model" ? streamPlan.model ?? null : null,
+                        providerError: streamPlan.guardState.providerError,
                         totalTokens: part.totalUsage.totalTokens,
                       });
                     }
 
                     return undefined;
                   },
+                  sendSources: true,
                 }),
               );
               return;
@@ -1916,9 +1884,18 @@ export async function buildServer() {
               preparedTurn,
               assistantMessageId: responseMessage.id,
               outputText,
-              mode: streamPlan.mode,
-              model: streamPlan.model ?? null,
-              providerError: streamPlan.providerError ?? null,
+              mode:
+                streamPlan.kind === "model"
+                  ? streamPlan.guardState.mode
+                  : streamPlan.mode,
+              model:
+                streamPlan.kind === "model" && streamPlan.guardState.mode === "fallback"
+                  ? null
+                  : streamPlan.model ?? null,
+              providerError:
+                streamPlan.kind === "model"
+                  ? streamPlan.guardState.providerError
+                  : streamPlan.providerError ?? null,
             });
 
             await finalizePersistedTurn({

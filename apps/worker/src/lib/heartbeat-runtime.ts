@@ -2,9 +2,9 @@ import { createMessageId, createTraceId, type HeartbeatIntegrationStatusResponse
 import type { AppConfig } from "@secretary/config";
 import { activityTraces, conversations, integrations, type DbClient } from "@secretary/db";
 import type { Infrastructure } from "./infrastructure.js";
-import { createQueuedMemoryJob, markMemoryJobEnqueueFailed, persistChatTurn } from "./chat-persistence.js";
 import { eq } from "drizzle-orm";
 import { maybeDeliverTelegramAssistantMessage } from "./telegram-integration.js";
+import { enqueueTurnMemoryFollowup, processRuntimeTurn } from "./turn-orchestrator.js";
 
 const heartbeatIntegrationId = "heartbeat";
 const defaultHeartbeatPrompt =
@@ -255,9 +255,10 @@ export async function runHeartbeat(params: {
   });
 
   try {
-    const persistedTurn = await persistChatTurn({
+    const persistedTurn = await processRuntimeTurn({
       config: params.config,
       dbClient: params.infrastructure.dbClient,
+      queue: params.infrastructure.agentJobQueue,
       defaultPersonaId: params.config.defaultPersonaId,
       defaultUserId: params.config.defaultUserId,
       request: {
@@ -276,31 +277,22 @@ export async function runHeartbeat(params: {
 
     await refreshHeartbeatConversationLabel(
       params.infrastructure.dbClient,
-      persistedTurn.conversationId,
+      persistedTurn.response.conversationId,
     );
 
-    const jobId = await createQueuedMemoryJob({
+    await enqueueTurnMemoryFollowup({
       dbClient: params.infrastructure.dbClient,
-      payload: persistedTurn.memoryPayload,
+      memoryPayload: persistedTurn.memoryPayload,
+      memoryQueue: params.infrastructure.memoryQueue,
       traceId,
     });
-
-    try {
-      await params.infrastructure.memoryQueue.enqueue(jobId, persistedTurn.memoryPayload);
-    } catch (error) {
-      await markMemoryJobEnqueueFailed(
-        params.infrastructure.dbClient,
-        jobId,
-        error instanceof Error ? error.message : "Unknown enqueue error",
-      );
-    }
 
     const nextRunAt = record.enabled
       ? computeNextRunAt(heartbeatConfig.intervalMinutes, now).toISOString()
       : null;
     const nextConfig: HeartbeatIntegrationConfig = {
       ...heartbeatConfig,
-      conversationId: persistedTurn.conversationId,
+      conversationId: persistedTurn.response.conversationId,
       lastRunAt: now.toISOString(),
       nextRunAt,
     };
@@ -315,7 +307,7 @@ export async function runHeartbeat(params: {
 
     await recordHeartbeatTrace({
       dbClient: params.infrastructure.dbClient,
-      conversationId: persistedTurn.conversationId,
+      conversationId: persistedTurn.response.conversationId,
       traceId,
       eventName: "heartbeat.run.completed",
       payload: {
@@ -330,7 +322,7 @@ export async function runHeartbeat(params: {
       await maybeDeliverTelegramAssistantMessage({
         dbClient: params.infrastructure.dbClient,
         config: params.config,
-        conversationId: persistedTurn.conversationId,
+        conversationId: persistedTurn.response.conversationId,
         messageId: persistedTurn.response.messageId,
         text: persistedTurn.response.outputText,
         importance: "important",
@@ -344,7 +336,7 @@ export async function runHeartbeat(params: {
     return {
       ok: true,
       traceId,
-      conversationId: persistedTurn.conversationId,
+      conversationId: persistedTurn.response.conversationId,
       assistantMessageId: persistedTurn.response.messageId,
       outputPreview: persistedTurn.response.outputText.slice(0, 220),
       nextRunAt,

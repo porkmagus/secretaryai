@@ -47,7 +47,7 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
             <SecretaryWordmark />
           </Link>
           <span className="workspace-nav__tagline">
-            Rustic operator workspace for memory, channels, voice, and actions
+            A calm home for your secretary, follow-through, and active work
           </span>
         </div>
         {isLoginRoute ? (

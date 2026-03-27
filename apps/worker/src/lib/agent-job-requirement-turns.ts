@@ -5,6 +5,7 @@ import { createMessageId, type RuntimeChatRequest } from "@secretary/core-runtim
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { decideAgentJobRequirement } from "./agent-jobs.js";
 import { finalizeChatTurn, findConversationIdByChannelRef, prepareChatTurn } from "./chat-persistence.js";
+import { detectConversationDecision } from "./conversation-decisions.js";
 
 type MaybeHandleAgentJobRequirementTurnParams = {
   config: AppConfig;
@@ -16,8 +17,6 @@ type MaybeHandleAgentJobRequirementTurnParams = {
   traceId: string;
 };
 
-const affirmativePattern = /^(?:yes|yep|yeah|sure|okay|ok|go ahead|do it|approve|allow|continue|proceed)\b/i;
-const negativePattern = /^(?:no|nope|deny|reject|don't|do not|stop|cancel|block)\b/i;
 const requirementHelpPattern = /\b(blocked|requirement|requirements|approve|approval|deny|denied|runtime|what do you need)\b/i;
 
 async function resolveConversationId(dbClient: DbClient, request: RuntimeChatRequest) {
@@ -34,7 +33,7 @@ async function resolveConversationId(dbClient: DbClient, request: RuntimeChatReq
 
 function buildRequirementPrompt(label: string, detail: string | null) {
   const detailLine = detail ? ` ${detail}` : "";
-  return `The build job is waiting on: ${label}.${detailLine} Reply yes to approve it, or no to keep the job blocked.`;
+  return `The build job is waiting on: ${label}.${detailLine} Say yes, continue, or approve to let me keep going, or say no to leave it blocked.`;
 }
 
 export async function maybeHandleAgentJobRequirementTurn(
@@ -71,12 +70,9 @@ export async function maybeHandleAgentJobRequirementTurn(
     return null;
   }
 
-  const wantsDecision =
-    affirmativePattern.test(text) ||
-    negativePattern.test(text) ||
-    requirementHelpPattern.test(text);
+  const decision = detectConversationDecision(text, requirementHelpPattern);
 
-  if (!wantsDecision) {
+  if (!decision) {
     return null;
   }
 
@@ -89,8 +85,8 @@ export async function maybeHandleAgentJobRequirementTurn(
     traceId: params.traceId,
   });
 
-  if (affirmativePattern.test(text) || negativePattern.test(text)) {
-    const approved = affirmativePattern.test(text);
+  if (decision === "approve" || decision === "deny") {
+    const approved = decision === "approve";
     await decideAgentJobRequirement({
       config: params.config,
       dbClient: params.dbClient,

@@ -1,9 +1,12 @@
-import { access } from "node:fs/promises";
+import { access, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
+  type AdminMaintenanceAction,
+  type AdminMaintenanceActionResponse,
+  type AdminMaintenanceOverviewResponse,
   createMessageId,
   type OnboardingStatusResponse,
   type PersonaAvatarRecord,
@@ -18,8 +21,13 @@ import {
   type UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
 import {
+  agentJobArtifacts,
+  agentJobLaunchIntents,
+  agentJobs,
   integrations,
   personas,
+  jobs,
+  activityTraces,
   tools,
   users,
   voiceProfiles,
@@ -49,6 +57,9 @@ import { listTools } from "./tools-runtime.js";
 import type { Infrastructure } from "./infrastructure.js";
 import { loadInferenceSettings } from "./inference-settings.js";
 import { getHeartbeatIntegrationStatus } from "./heartbeat-runtime.js";
+import { loadAgentJobSettings } from "./agent-job-settings.js";
+import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage.js";
+import { cancelAgentJob } from "./agent-jobs.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
@@ -253,6 +264,275 @@ async function pathExists(path: string) {
   } catch {
     return false;
   }
+}
+
+type AgentJobWorkspaceRow = {
+  jobId: string;
+  status: string;
+  workspacePath: string;
+};
+
+type LaunchIntentWorkspaceRow = {
+  id: string;
+  status: string;
+  workspacePath: string;
+};
+
+async function getAgentJobWorkspaceRows(dbClient: DbClient): Promise<AgentJobWorkspaceRow[]> {
+  const result = await dbClient.pool.query<AgentJobWorkspaceRow>(
+    `select jobs.id as "jobId", jobs.status, agent_jobs.workspace_path as "workspacePath"
+     from jobs
+     inner join agent_jobs on agent_jobs.job_id = jobs.id`,
+  );
+
+  return result.rows;
+}
+
+async function getLaunchIntentWorkspaceRows(dbClient: DbClient): Promise<LaunchIntentWorkspaceRow[]> {
+  const result = await dbClient.pool.query<LaunchIntentWorkspaceRow>(
+    `select id, status, workspace_path as "workspacePath"
+     from agent_job_launch_intents`,
+  );
+
+  return result.rows;
+}
+
+async function findStaleAgentJobIds(dbClient: DbClient) {
+  const rows = await getAgentJobWorkspaceRows(dbClient);
+  const staleRows: AgentJobWorkspaceRow[] = [];
+
+  for (const row of rows) {
+    if (!(await pathExists(row.workspacePath))) {
+      staleRows.push(row);
+    }
+  }
+
+  return staleRows;
+}
+
+async function findStaleLaunchIntentIds(dbClient: DbClient) {
+  const rows = await getLaunchIntentWorkspaceRows(dbClient);
+  const staleRows: LaunchIntentWorkspaceRow[] = [];
+
+  for (const row of rows) {
+    if (!(await pathExists(row.workspacePath))) {
+      staleRows.push(row);
+    }
+  }
+
+  return staleRows;
+}
+
+async function removeArtifactFilesByJobIds(dbClient: DbClient, jobIds: string[]) {
+  if (jobIds.length === 0) {
+    return 0;
+  }
+
+  const artifacts = await dbClient.db.query.agentJobArtifacts.findMany({
+    where: inArray(agentJobArtifacts.jobId, jobIds),
+  });
+
+  let deletedFiles = 0;
+
+  for (const artifact of artifacts) {
+    if (!artifact.storageKey) {
+      continue;
+    }
+
+    try {
+      await unlink(resolveManagedAgentJobArtifactPath(artifact.storageKey));
+      deletedFiles += 1;
+    } catch {
+      continue;
+    }
+  }
+
+  return deletedFiles;
+}
+
+async function deleteAgentJobsByIds(dbClient: DbClient, jobIds: string[]) {
+  if (jobIds.length === 0) {
+    return {
+      deletedJobs: 0,
+      deletedTraces: 0,
+      deletedArtifactFiles: 0,
+    };
+  }
+
+  const deletedArtifactFiles = await removeArtifactFilesByJobIds(dbClient, jobIds);
+
+  await dbClient.db.delete(activityTraces).where(inArray(activityTraces.jobId, jobIds));
+  await dbClient.db.delete(jobs).where(inArray(jobs.id, jobIds));
+
+  return {
+    deletedJobs: jobIds.length,
+    deletedTraces: jobIds.length,
+    deletedArtifactFiles,
+  };
+}
+
+async function getAdminMaintenanceOverview(params: {
+  config: AppConfig;
+  infrastructure: Infrastructure;
+}): Promise<AdminMaintenanceOverviewResponse> {
+  const [settings, health, jobRows, staleJobs, staleLaunchIntents, queueCounts] = await Promise.all([
+    loadAgentJobSettings(),
+    getSystemHealth(params),
+    getAgentJobWorkspaceRows(params.infrastructure.dbClient),
+    findStaleAgentJobIds(params.infrastructure.dbClient),
+    findStaleLaunchIntentIds(params.infrastructure.dbClient),
+    params.infrastructure.agentJobQueue.queue.getJobCounts(
+      "wait",
+      "active",
+      "delayed",
+      "paused",
+      "failed",
+      "completed",
+      "prioritized",
+    ),
+  ]);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    defaultWorkspacePath: settings.defaultWorkspacePath,
+    jobs: {
+      active: jobRows.filter((row) => ["queued", "planning", "running", "retrying"].includes(row.status)).length,
+      waiting: jobRows.filter((row) => ["waiting_for_approval", "waiting_for_runtime", "blocked"].includes(row.status)).length,
+      finished: jobRows.filter((row) => ["completed", "failed", "cancelled"].includes(row.status)).length,
+      staleWorkspaceJobs: staleJobs.length,
+      staleWorkspaceLaunchIntents: staleLaunchIntents.length,
+    },
+    queue: {
+      wait: queueCounts.wait ?? 0,
+      active: queueCounts.active ?? 0,
+      delayed: queueCounts.delayed ?? 0,
+      paused: queueCounts.paused ?? 0,
+      failed: queueCounts.failed ?? 0,
+      completed: queueCounts.completed ?? 0,
+      prioritized: queueCounts.prioritized ?? 0,
+    },
+    health,
+  };
+}
+
+export async function runAdminMaintenanceAction(params: {
+  action: AdminMaintenanceAction;
+  config: AppConfig;
+  infrastructure: Infrastructure;
+}): Promise<AdminMaintenanceActionResponse> {
+  const dbClient = params.infrastructure.dbClient;
+  const ranAt = new Date().toISOString();
+  let summary = "Maintenance action completed.";
+  let details: Record<string, number | string | boolean | null> = {};
+
+  if (params.action === "clear_stale_agent_jobs") {
+    const staleJobs = await findStaleAgentJobIds(dbClient);
+    const staleLaunchIntents = await findStaleLaunchIntentIds(dbClient);
+    const deleted = await deleteAgentJobsByIds(dbClient, staleJobs.map((row) => row.jobId));
+
+    if (staleLaunchIntents.length > 0) {
+      await dbClient.db
+        .delete(agentJobLaunchIntents)
+        .where(inArray(agentJobLaunchIntents.id, staleLaunchIntents.map((row) => row.id)));
+    }
+
+    summary = staleJobs.length || staleLaunchIntents.length
+      ? "Cleared stale agent jobs and unreachable launch intents."
+      : "No stale agent jobs or launch intents were found.";
+    details = {
+      staleJobsCleared: staleJobs.length,
+      staleLaunchIntentsCleared: staleLaunchIntents.length,
+      artifactFilesDeleted: deleted.deletedArtifactFiles,
+    };
+  } else if (params.action === "clear_finished_agent_jobs") {
+    const result = await dbClient.pool.query<{ id: string }>(
+      `select jobs.id
+       from jobs
+       inner join agent_jobs on agent_jobs.job_id = jobs.id
+       where jobs.status in ('completed', 'failed', 'cancelled')`,
+    );
+
+    const deleted = await deleteAgentJobsByIds(dbClient, result.rows.map((row) => row.id));
+    summary = deleted.deletedJobs > 0
+      ? "Cleared finished agent job history."
+      : "No finished agent jobs were available to clear.";
+    details = {
+      finishedJobsCleared: deleted.deletedJobs,
+      artifactFilesDeleted: deleted.deletedArtifactFiles,
+    };
+  } else if (params.action === "cancel_active_agent_jobs") {
+    const result = await dbClient.pool.query<{ id: string }>(
+      `select jobs.id
+       from jobs
+       inner join agent_jobs on agent_jobs.job_id = jobs.id
+       where jobs.status in ('queued', 'planning', 'running', 'retrying', 'waiting_for_approval', 'waiting_for_runtime', 'blocked')`,
+    );
+
+    for (const row of result.rows) {
+      await cancelAgentJob({
+        config: params.config,
+        dbClient,
+        jobId: row.id,
+      });
+    }
+
+    summary = result.rows.length > 0
+      ? "Cancelled active and waiting agent jobs."
+      : "No active or waiting agent jobs were running.";
+    details = {
+      cancelledJobs: result.rows.length,
+    };
+  } else if (params.action === "flush_agent_queue") {
+    const queue = params.infrastructure.agentJobQueue.queue;
+    await queue.drain(true);
+    await queue.clean(0, 1000, "wait");
+    await queue.clean(0, 1000, "delayed");
+    await queue.clean(0, 1000, "prioritized");
+    await queue.clean(0, 1000, "completed");
+    await queue.clean(0, 1000, "failed");
+    await queue.clean(0, 1000, "paused");
+
+    const queueCounts = await queue.getJobCounts(
+      "wait",
+      "active",
+      "delayed",
+      "paused",
+      "failed",
+      "completed",
+      "prioritized",
+    );
+
+    summary = "Flushed queued and retained agent queue jobs.";
+    details = {
+      wait: queueCounts.wait ?? 0,
+      active: queueCounts.active ?? 0,
+      delayed: queueCounts.delayed ?? 0,
+      paused: queueCounts.paused ?? 0,
+      failed: queueCounts.failed ?? 0,
+      completed: queueCounts.completed ?? 0,
+      prioritized: queueCounts.prioritized ?? 0,
+    };
+  } else if (params.action === "run_health_sweep") {
+    summary = "Completed a live health sweep across jobs, queue, and runtime dependencies.";
+    details = {
+      checked: true,
+    };
+  }
+
+  return {
+    action: params.action,
+    ranAt,
+    summary,
+    details,
+    overview: await getAdminMaintenanceOverview(params),
+  };
+}
+
+export async function getAdminMaintenanceSnapshot(params: {
+  config: AppConfig;
+  infrastructure: Infrastructure;
+}) {
+  return getAdminMaintenanceOverview(params);
 }
 
 async function ensureDefaultPersonaRecord(dbClient: DbClient, config: AppConfig) {

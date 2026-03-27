@@ -160,7 +160,7 @@ export function OverviewConsole() {
     <AppPage width="1220px">
       <PageHero
         title="Overview"
-        description={<p>A compact readout of the secretary&apos;s current environment and the few things worth checking.</p>}
+        description={<p>A calm, compact snapshot of what is healthy, what is connected, and what is actually worth your attention.</p>}
         tone="dark"
       />
 

@@ -30,12 +30,8 @@ import {
 import type { Infrastructure } from "./infrastructure.js";
 import {
   attachExternalMessageIdToMessage,
-  createQueuedMemoryJob,
   findConversationIdByChannelRef,
-  markMemoryJobEnqueueFailed,
-  persistChatTurn,
 } from "./chat-persistence.js";
-import { maybeHandleAgentJobLaunchTurn } from "./agent-job-launch-intents.js";
 import {
   createSpeechArtifact,
   recordSpeechTrace,
@@ -47,6 +43,7 @@ import {
 } from "./speech-storage.js";
 import { transcribeAudioFile } from "./stt-service.js";
 import { createTelegramVoiceReply } from "./voice-replies.js";
+import { enqueueTurnMemoryFollowup, processRuntimeTurn } from "./turn-orchestrator.js";
 
 const telegramIntegrationId = "telegram";
 
@@ -1080,7 +1077,7 @@ export async function handleTelegramWebhookUpdate(params: {
     },
   };
 
-  const launchHandledTurn = await maybeHandleAgentJobLaunchTurn({
+  const persistedTurn = await processRuntimeTurn({
     config: params.config,
     dbClient: params.infrastructure.dbClient,
     queue: params.infrastructure.agentJobQueue,
@@ -1090,18 +1087,7 @@ export async function handleTelegramWebhookUpdate(params: {
     traceId,
   });
 
-  const persistedTurn =
-    launchHandledTurn ??
-    (await persistChatTurn({
-      config: params.config,
-      dbClient: params.infrastructure.dbClient,
-      defaultPersonaId: params.config.defaultPersonaId,
-      defaultUserId: params.config.defaultUserId,
-      request: runtimeRequest,
-      traceId,
-    }));
-
-  if (normalized.voice && audioAttachment) {
+  if (normalized.voice && audioAttachment && "userMessageId" in persistedTurn) {
     const latestArtifact = await params.infrastructure.dbClient.db.query.speechArtifacts.findFirst({
       where: eq(speechArtifacts.sourceRef, normalized.voice.fileId),
       orderBy: (fields, { desc }) => [desc(fields.createdAt)],
@@ -1131,23 +1117,12 @@ export async function handleTelegramWebhookUpdate(params: {
     },
   });
 
-  const jobId = await createQueuedMemoryJob({
+  await enqueueTurnMemoryFollowup({
     dbClient: params.infrastructure.dbClient,
-    payload: persistedTurn.memoryPayload,
+    memoryPayload: persistedTurn.memoryPayload,
+    memoryQueue: params.infrastructure.memoryQueue,
     traceId,
   });
-
-  try {
-    await params.infrastructure.memoryQueue.enqueue(jobId, persistedTurn.memoryPayload);
-  } catch (error) {
-    await markMemoryJobEnqueueFailed(
-      params.infrastructure.dbClient,
-      jobId,
-      error instanceof Error ? error.message : "Unknown enqueue error",
-    );
-
-    throw error;
-  }
 
   const client = getTelegramClient(params.config);
   const replyText = persistedTurn.response.outputText;

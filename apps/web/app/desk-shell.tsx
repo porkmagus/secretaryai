@@ -14,7 +14,7 @@ import type {
   ToolExecutionListResponse,
   ToolExecutionRecord,
 } from "@secretary/core-runtime";
-import { AppPage, ToggleField } from "./lib/ui";
+import { AppPage, EmptyState, ToggleField } from "./lib/ui";
 import { snippet } from "./lib/presenters";
 import { SecretaryPortraitField } from "./lib/secretary-portrait-field";
 
@@ -27,7 +27,7 @@ const starterMessages: DeskChatMessage[] = [
     parts: [
       {
         type: "text",
-        text: "Secretary is online with memory, channels, voice, and the action layer. Ask for help, request a tool action, or approve a pending operation.",
+        text: "Good evening. I'm ready to help you plan, build, follow through, and keep the work moving. Tell me what you need, and I'll take it from there.",
       },
     ],
   },
@@ -139,6 +139,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
   const secretaryName = props.secretaryName.trim() || "Secretary";
   const secretaryReference =
     secretaryName === "SetAgentName" ? "the secretary" : secretaryName;
+  const secretarySentenceReference =
+    secretaryName === "SetAgentName" ? "The secretary" : secretaryName;
   const composerTarget =
     secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
 
@@ -201,10 +203,10 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
       : status === "streaming"
         ? `${secretaryReference} is replying...`
           : props.isRefreshing
-            ? "Refreshing saved history..."
+            ? "Refreshing saved correspondence..."
             : props.activeConversationId
-              ? "Linked to saved conversation"
-              : "Fresh conversation ready");
+              ? "This correspondence is saved and ready."
+              : `${secretarySentenceReference} is ready when you are.`);
 
   useEffect(() => {
     const nextFrame = window.requestAnimationFrame(() => {
@@ -266,13 +268,14 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
   }
 
   const stageTitle =
-    props.conversationTitle ?? (props.activeConversationId ? "Saved correspondence" : "Fresh correspondence");
+    props.conversationTitle ??
+    (props.activeConversationId ? "Open correspondence" : "New correspondence");
   const stageDescription =
     status === "streaming"
-      ? `${secretaryReference} is actively composing with memory, voice, and actions in reach.`
+      ? `${secretaryReference} is working through the reply now.`
       : props.activeConversationId
-        ? "This thread is linked to saved context, approvals, and channel history."
-        : "Begin a fresh exchange and turn it into a working thread as the secretary gathers context.";
+        ? "This conversation stays linked to its history, approvals, and follow-through as you work."
+        : `Start anywhere. ${secretaryReference} will turn this into a working thread as context builds.`;
   const activeNotice =
     props.pendingApproval
       ? {
@@ -301,41 +304,13 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         </div>
         <div className="desk-stage-glance">
           <span className="desk-stage-pill">
-            {props.activeConversationId ? "Saved thread" : "Fresh thread"}
+            {props.activeConversationId ? "Open thread" : "Fresh start"}
           </span>
           <span className="desk-stage-pill desk-stage-pill--accent">
-            {status === "streaming" ? "Live reply" : "Ready"}
+            {status === "streaming" ? "Reply in motion" : "Listening"}
           </span>
         </div>
       </header>
-      {activeNotice ? (
-        <div className="desk-stage-notice">
-          <div className="desk-stage-notice__copy">
-            <p className="desk-stage-notice__title">{activeNotice.title}</p>
-            <p className="desk-stage-notice__text">{activeNotice.copy}</p>
-          </div>
-          {props.pendingApproval ? (
-            <div className="desk-stage-notice__actions">
-              <button
-                type="button"
-                onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
-                disabled={props.approvalBusyId === props.pendingApproval.id}
-                className="button-primary"
-              >
-                {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
-              </button>
-              <button
-                type="button"
-                onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
-                disabled={props.approvalBusyId === props.pendingApproval.id}
-                className="button-danger"
-              >
-                Deny
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
       <div className="desk-message-stream" ref={streamRef}>
         {messages.map((message) => {
           const text = extractText(message);
@@ -486,6 +461,34 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           placeholder={`Ask ${composerTarget} something...`}
           rows={4}
         />
+        {activeNotice ? (
+          <div className="desk-stage-notice desk-stage-notice--composer">
+            <div className="desk-stage-notice__copy">
+              <p className="desk-stage-notice__title">{activeNotice.title}</p>
+              <p className="desk-stage-notice__text">{activeNotice.copy}</p>
+            </div>
+            {props.pendingApproval ? (
+              <div className="desk-stage-notice__actions">
+                <button
+                  type="button"
+                  onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
+                  disabled={props.approvalBusyId === props.pendingApproval.id}
+                  className="button-primary"
+                >
+                  {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
+                  disabled={props.approvalBusyId === props.pendingApproval.id}
+                  className="button-danger"
+                >
+                  Deny
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="desk-composer-foot">
           <p className="desk-composer-status">{composerStatus}</p>
           <div className="desk-composer-actions">
@@ -992,29 +995,46 @@ export function DeskShell() {
               </button>
             </div>
             <p className="desk-panel-copy">
-              {sidebarError ?? `${Math.min(conversations.length, 3)} recent threads in view`}
+              {sidebarError ?? "Pick back up where you left off, or begin a fresh exchange."}
             </p>
             <div className="desk-list">
-              {conversations.slice(0, 3).map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  onClick={() => void openConversation(conversation.id)}
-                  className={`desk-correspondence-item ${
-                    conversationId === conversation.id ? "is-active" : ""
-                  }`}
-                >
-                  <p className="desk-correspondence-title">
-                    {conversation.title ?? "Untitled conversation"}
-                  </p>
-                  <p className="desk-correspondence-copy">
-                    {snippet(conversation.lastMessagePreview).slice(0, 72)}
-                  </p>
-                  <p className="desk-correspondence-meta">
-                    {conversation.channelType} · {conversation.messageCount} messages
-                  </p>
-                </button>
-              ))}
+              {conversations.length === 0 ? (
+                <EmptyState
+                  tone="warm"
+                  title="No recent correspondence yet"
+                  description={
+                    <p>
+                      Your first working thread will appear here once you begin talking with the secretary.
+                    </p>
+                  }
+                  actions={
+                    <button type="button" onClick={startFreshConversation} className="button-primary">
+                      Begin a conversation
+                    </button>
+                  }
+                />
+              ) : (
+                conversations.slice(0, 3).map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => void openConversation(conversation.id)}
+                    className={`desk-correspondence-item ${
+                      conversationId === conversation.id ? "is-active" : ""
+                    }`}
+                  >
+                    <p className="desk-correspondence-title">
+                      {conversation.title ?? "Untitled conversation"}
+                    </p>
+                    <p className="desk-correspondence-copy">
+                      {snippet(conversation.lastMessagePreview).slice(0, 72)}
+                    </p>
+                    <p className="desk-correspondence-meta">
+                      {conversation.channelType} · {conversation.messageCount} messages
+                    </p>
+                  </button>
+                ))
+              )}
             </div>
           </article>
         </aside>

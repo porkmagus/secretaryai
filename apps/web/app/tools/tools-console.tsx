@@ -9,7 +9,7 @@ import type {
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import { ActionRow, AppPage, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
 
 type EditableTool = {
@@ -32,6 +32,7 @@ function toolGroupLabel(tool: ToolRecord) {
     case "shell_command":
       return "Workspace and documents";
     case "task_create":
+    case "task_list":
     case "task_update":
     case "memory_write":
       return "Memory and planning";
@@ -440,7 +441,7 @@ export function ToolsConsole() {
       <SurfaceCard
         tone="dark"
         title="Tools"
-        description={<p>Policies first, audit second. Pick a tool, tune it, then inspect only the runs that matter.</p>}
+        description={<p>Set the rules once, keep approvals calm, and only dive into audit detail when something actually matters.</p>}
       >
         <div
           style={{
@@ -451,30 +452,14 @@ export function ToolsConsole() {
             flexWrap: "wrap",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
+          <div className="persona-summary-strip">
             {[
               ["Pending", pending.length],
               ["Completed", executions.filter((execution) => execution.executionStatus === "completed").length],
               ["Failures", executions.filter((execution) => execution.executionStatus === "failed").length],
               ["Dirty", dirtyToolIds.length],
             ].map(([label, value], index) => (
-              <div
-                key={String(label)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: 6,
-                  paddingLeft: index === 0 ? 0 : 10,
-                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
-                }}
-              >
+              <div key={String(label)} className="persona-summary-item">
                 <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
                   {label}
                 </span>
@@ -485,7 +470,7 @@ export function ToolsConsole() {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div className="persona-action-cluster">
             {(["restrictive", "full_access"] as const).map((preset) => (
               <button
                 key={preset}
@@ -527,15 +512,7 @@ export function ToolsConsole() {
             description={<p>Pick a capability group, inspect one tool policy, and keep approvals in the same lane.</p>}
             className="stack-sm"
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
+            <ActionRow align="between">
               <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
                 {pending.length === 0
                   ? "Nothing is waiting for approval."
@@ -544,7 +521,7 @@ export function ToolsConsole() {
               <button type="button" onClick={() => void load()} className="button-secondary">
                 Refresh
               </button>
-            </div>
+            </ActionRow>
 
             {pending.length > 0 ? (
               <>
@@ -649,9 +626,10 @@ export function ToolsConsole() {
         <div className="inspector-panel">
           {!selectedTool || !selectedDraft ? (
             <SurfaceCard>
-              <p style={{ margin: 0, color: "var(--muted)" }}>
-                Select a tool from the navigator to inspect its policy.
-              </p>
+              <EmptyState
+                title="Choose a tool to tune"
+                description={<p>Pick anything from the navigator to inspect its policy, health, and recent execution trail.</p>}
+              />
             </SurfaceCard>
           ) : (
             <>
@@ -748,15 +726,7 @@ export function ToolsConsole() {
                   {!selectedDraft.enabled ? " This tool is disabled and will not execute." : ""}
                 </p>
 
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 16,
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                  }}
-                >
+                <ActionRow align="between">
                   <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
                     {dirtyToolIds.includes(selectedTool.id)
                       ? "Unsaved policy changes are waiting."
@@ -780,7 +750,7 @@ export function ToolsConsole() {
                         ? "Save Policy"
                         : "Saved"}
                   </button>
-                </div>
+                </ActionRow>
               </SurfaceCard>
 
               <SurfaceCard
@@ -824,9 +794,10 @@ export function ToolsConsole() {
                 </div>
 
                 {filteredExecutions.length === 0 ? (
-                  <p style={{ margin: 0, color: "var(--muted)" }}>
-                    No tool executions match the current filters.
-                  </p>
+                  <EmptyState
+                    title="No executions match these filters"
+                    description={<p>Widen the filters or pick another tool if you want to inspect older approvals and runs.</p>}
+                  />
                 ) : (
                   <>
                     <div className="compact-list inspector-list">

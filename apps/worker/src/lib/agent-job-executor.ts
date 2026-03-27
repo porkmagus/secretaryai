@@ -971,7 +971,10 @@ function createBuildAgent(params: {
   approvalMode: AgentJobApprovalMode;
   activeTools?: AgentToolName[];
 }) {
-  const resolved = resolveInferenceLanguageModel(params.inference);
+  const resolved = resolveInferenceLanguageModel(params.inference, {
+    purpose: "agent_job",
+    workspacePath: params.workspacePath,
+  });
 
   if (!resolved) {
     throw new Error("Inference provider is not ready for autonomous job execution.");
@@ -1112,6 +1115,7 @@ function createBuildAgent(params: {
     tools: allTools,
     activeTools: params.activeTools,
     stopWhen: stepCountIs(params.settings.maxAgentSteps),
+    maxOutputTokens: params.inference.maxOutputTokens ?? undefined,
   });
 }
 
@@ -1196,105 +1200,124 @@ async function runAgentLoop(params: {
   });
 
   const stepSnapshots: AgentStepSnapshot[] = [];
+  const runtimeBudgetMs = Math.max(1, params.settings.maxJobRuntimeMinutes) * 60 * 1000;
+  const abortController = new AbortController();
+  const abortTimer = setTimeout(() => {
+    abortController.abort();
+  }, runtimeBudgetMs);
 
-  const result = await agent.generate(
-    params.messages
-      ? {
-          messages: params.messages,
-          onStepFinish(step) {
-            stepSnapshots.push({
-              stepNumber: step.stepNumber,
-              finishReason: step.finishReason,
-              text: step.text,
-              reasoningText: step.reasoningText ?? null,
-              toolCalls: step.toolCalls.map((call) => ({
-                toolCallId: call.toolCallId,
-                toolName: call.toolName,
-                input: call.input,
-              })),
-              toolResults: step.toolResults.map((toolResult) => ({
-                toolCallId: toolResult.toolCallId,
-                toolName: toolResult.toolName,
-                output: toolResult.output,
-              })),
-              usage: {
-                inputTokens: step.usage.inputTokens ?? null,
-                outputTokens: step.usage.outputTokens ?? null,
-                totalTokens: step.usage.totalTokens ?? null,
-              },
-            });
+  try {
+    const result = await agent.generate(
+      params.messages
+        ? {
+            messages: params.messages,
+            abortSignal: abortController.signal,
+            onStepFinish(step) {
+              stepSnapshots.push({
+                stepNumber: step.stepNumber,
+                finishReason: step.finishReason,
+                text: step.text,
+                reasoningText: step.reasoningText ?? null,
+                toolCalls: step.toolCalls.map((call) => ({
+                  toolCallId: call.toolCallId,
+                  toolName: call.toolName,
+                  input: call.input,
+                })),
+                toolResults: step.toolResults.map((toolResult) => ({
+                  toolCallId: toolResult.toolCallId,
+                  toolName: toolResult.toolName,
+                  output: toolResult.output,
+                })),
+                usage: {
+                  inputTokens: step.usage.inputTokens ?? null,
+                  outputTokens: step.usage.outputTokens ?? null,
+                  totalTokens: step.usage.totalTokens ?? null,
+                },
+              });
+            },
+          }
+        : {
+            prompt: params.prompt ?? "",
+            abortSignal: abortController.signal,
+            onStepFinish(step) {
+              stepSnapshots.push({
+                stepNumber: step.stepNumber,
+                finishReason: step.finishReason,
+                text: step.text,
+                reasoningText: step.reasoningText ?? null,
+                toolCalls: step.toolCalls.map((call) => ({
+                  toolCallId: call.toolCallId,
+                  toolName: call.toolName,
+                  input: call.input,
+                })),
+                toolResults: step.toolResults.map((toolResult) => ({
+                  toolCallId: toolResult.toolCallId,
+                  toolName: toolResult.toolName,
+                  output: toolResult.output,
+                })),
+                usage: {
+                  inputTokens: step.usage.inputTokens ?? null,
+                  outputTokens: step.usage.outputTokens ?? null,
+                  totalTokens: step.usage.totalTokens ?? null,
+                },
+              });
+            },
           },
-        }
-      : {
-          prompt: params.prompt ?? "",
-          onStepFinish(step) {
-            stepSnapshots.push({
-              stepNumber: step.stepNumber,
-              finishReason: step.finishReason,
-              text: step.text,
-              reasoningText: step.reasoningText ?? null,
-              toolCalls: step.toolCalls.map((call) => ({
-                toolCallId: call.toolCallId,
-                toolName: call.toolName,
-                input: call.input,
-              })),
-              toolResults: step.toolResults.map((toolResult) => ({
-                toolCallId: toolResult.toolCallId,
-                toolName: toolResult.toolName,
-                output: toolResult.output,
-              })),
-              usage: {
-                inputTokens: step.usage.inputTokens ?? null,
-                outputTokens: step.usage.outputTokens ?? null,
-                totalTokens: step.usage.totalTokens ?? null,
-              },
-            });
-          },
-        },
-  );
+    );
 
-  const baseMessages = params.messages ?? [{ role: "user", content: params.prompt ?? "" } satisfies ModelMessage];
-  const nextMessages = [...baseMessages, ...result.response.messages] as SerializedAgentMessage[];
-  const approvalRequests = collectApprovalRequests(result.content as Array<{ type: string; [key: string]: unknown }>);
-  const serializedSteps = stepSnapshots.length > 0 ? stepSnapshots : serializeStepSnapshots(result.steps.map((step) => ({
-    stepNumber: step.stepNumber,
-    finishReason: step.finishReason,
-    text: step.text,
-    reasoningText: step.reasoningText ?? undefined,
-    toolCalls: step.toolCalls.map((call) => ({
-      toolCallId: call.toolCallId,
-      toolName: call.toolName,
-      input: call.input,
-    })),
-    toolResults: step.toolResults.map((toolResult) => ({
-      toolCallId: toolResult.toolCallId,
-      toolName: toolResult.toolName,
-      output: toolResult.output,
-    })),
-    usage: {
-      inputTokens: step.usage.inputTokens,
-      outputTokens: step.usage.outputTokens,
-      totalTokens: step.usage.totalTokens,
-    },
-  })) );
+    const baseMessages = params.messages ?? [{ role: "user", content: params.prompt ?? "" } satisfies ModelMessage];
+    const nextMessages = [...baseMessages, ...result.response.messages] as SerializedAgentMessage[];
+    const approvalRequests = collectApprovalRequests(result.content as Array<{ type: string; [key: string]: unknown }>);
+    const serializedSteps = stepSnapshots.length > 0 ? stepSnapshots : serializeStepSnapshots(result.steps.map((step) => ({
+      stepNumber: step.stepNumber,
+      finishReason: step.finishReason,
+      text: step.text,
+      reasoningText: step.reasoningText ?? undefined,
+      toolCalls: step.toolCalls.map((call) => ({
+        toolCallId: call.toolCallId,
+        toolName: call.toolName,
+        input: call.input,
+      })),
+      toolResults: step.toolResults.map((toolResult) => ({
+        toolCallId: toolResult.toolCallId,
+        toolName: toolResult.toolName,
+        output: toolResult.output,
+      })),
+      usage: {
+        inputTokens: step.usage.inputTokens,
+        outputTokens: step.usage.outputTokens,
+        totalTokens: step.usage.totalTokens,
+      },
+    })) );
 
-  return {
-    kind: approvalRequests.length > 0 ? "needs_approval" : "completed",
-    finalText: result.text?.trim() || "",
-    blockerSummary:
-      approvalRequests.length > 0
-        ? `${approvalRequests.length} tool approval${approvalRequests.length === 1 ? "" : "s"} required before execution can continue.`
-        : null,
-    messages: nextMessages,
-    approvalRequests,
-    stepSnapshots: serializedSteps,
-    commandLogs: collectCommandLogs(serializedSteps),
-    usage: {
-      inputTokens: result.totalUsage.inputTokens ?? null,
-      outputTokens: result.totalUsage.outputTokens ?? null,
-      totalTokens: result.totalUsage.totalTokens ?? null,
-    },
-  } satisfies AgentRunOutcome;
+    return {
+      kind: approvalRequests.length > 0 ? "needs_approval" : "completed",
+      finalText: result.text?.trim() || "",
+      blockerSummary:
+        approvalRequests.length > 0
+          ? `${approvalRequests.length} tool approval${approvalRequests.length === 1 ? "" : "s"} required before execution can continue.`
+          : null,
+      messages: nextMessages,
+      approvalRequests,
+      stepSnapshots: serializedSteps,
+      commandLogs: collectCommandLogs(serializedSteps),
+      usage: {
+        inputTokens: result.totalUsage.inputTokens ?? null,
+        outputTokens: result.totalUsage.outputTokens ?? null,
+        totalTokens: result.totalUsage.totalTokens ?? null,
+      },
+    } satisfies AgentRunOutcome;
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      throw new Error(
+        `Autonomous job exceeded its ${params.settings.maxJobRuntimeMinutes}-minute runtime budget.`,
+      );
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(abortTimer);
+  }
 }
 
 export async function runImplementationAgent(params: {

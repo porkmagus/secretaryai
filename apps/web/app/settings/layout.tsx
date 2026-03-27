@@ -13,6 +13,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         { href: "/settings/tools", label: "Tools" },
         { href: "/settings/channels", label: "Channels" },
         { href: "/settings/voice", label: "Voice" },
+        { href: "/settings/admin", label: "Admin" },
       ]}
     >
       {children}

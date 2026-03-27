@@ -12,8 +12,9 @@ import type {
   AgentJobSettingsResponse,
   CreateAgentJobRequest,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
+import { AppPage, EmptyState, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
 import { formatTimestamp } from "../../lib/presenters";
+import { usePolling } from "../../lib/use-polling";
 
 type JobFormState = {
   title: string;
@@ -22,6 +23,8 @@ type JobFormState = {
   constraintsText: string;
   deliverablesText: string;
 };
+
+type JobsViewMode = "operations" | "history";
 
 const defaultForm: JobFormState = {
   title: "New build job",
@@ -143,6 +146,7 @@ function ArtifactContent({ artifact }: { artifact: AgentJobArtifactRecord }) {
 export function JobsConsole() {
   const [jobs, setJobs] = useState<AgentJobRecord[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<JobsViewMode>("operations");
   const [detail, setDetail] = useState<AgentJobDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -151,6 +155,7 @@ export function JobsConsole() {
   const [actionBusyKey, setActionBusyKey] = useState<string | null>(null);
   const [isCreating, startCreateTransition] = useTransition();
   const [form, setForm] = useState<JobFormState>(defaultForm);
+  const [showAllFinished, setShowAllFinished] = useState(false);
 
   async function loadJobs(preferredJobId?: string | null, options?: { silent?: boolean }) {
     if (!options?.silent) {
@@ -169,10 +174,13 @@ export function JobsConsole() {
       setJobs(nextJobs);
       setError(null);
 
+      const operationalJobs = nextJobs.filter((job) =>
+        ["queued", "planning", "running", "retrying", "waiting_for_approval", "waiting_for_runtime", "blocked"].includes(job.status),
+      );
       const nextSelected =
         preferredJobId && nextJobs.some((job) => job.id === preferredJobId)
           ? preferredJobId
-          : nextJobs[0]?.id ?? null;
+          : operationalJobs[0]?.id ?? nextJobs[0]?.id ?? null;
       setSelectedJobId(nextSelected);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load agent jobs.");
@@ -241,22 +249,22 @@ export function JobsConsole() {
     void loadDetail(selectedJobId);
   }, [selectedJobId]);
 
-  useEffect(() => {
-    if (!detail) {
-      return;
-    }
+  usePolling({
+    enabled:
+      Boolean(detail) &&
+      ["queued", "planning", "running", "retrying", "waiting_for_approval", "waiting_for_runtime"].includes(
+        detail?.job.status ?? "",
+      ),
+    intervalMs: 4000,
+    callback: async () => {
+      if (!detail) {
+        return;
+      }
 
-    if (!["queued", "planning", "running", "retrying", "waiting_for_approval", "waiting_for_runtime"].includes(detail.job.status)) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      void loadJobs(detail.job.id, { silent: true });
-      void loadDetail(detail.job.id, { silent: true });
-    }, 4000);
-
-    return () => window.clearInterval(interval);
-  }, [detail]);
+      await loadJobs(detail.job.id, { silent: true });
+      await loadDetail(detail.job.id, { silent: true });
+    },
+  });
 
   const summary = useMemo(
     () => ({
@@ -275,9 +283,45 @@ export function JobsConsole() {
     [jobs],
   );
 
+  const operationalJobs = useMemo(
+    () => [...groupedJobs.active, ...groupedJobs.waiting],
+    [groupedJobs.active, groupedJobs.waiting],
+  );
+
   function updateForm<K extends keyof JobFormState>(key: K, value: JobFormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
   }
+
+  const visibleFinishedJobs = useMemo(() => {
+    if (showAllFinished) {
+      return groupedJobs.finished;
+    }
+
+    const selectedFinishedJob = groupedJobs.finished.find((job) => job.id === selectedJobId);
+    const baseEntries = groupedJobs.finished.slice(0, 6);
+
+    if (selectedFinishedJob && !baseEntries.some((job) => job.id === selectedFinishedJob.id)) {
+      return [selectedFinishedJob, ...baseEntries.slice(0, 5)];
+    }
+
+    return baseEntries;
+  }, [groupedJobs.finished, selectedJobId, showAllFinished]);
+
+  const activeDetailJobId = useMemo(() => {
+    if (selectedJobId && operationalJobs.some((job) => job.id === selectedJobId)) {
+      return selectedJobId;
+    }
+
+    return operationalJobs[0]?.id ?? null;
+  }, [operationalJobs, selectedJobId]);
+
+  const historyDetailJobId = useMemo(() => {
+    if (selectedJobId && groupedJobs.finished.some((job) => job.id === selectedJobId)) {
+      return selectedJobId;
+    }
+
+    return groupedJobs.finished[0]?.id ?? null;
+  }, [groupedJobs.finished, selectedJobId]);
 
   function createJob() {
     startCreateTransition(async () => {
@@ -380,8 +424,8 @@ export function JobsConsole() {
         title="Agent jobs"
         description={
           <p>
-            A durable work queue for autonomous builds: start jobs, watch progress, review evidence,
-            and intervene only when the queue actually needs you.
+            Start autonomous work, keep an eye on the active build, and step in only when the queue
+            genuinely needs you.
           </p>
         }
         meta={
@@ -411,16 +455,43 @@ export function JobsConsole() {
         ))}
       </div>
 
-      <div style={{ display: "grid", gap: 18, gridTemplateColumns: "minmax(320px, 390px) minmax(0, 1fr)" }}>
-        <div style={{ display: "grid", gap: 18, alignContent: "start" }}>
+      <div className="jobs-subtabs">
+        <button
+          type="button"
+          className={`jobs-subtabs__tab${viewMode === "operations" ? " is-active" : ""}`}
+          onClick={() => {
+            setViewMode("operations");
+            if (activeDetailJobId) {
+              setSelectedJobId(activeDetailJobId);
+            }
+          }}
+        >
+          Jobs Start/Active/Queued
+        </button>
+        <button
+          type="button"
+          className={`jobs-subtabs__tab${viewMode === "history" ? " is-active" : ""}`}
+          onClick={() => {
+            setViewMode("history");
+            if (historyDetailJobId) {
+              setSelectedJobId(historyDetailJobId);
+            }
+          }}
+        >
+          History & Artifacts
+        </button>
+      </div>
+
+      {viewMode === "operations" ? (
+        <div className="jobs-operations-stack">
           <SurfaceCard
             tone="dark"
             title="Start job"
             description={<p>Name the work, point it at a workspace, and describe the build outcome you want.</p>}
           >
-            <div style={{ display: "grid", gap: 12 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Title</span>
+            <div className="jobs-create-grid">
+              <label className="jobs-field">
+                <span className="jobs-field__label">Title</span>
                 <input
                   value={form.title}
                   onChange={(event) => updateForm("title", event.target.value)}
@@ -428,19 +499,8 @@ export function JobsConsole() {
                 />
               </label>
 
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Goal</span>
-                <textarea
-                  value={form.goal}
-                  onChange={(event) => updateForm("goal", event.target.value)}
-                  className="textarea-shell"
-                  rows={4}
-                  placeholder="Describe what the agent should build or change."
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Workspace</span>
+              <label className="jobs-field">
+                <span className="jobs-field__label">Workspace</span>
                 <input
                   value={form.workspacePath}
                   onChange={(event) => updateForm("workspacePath", event.target.value)}
@@ -448,8 +508,30 @@ export function JobsConsole() {
                 />
               </label>
 
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Constraints</span>
+              <div className="jobs-create-grid__action">
+                <button
+                  type="button"
+                  onClick={createJob}
+                  disabled={isCreating || !form.goal.trim() || !form.workspacePath.trim() || !form.title.trim()}
+                  className="button-primary"
+                >
+                  {isCreating ? "Starting job..." : "Start agent job"}
+                </button>
+              </div>
+
+              <label className="jobs-field jobs-field--goal">
+                <span className="jobs-field__label">Goal</span>
+                <textarea
+                  value={form.goal}
+                  onChange={(event) => updateForm("goal", event.target.value)}
+                  className="textarea-shell"
+                  rows={3}
+                  placeholder="Describe what the agent should build or change."
+                />
+              </label>
+
+              <label className="jobs-field">
+                <span className="jobs-field__label">Constraints</span>
                 <textarea
                   value={form.constraintsText}
                   onChange={(event) => updateForm("constraintsText", event.target.value)}
@@ -459,8 +541,8 @@ export function JobsConsole() {
                 />
               </label>
 
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Deliverables</span>
+              <label className="jobs-field">
+                <span className="jobs-field__label">Deliverables</span>
                 <textarea
                   value={form.deliverablesText}
                   onChange={(event) => updateForm("deliverablesText", event.target.value)}
@@ -469,93 +551,320 @@ export function JobsConsole() {
                   placeholder="One deliverable per line."
                 />
               </label>
-
-              <button
-                type="button"
-                onClick={createJob}
-                disabled={isCreating || !form.goal.trim() || !form.workspacePath.trim() || !form.title.trim()}
-                className="button-primary"
-              >
-                {isCreating ? "Starting job..." : "Start agent job"}
-              </button>
             </div>
           </SurfaceCard>
 
           <SurfaceCard
             tone="dark"
-            title="Queue"
-            description={<p>Everything queued, in motion, waiting on approvals, or already handed off.</p>}
+            title={detail && detail.job.id === activeDetailJobId ? detail.job.title : "Active job"}
+            description={
+              <p>
+                {detail && detail.job.id === activeDetailJobId
+                  ? `${detail.job.goal} ${detail.job.blockerSummary ? `Blocker: ${detail.job.blockerSummary}` : ""}`.trim()
+                  : "The current in-flight or waiting job lives here, with its steps, blockers, and evidence."}
+              </p>
+            }
           >
-            {jobs.length === 0 ? (
-              <p style={{ margin: 0, color: "var(--muted)" }}>No agent jobs yet.</p>
+            {!activeDetailJobId ? (
+              <EmptyState
+                title="Nothing is in motion right now"
+                description={<p>Start a new job above, and the live workbench will appear here.</p>}
+              />
+            ) : isLoadingDetail && detail?.job.id !== activeDetailJobId ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>Loading job detail...</p>
+            ) : detail && detail.job.id === activeDetailJobId ? (
+              <div className="jobs-detail">
+                {detail.job.blockerSummary ? (
+                  <NoticeBanner
+                    tone={
+                      detail.job.status === "waiting_for_runtime" || detail.job.status === "blocked"
+                        ? "warning"
+                        : "info"
+                    }
+                  >
+                    {detail.job.blockerSummary}
+                  </NoticeBanner>
+                ) : null}
+
+                <div className="jobs-detail__header">
+                  <div className="jobs-detail__stats">
+                    {[
+                      ["Status", <JobStatusPill key="status" status={detail.job.status} />],
+                      ["Current step", detail.steps.find((step) => step.id === detail.job.currentStepId)?.title ?? "Not set"],
+                      ["Updated", formatTimestamp(detail.job.updatedAt)],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="jobs-detail__stat">
+                        <span className="jobs-detail__stat-label">{label}</span>
+                        <div>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="jobs-detail__actions">
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={actionBusyKey === `resume:${detail.job.id}` || detail.job.status === "completed" || detail.job.status === "cancelled"}
+                      onClick={() => void runJobAction(detail.job.id, "resume")}
+                    >
+                      {actionBusyKey === `resume:${detail.job.id}` ? "Resuming..." : "Resume"}
+                    </button>
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      disabled={actionBusyKey === `cancel:${detail.job.id}` || detail.job.status === "completed" || detail.job.status === "cancelled"}
+                      onClick={() => void runJobAction(detail.job.id, "cancel")}
+                    >
+                      {actionBusyKey === `cancel:${detail.job.id}` ? "Stopping..." : "Stop job"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="jobs-detail__workspace">
+                  <SurfaceCard tone="soft" title="Planned steps">
+                    {detail.steps.length === 0 ? (
+                      <p style={{ margin: 0, color: "var(--muted)" }}>No steps recorded yet.</p>
+                    ) : (
+                      <div className="compact-list jobs-panel-scroll">
+                        {detail.steps.map((step) => (
+                          <div key={step.id} className="jobs-item-row">
+                            <div className="jobs-item-row__top">
+                              <strong style={{ fontSize: 14 }}>{step.sequence}. {step.title}</strong>
+                              <JobStatusPill status={step.status} />
+                            </div>
+                            <p className="jobs-item-row__body">{step.detail}</p>
+                            <p className="jobs-item-row__meta">
+                              {step.toolKey ? `Runtime: ${step.toolKey}` : "No runtime hint recorded."}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </SurfaceCard>
+
+                  <div className="jobs-detail__support">
+                    <SurfaceCard tone="soft" title="Requirements and blockers">
+                      {detail.requirements.length === 0 ? (
+                        <EmptyState
+                          title="No blockers recorded"
+                          description={
+                            <p>This run does not currently need extra approval, runtime help, or intervention.</p>
+                          }
+                        />
+                      ) : (
+                        <div className="compact-list jobs-panel-scroll">
+                          {detail.requirements.map((requirement: AgentJobRequirementRecord) => (
+                            <div key={requirement.id} className="jobs-item-row">
+                              <div className="jobs-item-row__top">
+                                <strong style={{ fontSize: 14 }}>{requirement.label}</strong>
+                                <JobStatusPill status={requirement.status} />
+                              </div>
+                              <p className="jobs-item-row__body">
+                                {requirement.detail ?? "No extra detail recorded."}
+                              </p>
+                              {Object.keys(requirement.metadataJson ?? {}).length > 0 ? (
+                                <pre className="jobs-item-row__json">
+                                  {JSON.stringify(requirement.metadataJson, null, 2)}
+                                </pre>
+                              ) : null}
+                              {requirement.status === "pending" ? (
+                                <div className="jobs-detail__actions">
+                                  <button
+                                    type="button"
+                                    className="button-secondary"
+                                    disabled={actionBusyKey === `approve:${requirement.id}`}
+                                    onClick={() => void decideRequirement(detail.job.id, requirement.id, true)}
+                                  >
+                                    {actionBusyKey === `approve:${requirement.id}` ? "Working..." : "Approve"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="button-secondary"
+                                    disabled={actionBusyKey === `deny:${requirement.id}`}
+                                    onClick={() => void decideRequirement(detail.job.id, requirement.id, false)}
+                                  >
+                                    {actionBusyKey === `deny:${requirement.id}` ? "Working..." : "Deny"}
+                                  </button>
+                                </div>
+                              ) : null}
+                              {requirement.resolutionText ? (
+                                <p className="jobs-item-row__meta">
+                                  Resolution: {requirement.resolutionText}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </SurfaceCard>
+
+                    <SurfaceCard tone="soft" title="Artifacts">
+                      {detail.artifacts.length === 0 ? (
+                        <EmptyState
+                          title="No evidence captured yet"
+                          description={<p>Artifacts will appear here as the job produces logs, files, and verification output.</p>}
+                        />
+                      ) : (
+                        <div className="compact-list jobs-panel-scroll">
+                          {detail.artifacts.map((artifact: AgentJobArtifactRecord) => (
+                            <div key={artifact.id} className="jobs-item-row">
+                              <div className="jobs-item-row__top">
+                                <strong style={{ fontSize: 14 }}>{artifact.label}</strong>
+                                <JobStatusPill status={artifact.kind} />
+                              </div>
+                              <p className="jobs-item-row__meta">
+                                {formatTimestamp(artifact.createdAt)}
+                              </p>
+                              <ArtifactContent artifact={artifact} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </SurfaceCard>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <div className="compact-list">
+              <EmptyState
+                title="Choose a job from the queue"
+                description={<p>Select an active or waiting run below to inspect its live workspace.</p>}
+              />
+            )}
+          </SurfaceCard>
+
+          <SurfaceCard
+            tone="dark"
+            title="Queue"
+            description={<p>Jobs in motion or waiting for approval, runtime, or the next execution pass.</p>}
+          >
+            {operationalJobs.length === 0 ? (
+              <EmptyState
+                title="The queue is clear"
+                description={<p>New jobs will line up here when something is running, waiting, or ready to start.</p>}
+              />
+            ) : (
+              <div className="jobs-queue jobs-queue--compact">
                 {([
                   ["Active", groupedJobs.active],
                   ["Waiting", groupedJobs.waiting],
-                  ["Finished", groupedJobs.finished],
                 ] as const).map(([label, entries]) => (
                   entries.length > 0 ? (
-                    <div key={label} style={{ display: "grid", gap: 8 }}>
-                      <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>
-                        {label}
-                      </p>
-                      {entries.map((job) => (
-                        <button
-                          key={job.id}
-                          type="button"
-                          onClick={() => setSelectedJobId(job.id)}
-                          style={{
-                            width: "100%",
-                            textAlign: "left",
-                            background: job.id === selectedJobId ? "rgba(240, 184, 116, 0.1)" : "transparent",
-                            border: job.id === selectedJobId
-                              ? "1px solid rgba(240, 184, 116, 0.35)"
-                              : "1px solid transparent",
-                            borderRadius: 16,
-                            padding: "12px 14px",
-                            display: "grid",
-                            gap: 8,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                            <strong style={{ fontSize: 14 }}>{job.title}</strong>
-                            <JobStatusPill status={job.status} />
-                          </div>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
-                            {job.goal}
-                          </p>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
-                            {job.workspacePath} · updated {formatTimestamp(job.updatedAt)}
-                          </p>
-                        </button>
-                      ))}
-                    </div>
+                    <section key={label} className="jobs-queue__group">
+                      <p className="jobs-queue__heading">{label}</p>
+                      <div className="jobs-queue__stack">
+                        {entries.map((job) => (
+                          <button
+                            key={job.id}
+                            type="button"
+                            onClick={() => {
+                              setViewMode("operations");
+                              setSelectedJobId(job.id);
+                            }}
+                            className={`jobs-queue__item${job.id === activeDetailJobId ? " is-active" : ""}`}
+                          >
+                            <div className="jobs-queue__item-top">
+                              <strong>{job.title}</strong>
+                              <JobStatusPill status={job.status} />
+                            </div>
+                            <p className="jobs-queue__goal">{job.goal}</p>
+                            <p className="jobs-queue__meta">
+                              {job.workspacePath} · updated {formatTimestamp(job.updatedAt)}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
                   ) : null
                 ))}
               </div>
             )}
           </SurfaceCard>
         </div>
+      ) : (
+        <div className="jobs-board">
+          <SurfaceCard
+            tone="dark"
+            title="History"
+            description={<p>Finished, failed, and cancelled runs. Open any one to review what happened.</p>}
+          >
+            {groupedJobs.finished.length === 0 ? (
+              <EmptyState
+                title="No history yet"
+                description={<p>Finished, failed, and cancelled runs will collect here once the queue has been used.</p>}
+              />
+            ) : (
+              <div className="jobs-queue">
+                <section className="jobs-queue__group">
+                  <p className="jobs-queue__heading">Finished</p>
+                  <div className="jobs-queue__stack">
+                    {visibleFinishedJobs.map((job) => (
+                      <button
+                        key={job.id}
+                        type="button"
+                        onClick={() => {
+                          setViewMode("history");
+                          setSelectedJobId(job.id);
+                        }}
+                        className={`jobs-queue__item${job.id === historyDetailJobId ? " is-active" : ""}`}
+                      >
+                        <div className="jobs-queue__item-top">
+                          <strong>{job.title}</strong>
+                          <JobStatusPill status={job.status} />
+                        </div>
+                        <p className="jobs-queue__goal">{job.goal}</p>
+                        <p className="jobs-queue__meta">
+                          {job.workspacePath} · updated {formatTimestamp(job.updatedAt)}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                  {groupedJobs.finished.length > visibleFinishedJobs.length ? (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => setShowAllFinished((current) => !current)}
+                      style={{ justifySelf: "start" }}
+                    >
+                      {showAllFinished
+                        ? "Show fewer finished jobs"
+                        : `Show ${groupedJobs.finished.length - visibleFinishedJobs.length} more finished jobs`}
+                    </button>
+                  ) : null}
+                  {groupedJobs.finished.length <= visibleFinishedJobs.length && groupedJobs.finished.length > 6 ? (
+                    <button
+                      type="button"
+                      className="button-secondary"
+                      onClick={() => setShowAllFinished((current) => !current)}
+                      style={{ justifySelf: "start" }}
+                    >
+                      {showAllFinished ? "Show fewer finished jobs" : "Show all finished jobs"}
+                    </button>
+                  ) : null}
+                </section>
+              </div>
+            )}
+          </SurfaceCard>
 
-        <SurfaceCard
-          tone="dark"
-          title={detail ? detail.job.title : "Job detail"}
-          description={
-            <p>
-              {detail
-                ? `${detail.job.goal} ${detail.job.blockerSummary ? `Blocker: ${detail.job.blockerSummary}` : ""}`.trim()
-                : "Select a job to inspect its steps, requirements, and captured evidence."}
-            </p>
-          }
-        >
-          {!selectedJobId ? (
-            <p style={{ margin: 0, color: "var(--muted)" }}>Choose a job from the queue to inspect it.</p>
-          ) : isLoadingDetail ? (
-            <p style={{ margin: 0, color: "var(--muted)" }}>Loading job detail...</p>
-          ) : detail ? (
-            <div style={{ display: "grid", gap: 18 }}>
+          <SurfaceCard
+            tone="dark"
+            title={detail && detail.job.id === historyDetailJobId ? detail.job.title : "Job detail"}
+            description={
+              <p>
+                {detail && detail.job.id === historyDetailJobId
+                  ? `${detail.job.goal} ${detail.job.blockerSummary ? `Blocker: ${detail.job.blockerSummary}` : ""}`.trim()
+                  : "Select a finished job to inspect its steps, requirements, and captured evidence."}
+              </p>
+            }
+          >
+            {!historyDetailJobId ? (
+              <EmptyState
+                title="Choose a finished run"
+                description={<p>Select any job from history to inspect its steps, blockers, and saved artifacts.</p>}
+              />
+            ) : isLoadingDetail && detail?.job.id !== historyDetailJobId ? (
+              <p style={{ margin: 0, color: "var(--muted)" }}>Loading job detail...</p>
+            ) : detail && detail.job.id === historyDetailJobId ? (
+              <div className="jobs-detail">
               {detail.job.blockerSummary ? (
                 <NoticeBanner
                   tone={
@@ -568,23 +877,21 @@ export function JobsConsole() {
                 </NoticeBanner>
               ) : null}
 
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "start", flexWrap: "wrap" }}>
-                <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(3, minmax(0, 1fr))", flex: "1 1 520px" }}>
+              <div className="jobs-detail__header">
+                <div className="jobs-detail__stats">
                   {[
                     ["Status", <JobStatusPill key="status" status={detail.job.status} />],
                     ["Current step", detail.steps.find((step) => step.id === detail.job.currentStepId)?.title ?? "Not set"],
                     ["Updated", formatTimestamp(detail.job.updatedAt)],
                   ].map(([label, value]) => (
-                    <div key={String(label)} style={{ display: "grid", gap: 6 }}>
-                      <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                        {label}
-                      </span>
+                    <div key={String(label)} className="jobs-detail__stat">
+                      <span className="jobs-detail__stat-label">{label}</span>
                       <div>{value}</div>
                     </div>
                   ))}
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <div className="jobs-detail__actions">
                   <button
                     type="button"
                     className="button-secondary"
@@ -604,39 +911,99 @@ export function JobsConsole() {
                 </div>
               </div>
 
-              <div style={{ display: "grid", gap: 18, gridTemplateColumns: "minmax(0, 1.1fr) minmax(300px, 0.9fr)" }}>
-                <div style={{ display: "grid", gap: 18 }}>
-                  <SurfaceCard tone="soft" title="Planned steps">
-                    <div className="compact-list">
+              <div className="jobs-detail__workspace">
+                <SurfaceCard tone="soft" title="Planned steps">
+                  {detail.steps.length === 0 ? (
+                    <p style={{ margin: 0, color: "var(--muted)" }}>No steps recorded yet.</p>
+                  ) : (
+                    <div className="compact-list jobs-panel-scroll">
                       {detail.steps.map((step) => (
-                        <div key={step.id} style={{ display: "grid", gap: 8, padding: "12px 0" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                        <div key={step.id} className="jobs-item-row">
+                          <div className="jobs-item-row__top">
                             <strong style={{ fontSize: 14 }}>{step.sequence}. {step.title}</strong>
                             <JobStatusPill status={step.status} />
                           </div>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                            {step.detail}
-                          </p>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
+                          <p className="jobs-item-row__body">{step.detail}</p>
+                          <p className="jobs-item-row__meta">
                             {step.toolKey ? `Runtime: ${step.toolKey}` : "No runtime hint recorded."}
                           </p>
                         </div>
                       ))}
                     </div>
+                  )}
+                </SurfaceCard>
+
+                <div className="jobs-detail__support">
+                  <SurfaceCard tone="soft" title="Requirements and blockers">
+                    {detail.requirements.length === 0 ? (
+                      <EmptyState
+                        title="No blockers recorded"
+                        description={
+                          <p>This archived run finished without any additional approval or runtime intervention.</p>
+                        }
+                      />
+                    ) : (
+                      <div className="compact-list jobs-panel-scroll">
+                        {detail.requirements.map((requirement: AgentJobRequirementRecord) => (
+                          <div key={requirement.id} className="jobs-item-row">
+                            <div className="jobs-item-row__top">
+                              <strong style={{ fontSize: 14 }}>{requirement.label}</strong>
+                              <JobStatusPill status={requirement.status} />
+                            </div>
+                            <p className="jobs-item-row__body">
+                              {requirement.detail ?? "No extra detail recorded."}
+                            </p>
+                            {Object.keys(requirement.metadataJson ?? {}).length > 0 ? (
+                              <pre className="jobs-item-row__json">
+                                {JSON.stringify(requirement.metadataJson, null, 2)}
+                              </pre>
+                            ) : null}
+                            {requirement.status === "pending" ? (
+                              <div className="jobs-detail__actions">
+                                <button
+                                  type="button"
+                                  className="button-secondary"
+                                  disabled={actionBusyKey === `approve:${requirement.id}`}
+                                  onClick={() => void decideRequirement(detail.job.id, requirement.id, true)}
+                                >
+                                  {actionBusyKey === `approve:${requirement.id}` ? "Working..." : "Approve"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button-secondary"
+                                  disabled={actionBusyKey === `deny:${requirement.id}`}
+                                  onClick={() => void decideRequirement(detail.job.id, requirement.id, false)}
+                                >
+                                  {actionBusyKey === `deny:${requirement.id}` ? "Working..." : "Deny"}
+                                </button>
+                              </div>
+                            ) : null}
+                            {requirement.resolutionText ? (
+                              <p className="jobs-item-row__meta">
+                                Resolution: {requirement.resolutionText}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </SurfaceCard>
 
                   <SurfaceCard tone="soft" title="Artifacts">
                     {detail.artifacts.length === 0 ? (
-                      <p style={{ margin: 0, color: "var(--muted)" }}>No artifacts captured yet.</p>
+                      <EmptyState
+                        title="No artifacts were saved"
+                        description={<p>This run did not capture any downloadable evidence or generated files.</p>}
+                      />
                     ) : (
-                      <div className="compact-list">
+                      <div className="compact-list jobs-panel-scroll">
                         {detail.artifacts.map((artifact: AgentJobArtifactRecord) => (
-                          <div key={artifact.id} style={{ display: "grid", gap: 8, padding: "12px 0" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div key={artifact.id} className="jobs-item-row">
+                            <div className="jobs-item-row__top">
                               <strong style={{ fontSize: 14 }}>{artifact.label}</strong>
                               <JobStatusPill status={artifact.kind} />
                             </div>
-                            <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
+                            <p className="jobs-item-row__meta">
                               {formatTimestamp(artifact.createdAt)}
                             </p>
                             <ArtifactContent artifact={artifact} />
@@ -646,63 +1013,14 @@ export function JobsConsole() {
                     )}
                   </SurfaceCard>
                 </div>
-
-                <SurfaceCard tone="soft" title="Requirements and blockers">
-                  {detail.requirements.length === 0 ? (
-                    <p style={{ margin: 0, color: "var(--muted)" }}>
-                      No explicit runtime or approval blockers are recorded for this job right now.
-                    </p>
-                  ) : (
-                    <div className="compact-list">
-                      {detail.requirements.map((requirement: AgentJobRequirementRecord) => (
-                        <div key={requirement.id} style={{ display: "grid", gap: 8, padding: "12px 0" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                            <strong style={{ fontSize: 14 }}>{requirement.label}</strong>
-                            <JobStatusPill status={requirement.status} />
-                          </div>
-                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                            {requirement.detail ?? "No extra detail recorded."}
-                          </p>
-                          {Object.keys(requirement.metadataJson ?? {}).length > 0 ? (
-                            <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 11, lineHeight: 1.5, color: "var(--muted)" }}>
-                              {JSON.stringify(requirement.metadataJson, null, 2)}
-                            </pre>
-                          ) : null}
-                          {requirement.status === "pending" ? (
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                              <button
-                                type="button"
-                                className="button-secondary"
-                                disabled={actionBusyKey === `approve:${requirement.id}`}
-                                onClick={() => void decideRequirement(detail.job.id, requirement.id, true)}
-                              >
-                                {actionBusyKey === `approve:${requirement.id}` ? "Working..." : "Approve"}
-                              </button>
-                              <button
-                                type="button"
-                                className="button-secondary"
-                                disabled={actionBusyKey === `deny:${requirement.id}`}
-                                onClick={() => void decideRequirement(detail.job.id, requirement.id, false)}
-                              >
-                                {actionBusyKey === `deny:${requirement.id}` ? "Working..." : "Deny"}
-                              </button>
-                            </div>
-                          ) : null}
-                          {requirement.resolutionText ? (
-                            <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
-                              Resolution: {requirement.resolutionText}
-                            </p>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </SurfaceCard>
               </div>
-            </div>
-          ) : null}
-        </SurfaceCard>
-      </div>
+              </div>
+            ) : (
+              <p style={{ margin: 0, color: "var(--muted)" }}>Choose a finished job from history to inspect it.</p>
+            )}
+          </SurfaceCard>
+        </div>
+      )}
     </AppPage>
   );
 }

@@ -427,6 +427,13 @@ export type AgentJobSettingsResponse = {
   settings: AgentJobSettingsRecord;
 };
 
+export type AdminMaintenanceAction =
+  | "clear_stale_agent_jobs"
+  | "clear_finished_agent_jobs"
+  | "cancel_active_agent_jobs"
+  | "flush_agent_queue"
+  | "run_health_sweep";
+
 export type UpdateAgentJobSettingsRequest = {
   defaultWorkspacePath?: string | null;
   defaultApprovalMode?: AgentJobApprovalMode;
@@ -679,6 +686,36 @@ export type SystemHealthResponse = {
     toolExecutions: number;
     voiceProfiles: number;
   };
+};
+
+export type AdminMaintenanceOverviewResponse = {
+  generatedAt: string;
+  defaultWorkspacePath: string | null;
+  jobs: {
+    active: number;
+    waiting: number;
+    finished: number;
+    staleWorkspaceJobs: number;
+    staleWorkspaceLaunchIntents: number;
+  };
+  queue: {
+    wait: number;
+    active: number;
+    delayed: number;
+    paused: number;
+    failed: number;
+    completed: number;
+    prioritized: number;
+  };
+  health: SystemHealthResponse;
+};
+
+export type AdminMaintenanceActionResponse = {
+  action: AdminMaintenanceAction;
+  ranAt: string;
+  summary: string;
+  details: Record<string, number | string | boolean | null>;
+  overview: AdminMaintenanceOverviewResponse;
 };
 
 export type OnboardingStatusResponse = {

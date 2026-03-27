@@ -125,6 +125,46 @@ export function NoticeBanner({
   return <div className={joinClasses("notice-banner", `notice-banner--${tone}`)}>{children}</div>;
 }
 
+export function EmptyState({
+  title,
+  description,
+  actions,
+  tone = "default",
+}: {
+  title: ReactNode;
+  description: ReactNode;
+  actions?: ReactNode;
+  tone?: "default" | "warm";
+}) {
+  return (
+    <div className={joinClasses("empty-state", tone === "warm" && "empty-state--warm")}>
+      <div className="empty-state__copy">
+        <h3 className="empty-state__title">{title}</h3>
+        <div className="empty-state__description">{description}</div>
+      </div>
+      {actions ? <div className="empty-state__actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+export function ActionRow({
+  children,
+  align = "end",
+}: {
+  children: ReactNode;
+  align?: "start" | "end" | "between";
+}) {
+  return (
+    <div className={joinClasses("action-row", align === "start" && "action-row--start", align === "between" && "action-row--between")}>
+      {children}
+    </div>
+  );
+}
+
+export function FieldHint({ children }: { children: ReactNode }) {
+  return <span className="field-hint">{children}</span>;
+}
+
 export function ToggleField({
   checked,
   label,

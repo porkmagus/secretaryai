@@ -1,4 +1,4 @@
-import { generateText, streamText } from "ai";
+import { generateText, streamText, type TextStreamPart, type ToolSet } from "ai";
 import {
   createTurnResponseFromText,
   generateSecretaryReply,
@@ -19,12 +19,19 @@ type ConversationReplyResult = {
   response: RuntimeChatResponse;
 };
 
+type ConversationStreamGuardState = {
+  mode: "model" | "fallback";
+  providerError: string | null;
+  leakageDetected: boolean;
+};
+
 export type ConversationStreamPlan =
   | {
       kind: "model";
       mode: "model";
       model?: string;
       providerError: null;
+      guardState: ConversationStreamGuardState;
       result: ReturnType<typeof streamText>;
     }
   | {
@@ -171,6 +178,173 @@ function buildRetryInstructions(context: RuntimeTurnContext) {
   ].join("\n\n");
 }
 
+function createEmptyUsage() {
+  return {
+    inputTokens: undefined,
+    inputTokenDetails: {
+      noCacheTokens: undefined,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+    },
+    outputTokens: undefined,
+    outputTokenDetails: {
+      textTokens: undefined,
+      reasoningTokens: undefined,
+    },
+    totalTokens: undefined,
+    raw: undefined,
+  };
+}
+
+function createPromptLeakageTransform(params: {
+  fallbackText: string;
+  guardState: ConversationStreamGuardState;
+  modelId: string;
+}) {
+  return <TOOLS extends ToolSet>({ stopStream }: { tools: TOOLS; stopStream: () => void }) => {
+    let bufferMode = true;
+    let bufferedDeltas: Array<TextStreamPart<TOOLS>> = [];
+    let scannedText = "";
+    let emittedTextStartId: string | null = null;
+    let emittedReasoningStartId: string | null = null;
+
+    const flushBuffered = (
+      controller: TransformStreamDefaultController<TextStreamPart<TOOLS>>,
+    ) => {
+      if (bufferedDeltas.length === 0) {
+        return;
+      }
+
+      for (const part of bufferedDeltas) {
+        controller.enqueue(part);
+      }
+
+      bufferedDeltas = [];
+      bufferMode = false;
+    };
+
+    const emitGuardedFallback = (
+      controller: TransformStreamDefaultController<TextStreamPart<TOOLS>>,
+    ) => {
+      params.guardState.mode = "fallback";
+      params.guardState.providerError =
+        "Inference provider leaked hidden prompt material during streaming.";
+      params.guardState.leakageDetected = true;
+
+      stopStream();
+
+      if (emittedReasoningStartId) {
+        controller.enqueue({
+          type: "reasoning-end",
+          id: emittedReasoningStartId,
+        } satisfies TextStreamPart<TOOLS>);
+        emittedReasoningStartId = null;
+      }
+
+      const textId = emittedTextStartId ?? "fallback-text";
+
+      if (!emittedTextStartId) {
+        controller.enqueue({
+          type: "text-start",
+          id: textId,
+        } satisfies TextStreamPart<TOOLS>);
+      }
+
+      controller.enqueue({
+        type: "text-delta",
+        id: textId,
+        text: params.fallbackText,
+      } satisfies TextStreamPart<TOOLS>);
+      controller.enqueue({
+        type: "text-end",
+        id: textId,
+      } satisfies TextStreamPart<TOOLS>);
+
+      controller.enqueue({
+        type: "finish-step",
+        finishReason: "stop",
+        rawFinishReason: "guardrail",
+        usage: createEmptyUsage(),
+        response: {
+          id: "conversation-guardrail-stop",
+          modelId: params.modelId,
+          timestamp: new Date(),
+        },
+        providerMetadata: undefined,
+      } satisfies TextStreamPart<TOOLS>);
+      controller.enqueue({
+        type: "finish",
+        finishReason: "stop",
+        rawFinishReason: "guardrail",
+        totalUsage: createEmptyUsage(),
+      } satisfies TextStreamPart<TOOLS>);
+    };
+
+    return new TransformStream<TextStreamPart<TOOLS>, TextStreamPart<TOOLS>>({
+      transform(chunk, controller) {
+        if (params.guardState.leakageDetected) {
+          return;
+        }
+
+        switch (chunk.type) {
+          case "text-start":
+            emittedTextStartId = chunk.id;
+            controller.enqueue(chunk);
+            return;
+          case "text-end":
+            flushBuffered(controller);
+            emittedTextStartId = null;
+            controller.enqueue(chunk);
+            return;
+          case "reasoning-start":
+            emittedReasoningStartId = chunk.id;
+            controller.enqueue(chunk);
+            return;
+          case "reasoning-end":
+            flushBuffered(controller);
+            emittedReasoningStartId = null;
+            controller.enqueue(chunk);
+            return;
+          case "text-delta":
+          case "reasoning-delta": {
+            scannedText = `${scannedText}${chunk.text}`.slice(-4_000);
+
+            if (looksLikePromptLeakage(scannedText)) {
+              emitGuardedFallback(controller);
+              return;
+            }
+
+            if (bufferMode) {
+              bufferedDeltas.push(chunk);
+
+              if (scannedText.length >= 240) {
+                flushBuffered(controller);
+              }
+
+              return;
+            }
+
+            controller.enqueue(chunk);
+            return;
+          }
+          case "finish-step":
+          case "finish":
+            flushBuffered(controller);
+            controller.enqueue(chunk);
+            return;
+          default:
+            controller.enqueue(chunk);
+        }
+      },
+      flush(controller) {
+        if (!params.guardState.leakageDetected) {
+          flushBuffered(controller);
+        }
+      },
+    });
+  };
+}
+
 function renderRecentConversation(context: RuntimeTurnContext) {
   const lines = context.recentMessages.slice(-12).map((message) => {
     const role =
@@ -228,7 +402,9 @@ async function generateProviderReply(params: {
   inference: InferenceRuntimeConfig;
   context: RuntimeTurnContext;
 }) {
-  const resolved = resolveInferenceLanguageModel(params.inference);
+  const resolved = resolveInferenceLanguageModel(params.inference, {
+    purpose: "conversation",
+  });
 
   if (!resolved) {
     return null;
@@ -278,7 +454,9 @@ export function createConversationReplyStream(params: {
   context: RuntimeTurnContext;
   traceId: string;
 }): ConversationStreamPlan {
-  const resolved = resolveInferenceLanguageModel(params.inference);
+  const resolved = resolveInferenceLanguageModel(params.inference, {
+    purpose: "conversation",
+  });
 
   if (!resolved) {
     return createFallbackStreamPlan({
@@ -290,12 +468,22 @@ export function createConversationReplyStream(params: {
   }
 
   try {
+    const guardState: ConversationStreamGuardState = {
+      mode: "model",
+      providerError: null,
+      leakageDetected: false,
+    };
     const result = streamText({
       model: resolved.model,
       system: buildConversationInstructions(params.context),
       prompt: renderRecentConversation(params.context),
       maxOutputTokens: getMaxOutputTokens(params.inference),
       providerOptions: resolved.providerOptions,
+      experimental_transform: createPromptLeakageTransform({
+        fallbackText: generateSecretaryReply(params.request, params.context),
+        guardState,
+        modelId: resolved.modelId,
+      }),
     });
 
     return {
@@ -303,6 +491,7 @@ export function createConversationReplyStream(params: {
       mode: "model",
       model: resolved.modelId,
       providerError: null,
+      guardState,
       result,
     };
   } catch (error) {

@@ -20,6 +20,12 @@ import {
   type TaskRecord,
   type UpdateMemoryRequest,
 } from "@secretary/core-runtime";
+import {
+  buildTaskDraft,
+  cleanText,
+  normalizeTaskTitle,
+  titleCase,
+} from "./task-runtime.js";
 
 type MemoryCandidate = {
   memoryType: MemoryType;
@@ -38,10 +44,6 @@ type TaskCandidate = {
   dueAt: Date | null;
   reminderAt: Date | null;
 };
-
-function cleanText(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
 
 const stopWords = new Set([
   "about",
@@ -88,13 +90,6 @@ function unique<T>(values: T[]) {
   return [...new Set(values)];
 }
 
-function normalizeTaskTitle(title: string) {
-  return cleanText(title)
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, "")
-    .replace(/\s+/g, " ");
-}
-
 function dedupeTaskRecords<T extends { title: string }>(records: T[]) {
   const seen = new Set<string>();
 
@@ -108,90 +103,6 @@ function dedupeTaskRecords<T extends { title: string }>(records: T[]) {
     seen.add(normalizedTitle);
     return true;
   });
-}
-
-function titleCase(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function normalizeHour(hour: number, meridiem?: string) {
-  if (!meridiem) {
-    return hour;
-  }
-
-  const normalized = meridiem.toLowerCase();
-
-  if (normalized === "am") {
-    return hour === 12 ? 0 : hour;
-  }
-
-  return hour === 12 ? 12 : hour + 12;
-}
-
-function parseReminderTime(text: string, now = new Date()) {
-  const inMinutesMatch = text.match(/\bin\s+(\d+)\s+minute(?:s)?\b/i);
-
-  if (inMinutesMatch) {
-    return new Date(now.getTime() + Number(inMinutesMatch[1]) * 60_000);
-  }
-
-  const inHoursMatch = text.match(/\bin\s+(\d+)\s+hour(?:s)?\b/i);
-
-  if (inHoursMatch) {
-    return new Date(now.getTime() + Number(inHoursMatch[1]) * 60 * 60_000);
-  }
-
-  const tomorrowMatch = text.match(
-    /\btomorrow(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?\b/i,
-  );
-
-  if (tomorrowMatch) {
-    const reminderAt = new Date(now);
-    reminderAt.setDate(reminderAt.getDate() + 1);
-    reminderAt.setSeconds(0, 0);
-    reminderAt.setHours(
-      tomorrowMatch[1] ? normalizeHour(Number(tomorrowMatch[1]), tomorrowMatch[3]) : 9,
-      tomorrowMatch[2] ? Number(tomorrowMatch[2]) : 0,
-      0,
-      0,
-    );
-    return reminderAt;
-  }
-
-  const todayTimeMatch = text.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
-
-  if (todayTimeMatch) {
-    const reminderAt = new Date(now);
-    reminderAt.setSeconds(0, 0);
-    reminderAt.setHours(
-      normalizeHour(Number(todayTimeMatch[1]), todayTimeMatch[3]),
-      todayTimeMatch[2] ? Number(todayTimeMatch[2]) : 0,
-      0,
-      0,
-    );
-
-    if (reminderAt.getTime() <= now.getTime()) {
-      reminderAt.setDate(reminderAt.getDate() + 1);
-    }
-
-    return reminderAt;
-  }
-
-  return null;
-}
-
-function stripReminderTiming(text: string) {
-  return cleanText(
-    text
-      .replace(/\bin\s+\d+\s+minute(?:s)?\b/i, "")
-      .replace(/\bin\s+\d+\s+hour(?:s)?\b/i, "")
-      .replace(/\btomorrow(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?\b/i, "")
-      .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i, ""),
-  );
 }
 
 function extractPreferenceMemory(text: string): MemoryCandidate[] {
@@ -305,14 +216,16 @@ function extractTaskCandidate(text: string): TaskCandidate | null {
   }
 
   const rawTaskText = cleanText(match[1]).replace(/[.?!]+$/g, "");
-  const reminderAt = parseReminderTime(rawTaskText);
-  const taskText = stripReminderTiming(rawTaskText) || rawTaskText;
+  const draft = buildTaskDraft({
+    text: rawTaskText,
+    fallbackDetail: `Created from memory extraction: ${rawTaskText}`,
+  });
 
   return {
-    title: titleCase(taskText).slice(0, 120),
-    detail: `Created from memory extraction: ${rawTaskText}`,
-    dueAt: reminderAt,
-    reminderAt,
+    title: draft.title,
+    detail: draft.detail,
+    dueAt: draft.dueAt,
+    reminderAt: draft.reminderAt,
   };
 }
 

@@ -12,7 +12,7 @@ import type {
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import { AppPage, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type VoicePageState = {
@@ -458,7 +458,7 @@ export function VoiceConsole() {
       <SurfaceCard
         tone="dark"
         title="Voice"
-        description={<p>Profiles, preview synthesis, and push-to-talk through the same local speech pipeline.</p>}
+        description={<p>Manage the speaking voice, test it quickly, and keep the speech pipeline readable from one place.</p>}
       >
         <div
           style={{
@@ -469,14 +469,7 @@ export function VoiceConsole() {
             flexWrap: "wrap",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
+          <div className="persona-summary-strip">
             {[
               ["Active", activeProfile?.name ?? "none"],
               ["Profiles", summary.profiles],
@@ -485,16 +478,7 @@ export function VoiceConsole() {
               ["TTS", speechStatus?.tts.healthStatus ?? "loading"],
               ["ffmpeg", speechStatus?.ffmpeg.available ? "ready" : "fallback"],
             ].map(([label, value], index) => (
-              <div
-                key={String(label)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: 6,
-                  paddingLeft: index === 0 ? 0 : 10,
-                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
-                }}
-              >
+              <div key={String(label)} className="persona-summary-item">
                 <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
                   {label}
                 </span>
@@ -595,7 +579,10 @@ export function VoiceConsole() {
                 </p>
               </div>
               {state.profiles.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>No saved profiles yet.</p>
+                <EmptyState
+                  title="No saved voice profiles yet"
+                  description={<p>Create a profile above to give the secretary a speaking voice and store its sample.</p>}
+                />
               ) : (
                 <div className="compact-list">
                   {state.profiles.map((profile) => {
@@ -662,7 +649,10 @@ export function VoiceConsole() {
                         {profile.sampleStorageKey ? (
                           <audio controls src={buildFileUrl(profile.sampleStorageKey, profile.sampleMimeType)} style={{ width: "100%" }} />
                         ) : (
-                          <p style={{ margin: 0, color: "var(--muted)" }}>No sample uploaded yet.</p>
+                          <EmptyState
+                            title="No sample uploaded yet"
+                            description={<p>Upload a reference sample if you want this profile to sound like a specific voice.</p>}
+                          />
                         )}
                       </div>
                     );
@@ -727,7 +717,10 @@ export function VoiceConsole() {
                 </select>
               </div>
               {state.artifacts.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>No speech artifacts yet for this view.</p>
+                <EmptyState
+                  title="No speech artifacts for this view"
+                  description={<p>Previews, transcripts, and TTS outputs will collect here after you test or use voice.</p>}
+                />
               ) : (
                 <div className="compact-list">
                   {state.artifacts.map((artifact) => (

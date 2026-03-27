@@ -12,7 +12,7 @@ import type {
   TelegramSyncWebhookResponse,
   TelegramTestMessageResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import { ActionRow, AppPage, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type DraftState = {
@@ -295,7 +295,7 @@ export function TelegramSettings() {
       <SurfaceCard
         tone="dark"
         title="Channels"
-        description={<p>Telegram setup, delivery behavior, and reminder reach in one place.</p>}
+        description={<p>Keep Telegram setup, delivery behavior, and follow-through in one quieter control surface.</p>}
       >
         <div
           style={{
@@ -306,14 +306,7 @@ export function TelegramSettings() {
             flexWrap: "wrap",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
+          <div className="persona-summary-strip">
             {[
               ["Health", state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown")],
               ["Mode", state.telegram?.mode ?? draft.mode],
@@ -330,16 +323,7 @@ export function TelegramSettings() {
               ["Conversations", String(state.telegram?.conversationCount ?? 0)],
               ["Due", String(state.telegram?.dueReminderCount ?? 0)],
             ].map(([label, value], index) => (
-              <div
-                key={String(label)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: 6,
-                  paddingLeft: index === 0 ? 0 : 10,
-                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
-                }}
-              >
+              <div key={String(label)} className="persona-summary-item">
                 <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
                   {label}
                 </span>
@@ -350,7 +334,7 @@ export function TelegramSettings() {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="persona-action-cluster">
             <div
               className="pill"
               style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
@@ -376,7 +360,7 @@ export function TelegramSettings() {
       <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.95fr)" }}>
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
             <SurfaceCard title="Telegram settings" description={<p>{state.telegram?.healthSummary ?? "Loading Telegram integration health..."}</p>} className="stack-md">
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+              <ActionRow align="between">
                 <ToggleField
                   checked={draft.enabled}
                   onChange={(next) => setDraft((current) => ({ ...current, enabled: next }))}
@@ -386,7 +370,7 @@ export function TelegramSettings() {
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
                   Keep Telegram setup here, then use the status card for runtime context.
                 </p>
-              </div>
+              </ActionRow>
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ color: "var(--muted)", fontSize: 13 }}>Inbound transport mode</span>
@@ -588,7 +572,10 @@ export function TelegramSettings() {
                 </Link>
               </div>
               {telegramTasks.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram reminder tasks are visible yet.</p>
+                <EmptyState
+                  title="No Telegram reminder tasks yet"
+                  description={<p>Due reminders and queued follow-through for Telegram will appear here once they exist.</p>}
+                />
               ) : (
                 <div className="compact-list">
                   {telegramTasks.map((task) => {
@@ -623,7 +610,10 @@ export function TelegramSettings() {
               </div>
 
               {telegramConversations.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram conversations have been recorded yet.</p>
+                <EmptyState
+                  title="No Telegram conversations yet"
+                  description={<p>Once Telegram becomes active, recent channel threads will appear here for quick inspection.</p>}
+                />
               ) : (
                 <div className="compact-list">
                   {telegramConversations.map((conversation) => (

@@ -43,6 +43,13 @@ export type InferenceRuntimeConfig = {
   enabled: boolean;
 };
 
+export type InferenceResolutionPurpose = "conversation" | "agent_job";
+
+type InferenceResolutionOptions = {
+  purpose?: InferenceResolutionPurpose;
+  workspacePath?: string | null;
+};
+
 function hasElevatedReasoning(
   reasoningEffort: InferenceRuntimeConfig["reasoningEffort"],
 ) {
@@ -121,135 +128,196 @@ function buildProviderOptions(
   }
 }
 
-function buildRegistry(inference: InferenceRuntimeConfig) {
+function createProviderForDefinition(
+  inference: InferenceRuntimeConfig,
+  options: InferenceResolutionOptions,
+) {
+  const definition = getInferenceProviderDefinition(inference.providerId);
+
+  if (!definition) {
+    return null;
+  }
+
+  const workspacePath = options.workspacePath?.trim() || process.cwd();
+  const isAgentJob = options.purpose === "agent_job";
+
+  switch (definition.id) {
+    case "openai":
+      return createOpenAI({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "anthropic":
+      return createAnthropic({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "google":
+      return createGoogleGenerativeAI({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "google_vertex":
+      return createVertex({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "xai":
+      return createXai({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "moonshot":
+      return createMoonshotAI({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "mistral":
+      return createMistral({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "togetherai":
+      return createTogetherAI({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "cohere":
+      return createCohere({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "fireworks":
+      return createFireworks({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "deepinfra":
+      return createDeepInfra({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "deepseek":
+      return createDeepSeek({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "cerebras":
+      return createCerebras({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "groq":
+      return createGroq({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "perplexity":
+      return createPerplexity({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "azure":
+      return createAzure({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "amazon_bedrock":
+      return createAmazonBedrock({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "baseten":
+      return createBaseten({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "vercel":
+      return createVercel({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "huggingface":
+      return createHuggingFace({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+      });
+    case "openrouter":
+      return createOpenRouter({
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? undefined,
+        compatibility: "strict",
+      });
+    case "ollama_local":
+      return createOllama({
+        baseURL: inference.baseUrl ?? undefined,
+        compatibility: "strict",
+        name: "ollama",
+      });
+    case "ollama_cloud":
+      return createOpenAICompatible({
+        name: "ollama-cloud",
+        baseURL: inference.baseUrl ?? "https://ollama.com/v1",
+        apiKey: inference.apiKey ?? undefined,
+      });
+    case "lmstudio":
+      return createOpenAICompatible({
+        name: "lmstudio",
+        baseURL: inference.baseUrl ?? "http://127.0.0.1:1234/v1",
+        apiKey: inference.apiKey ?? undefined,
+      });
+    case "llama_cpp":
+      return createOpenAICompatible({
+        name: "llama-cpp",
+        baseURL: inference.baseUrl ?? "http://127.0.0.1:8080/v1",
+        apiKey: inference.apiKey ?? undefined,
+      });
+    case "opencode":
+      return createOpencode({
+        baseUrl: inference.baseUrl ?? undefined,
+        autoStartServer: true,
+        defaultSettings: {
+          agent: isAgentJob ? "build" : "general",
+          directory: isAgentJob ? workspacePath : undefined,
+          cwd: isAgentJob ? workspacePath : undefined,
+        },
+      });
+    case "codex_cli":
+      return createCodexCli({
+        defaultSettings: {
+          cwd: workspacePath,
+          sandboxMode: "workspace-write",
+          approvalMode: "never",
+        },
+      });
+    case "gemini_cli":
+      return createGeminiProvider({
+        authType: "oauth-personal",
+      });
+    case "claude_code":
+      return createClaudeCode({
+        defaultSettings: {
+          cwd: workspacePath,
+        },
+      });
+    default:
+      return null;
+  }
+}
+
+function buildRegistry(
+  inference: InferenceRuntimeConfig,
+  options: InferenceResolutionOptions,
+) {
+  const definition = getInferenceProviderDefinition(inference.providerId);
+  const provider = createProviderForDefinition(inference, options);
+
+  if (!definition || !provider) {
+    return null;
+  }
+
   return createProviderRegistry({
-    openai: createOpenAI({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    anthropic: createAnthropic({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    google: createGoogleGenerativeAI({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    google_vertex: createVertex({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    xai: createXai({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    moonshot: createMoonshotAI({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    mistral: createMistral({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    togetherai: createTogetherAI({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    cohere: createCohere({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    fireworks: createFireworks({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    deepinfra: createDeepInfra({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    deepseek: createDeepSeek({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    cerebras: createCerebras({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    groq: createGroq({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    perplexity: createPerplexity({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    azure: createAzure({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    amazon_bedrock: createAmazonBedrock({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    baseten: createBaseten({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    vercel: createVercel({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    huggingface: createHuggingFace({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-    }),
-    openrouter: createOpenRouter({
-      apiKey: inference.apiKey ?? undefined,
-      baseURL: inference.baseUrl ?? undefined,
-      compatibility: "strict",
-    }),
-    ollama_local: createOllama({
-      baseURL: inference.baseUrl ?? undefined,
-      compatibility: "strict",
-      name: "ollama",
-    }),
-    ollama_cloud: createOpenAICompatible({
-      name: "ollama-cloud",
-      baseURL: inference.baseUrl ?? "https://ollama.com/v1",
-      apiKey: inference.apiKey ?? undefined,
-    }),
-    lmstudio: createOpenAICompatible({
-      name: "lmstudio",
-      baseURL: inference.baseUrl ?? "http://127.0.0.1:1234/v1",
-      apiKey: inference.apiKey ?? undefined,
-    }),
-    llama_cpp: createOpenAICompatible({
-      name: "llama-cpp",
-      baseURL: inference.baseUrl ?? "http://127.0.0.1:8080/v1",
-      apiKey: inference.apiKey ?? undefined,
-    }),
-    opencode: createOpencode({
-      baseUrl: inference.baseUrl ?? undefined,
-      autoStartServer: true,
-      defaultSettings: {
-        agent: "general",
-      },
-    }),
-    codex_cli: createCodexCli({
-      defaultSettings: {
-        cwd: process.cwd(),
-        sandboxMode: "workspace-write",
-        approvalMode: "never",
-      },
-    }),
-    gemini_cli: createGeminiProvider({
-      authType: "oauth-personal",
-    }),
-    claude_code: createClaudeCode({
-      defaultSettings: {
-        cwd: process.cwd(),
-      },
-    }),
+    [definition.id]: provider,
   });
 }
 
@@ -265,6 +333,7 @@ function providerNeedsApiKey(providerId: InferenceProviderId) {
 
 export function resolveInferenceLanguageModel(
   inference: InferenceRuntimeConfig,
+  options: InferenceResolutionOptions = {},
 ): {
   model: LanguageModelV3;
   providerOptions?: SharedV3ProviderOptions;
@@ -284,7 +353,12 @@ export function resolveInferenceLanguageModel(
     return null;
   }
 
-  const registry = buildRegistry(inference);
+  const registry = buildRegistry(inference, options);
+
+  if (!registry) {
+    return null;
+  }
+
   const modelId =
     `${definition.id}:${inference.model}` as Parameters<typeof registry.languageModel>[0];
 

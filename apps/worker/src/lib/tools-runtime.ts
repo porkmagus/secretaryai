@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   activityTraces,
   conversations,
@@ -33,12 +33,24 @@ import {
 import { createTelegramClient } from "@secretary/integrations";
 import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
 import { findConversationIdByChannelRef, getConversationMessages } from "./chat-persistence.js";
+import { parseSecretaryCustomization } from "./admin-runtime.js";
+import { defaultSecretaryName, defaultSecretarySoul } from "./persona-soul.js";
+import {
+  buildTaskDraft,
+  cleanText as cleanTaskText,
+  normalizeTaskTitle,
+  parseReminderTime,
+  summarizeTaskSchedule,
+} from "./task-runtime.js";
 
 const FILE_PREVIEW_LIMIT = 1500;
 const MAX_FILE_READ_BYTES = 256 * 1024;
 const MAX_DOWNLOAD_BYTES = 4 * 1024 * 1024;
 const SHELL_TIMEOUT_MS = 20_000;
 const GENERATED_DOCUMENTS_DIR = "runtime/generated/documents";
+const EMAIL_DRAFTS_DIR = "runtime/generated/email-drafts";
+const CALENDAR_EXPORTS_DIR = "runtime/generated/calendar-events";
+const BROWSER_TARGETS_DIR = "runtime/generated/browser-targets";
 const DOWNLOADS_DIR = "runtime/downloads";
 const REPO_ROOT = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
@@ -56,6 +68,7 @@ type ToolIntent = {
   summary: string;
   toolKey:
     | "task_create"
+    | "task_list"
     | "task_update"
     | "web_search"
     | "file_read"
@@ -112,13 +125,19 @@ const builtInTools: BuiltInTool[] = [
     key: "task_create",
     name: "Create Task",
     description: "Create a task or reminder from an explicit user request.",
-    approvalMode: "ask_first",
+    approvalMode: "always_allow",
+  },
+  {
+    key: "task_list",
+    name: "List Tasks",
+    description: "Review current lightweight tasks, reminders, and follow-through items.",
+    approvalMode: "always_allow",
   },
   {
     key: "task_update",
     name: "Update Task",
     description: "Mark a task done, reopen it, or reschedule its reminder.",
-    approvalMode: "ask_first",
+    approvalMode: "always_allow",
   },
   {
     key: "memory_write",
@@ -135,26 +154,20 @@ const builtInTools: BuiltInTool[] = [
   {
     key: "browser_open",
     name: "Open Browser Target",
-    description: "Queue a browser target for a future operator action bridge.",
-    approvalMode: "ask_first",
-    enabled: false,
-    healthStatus: "not_configured",
+    description: "Save a browser target and next-action note for follow-through.",
+    approvalMode: "always_allow",
   },
   {
     key: "calendar_create",
     name: "Create Calendar Event",
-    description: "Create a calendar event once a calendar integration is configured.",
-    approvalMode: "ask_first",
-    enabled: false,
-    healthStatus: "not_configured",
+    description: "Draft a portable calendar event export for review and follow-through.",
+    approvalMode: "always_allow",
   },
   {
     key: "email_draft",
     name: "Draft Email",
-    description: "Create a reviewable outbound email draft once an email adapter exists.",
-    approvalMode: "ask_first",
-    enabled: false,
-    healthStatus: "not_configured",
+    description: "Create a reviewable outbound email draft and save it for later sending.",
+    approvalMode: "always_allow",
   },
   {
     key: "email_send",
@@ -250,6 +263,12 @@ function resolveRuntimePath(relativePath: string) {
   return resolveWorkspacePath(relativePath);
 }
 
+async function ensureRuntimeGeneratedPath(relativeDir: string) {
+  const directory = resolveRuntimePath(relativeDir);
+  await mkdir(directory, { recursive: true });
+  return directory;
+}
+
 function shortSnippet(text: string, max = 96) {
   return text.length > max ? `${text.slice(0, max - 3).trimEnd()}...` : text;
 }
@@ -289,35 +308,68 @@ function hasBinaryLikeContent(buffer: Buffer) {
 }
 
 function parseReminderIntent(text: string) {
-  const match = text.match(/\b(?:remind me to|create task to|add (?:a )?(?:task|reminder) to)\s+(.+)/i);
+  const match = text.match(
+    /\b(?:remind me to|remember to|create task to|add (?:a )?(?:task|reminder) to|add to my list|put on my list)\s+(.+)/i,
+  );
   if (!match?.[1]) {
     return null;
   }
 
-  const rawTitle = match[1].trim().replace(/[.?!]+$/, "");
-  const reminderAt = /\btomorrow\b/i.test(rawTitle)
-    ? new Date(Date.now() + 24 * 60 * 60 * 1000)
-    : /\btoday\b/i.test(rawTitle)
-      ? new Date(Date.now() + 60 * 60 * 1000)
-      : null;
+  const rawTitle = cleanTaskText(match[1]).replace(/[.?!]+$/, "");
+  const draft = buildTaskDraft({
+    text: rawTitle,
+    fallbackDetail: `Created from an explicit task request: ${rawTitle}`,
+  });
 
   return {
     requestJson: {
-      reminderAt: reminderAt?.toISOString() ?? null,
-      title: rawTitle,
+      detail: draft.detail,
+      dueAt: draft.dueAt?.toISOString() ?? null,
+      reminderAt: draft.reminderAt?.toISOString() ?? null,
+      title: draft.title,
     },
-    summary: `Create task: ${rawTitle}`,
+    summary: `Create task: ${draft.title}`,
     toolKey: "task_create" as const,
   };
 }
 
+function extractTaskReference(text: string) {
+  const quotedReference = parseInlineQuotedValue(text);
+  if (quotedReference) {
+    return quotedReference;
+  }
+
+  const normalized = text.replace(/[.?!]+$/, "");
+
+  const completeMatch = normalized.match(
+    /\b(?:mark|set|complete|finish)\s+(?:the\s+)?(?:task\s+)?(.+?)\s+(?:as\s+)?(?:done|complete|completed)\b/i,
+  );
+  if (completeMatch?.[1]) {
+    return cleanTaskText(completeMatch[1]);
+  }
+
+  const reopenMatch = normalized.match(/\b(?:reopen|resume)\s+(?:the\s+)?(?:task\s+)?(.+)$/i);
+  if (reopenMatch?.[1]) {
+    return cleanTaskText(reopenMatch[1]);
+  }
+
+  const rescheduleMatch = normalized.match(
+    /\b(?:reschedule|move|push)\s+(?:the\s+)?(?:task\s+)?(.+?)\s+\b(?:to|for)\b/i,
+  );
+  if (rescheduleMatch?.[1]) {
+    return cleanTaskText(rescheduleMatch[1]);
+  }
+
+  return null;
+}
+
 function parseTaskUpdateIntent(text: string) {
-  const reference = parseInlineQuotedValue(text);
+  const reference = extractTaskReference(text);
   if (!reference) {
     return null;
   }
 
-  if (/\b(?:mark|set|complete|finish)\b.+\b(?:task)\b.+\b(?:done|complete|completed)\b/i.test(text)) {
+  if (/\b(?:mark|set|complete|finish)\b.+\b(?:done|complete|completed)\b/i.test(text)) {
     return {
       requestJson: {
         reference,
@@ -328,7 +380,7 @@ function parseTaskUpdateIntent(text: string) {
     };
   }
 
-  if (/\b(?:reopen|resume)\b.+\btask\b/i.test(text)) {
+  if (/\b(?:reopen|resume)\b.+\b(?:task\b|$)/i.test(text)) {
     return {
       requestJson: {
         reference,
@@ -339,26 +391,49 @@ function parseTaskUpdateIntent(text: string) {
     };
   }
 
-  const rescheduleMatch = text.match(/\b(?:reschedule|move)\b.+\btask\b.+\bto\b\s+(.+)$/i);
+  const rescheduleMatch = text.match(/\b(?:reschedule|move|push)\b.+\b(?:to|for)\b\s+(.+)$/i);
   if (!rescheduleMatch?.[1]) {
     return null;
   }
 
-  const scheduleText = rescheduleMatch[1].trim().replace(/[.?!]+$/, "");
-  const reminderAt = /\btomorrow\b/i.test(scheduleText)
-    ? new Date(Date.now() + 24 * 60 * 60 * 1000)
-    : /\btoday\b/i.test(scheduleText)
-      ? new Date(Date.now() + 60 * 60 * 1000)
-      : null;
+  const scheduleText = cleanTaskText(rescheduleMatch[1]).replace(/[.?!]+$/, "");
+  const reminderAt = parseReminderTime(scheduleText);
 
   return {
     requestJson: {
+      dueAt: reminderAt?.toISOString() ?? null,
       reference,
       reminderAt: reminderAt?.toISOString() ?? null,
       scheduleText,
     },
     summary: `Reschedule task ${reference}`,
     toolKey: "task_update" as const,
+  };
+}
+
+function parseTaskListIntent(text: string) {
+  if (
+    !/\b(?:my\s+tasks|task list|what(?:'s| is)\s+on\s+my\s+list|what\s+tasks\s+do\s+i\s+have|what\s+reminders\s+are\s+(?:due|open)|show\s+(?:my\s+)?tasks|list\s+(?:my\s+)?tasks)\b/i.test(
+      text,
+    )
+  ) {
+    return null;
+  }
+
+  const status =
+    /\b(done|completed|finished)\b/i.test(text)
+      ? "done"
+      : /\b(all|everything)\b/i.test(text)
+        ? "all"
+        : "open";
+
+  return {
+    requestJson: {
+      limit: /\brecent\b/i.test(text) ? 8 : 12,
+      status,
+    },
+    summary: status === "all" ? "List all tasks" : `List ${status} tasks`,
+    toolKey: "task_list" as const,
   };
 }
 
@@ -544,6 +619,82 @@ function parseBrowserOpenIntent(text: string) {
   };
 }
 
+function parseEmailDraftIntent(text: string) {
+  const match =
+    text.match(/\b(?:draft|write|compose|create)\s+(?:an?\s+)?email\s+to\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i) ??
+    text.match(/\bemail\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i);
+
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const to = cleanTaskText(match[1]).replace(/[.?!]+$/, "");
+  const subject = cleanTaskText(match[2] ?? "").replace(/[.?!]+$/, "");
+  const body = cleanTaskText(match[3] ?? "").replace(/[.?!]+$/, "");
+
+  if (!to || (!subject && !body)) {
+    return null;
+  }
+
+  return {
+    requestJson: {
+      to,
+      subject: subject || `Follow-up: ${shortSnippet(body || to, 48)}`,
+      body,
+    },
+    summary: `Draft email to ${to}`,
+    toolKey: "email_draft" as const,
+  };
+}
+
+function parseDurationMinutes(text: string) {
+  const hoursMatch = text.match(/\bfor\s+(\d+)\s+hours?\b/i);
+  if (hoursMatch?.[1]) {
+    return Number(hoursMatch[1]) * 60;
+  }
+
+  const minutesMatch = text.match(/\bfor\s+(\d+)\s+minutes?\b/i);
+  if (minutesMatch?.[1]) {
+    return Number(minutesMatch[1]);
+  }
+
+  return 60;
+}
+
+function parseCalendarCreateIntent(text: string) {
+  const match =
+    text.match(/\b(?:schedule|add|create|draft)\s+(?:an?\s+)?(?:calendar event|event|meeting)\s+(?:for\s+)?(.+)$/i) ??
+    text.match(/\bput\s+(.+)\s+on\s+(?:my\s+)?calendar\b/i);
+
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const raw = cleanTaskText(match[1]).replace(/[.?!]+$/, "");
+  const startAt = parseReminderTime(raw);
+  const title = cleanTaskText(
+    raw
+      .replace(/\b(?:tomorrow|today|in\s+\d+\s+(?:minutes?|hours?)|at\s+\d+(?::\d{2})?\s*(?:am|pm)?|for\s+\d+\s+(?:minutes?|hours?))\b/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+  );
+
+  if (!title || !startAt) {
+    return null;
+  }
+
+  return {
+    requestJson: {
+      detail: raw,
+      durationMinutes: parseDurationMinutes(raw),
+      startAt: startAt.toISOString(),
+      title: title.charAt(0).toUpperCase() + title.slice(1),
+    },
+    summary: `Draft calendar event "${title}"`,
+    toolKey: "calendar_create" as const,
+  };
+}
+
 function parseShellIntent(text: string) {
   const match =
     text.match(/\b(?:run|execute)\s+(?:the )?(?:shell )?command\s+`([^`]+)`/i) ??
@@ -562,16 +713,19 @@ function parseShellIntent(text: string) {
 
 function detectToolIntent(text: string): ToolIntent | null {
   return (
+    parseTaskListIntent(text) ??
     parseReminderIntent(text) ??
     parseTaskUpdateIntent(text) ??
     parseSearchIntent(text) ??
+    parseBrowserOpenIntent(text) ??
     parseFileWriteIntent(text) ??
     parseFileIntent(text) ??
     parseDocumentCreateIntent(text) ??
     parseDownloadIntent(text) ??
     parseMemoryWriteIntent(text) ??
     parseTelegramSendIntent(text) ??
-    parseBrowserOpenIntent(text) ??
+    parseCalendarCreateIntent(text) ??
+    parseEmailDraftIntent(text) ??
     parseShellIntent(text)
   );
 }
@@ -656,15 +810,17 @@ async function ensureConversationEnvelope(params: {
       .insert(personas)
       .values({
         id: params.defaultPersonaId,
-        name: "Secretary",
+        name: defaultSecretaryName,
         toneProfile: {
           mode: "calm",
+          customization: parseSecretaryCustomization(null),
         },
         behaviorRules: [
-          "Be helpful",
-          "Protect local-first privacy defaults",
+          "Be warm, competent, and calm.",
+          "Answer naturally instead of narrating internal system state unless the user asks for it.",
+          "Protect local-first privacy defaults.",
         ],
-        promptTemplate: "Phase 1 placeholder",
+        promptTemplate: defaultSecretarySoul,
         isDefault: true,
       })
       .onConflictDoNothing();
@@ -846,8 +1002,10 @@ async function ensureToolRegistry(dbClient: DbClient) {
         target: tools.key,
         set: {
           description: tool.description,
+          enabled: sql`case when ${tools.healthStatus} = 'not_configured' then ${tool.enabled ?? true} else ${tools.enabled} end`,
           healthStatus: tool.healthStatus ?? "ok",
           name: tool.name,
+          approvalMode: sql`case when ${tools.healthStatus} = 'not_configured' then ${tool.approvalMode} else ${tools.approvalMode} end`,
           updatedAt: new Date(),
         },
       });
@@ -1132,42 +1290,147 @@ async function executeShellCommand(command: string) {
   };
 }
 
-async function executeTaskCreate(dbClient: DbClient, userId: string, requestJson: Record<string, unknown>) {
+async function executeTaskList(dbClient: DbClient, userId: string, requestJson: Record<string, unknown>) {
+  const status =
+    requestJson.status === "done" || requestJson.status === "all" ? requestJson.status : "open";
+  const limit =
+    typeof requestJson.limit === "number" && Number.isFinite(requestJson.limit)
+      ? Math.max(1, Math.min(20, Math.round(requestJson.limit)))
+      : 12;
+
+  const records = await dbClient.db.query.tasks.findMany({
+    where: eq(tasks.userId, userId),
+    orderBy: [asc(tasks.reminderAt), asc(tasks.dueAt), desc(tasks.updatedAt)],
+    limit,
+  });
+
+  const filtered = records.filter((task) =>
+    status === "all"
+      ? true
+      : status === "done"
+        ? task.status === "done"
+        : task.status === "open" || task.status === "in_progress",
+  );
+
+  return {
+    responseJson: {
+      status,
+      tasks: filtered.map((task) => ({
+        dueAt: task.dueAt?.toISOString() ?? null,
+        id: task.id,
+        reminderAt: task.reminderAt?.toISOString() ?? null,
+        status: task.status,
+        title: task.title,
+      })),
+    },
+    text:
+      filtered.length === 0
+        ? status === "done"
+          ? "There are no completed tasks recorded right now."
+          : "You do not have any open tasks or reminder hooks right now."
+        : `Here ${filtered.length === 1 ? "is" : "are"} ${filtered.length} ${status === "all" ? "" : status === "done" ? "completed " : "open "}task${filtered.length === 1 ? "" : "s"}: ${filtered
+            .map((task) => {
+              const timing = task.reminderAt
+                ? `reminder ${task.reminderAt.toLocaleString()}`
+                : task.dueAt
+                  ? `due ${task.dueAt.toLocaleString()}`
+                  : task.status;
+              return `${task.title} (${timing})`;
+            })
+            .join("; ")}.`,
+  };
+}
+
+async function executeTaskCreate(
+  dbClient: DbClient,
+  userId: string,
+  requestJson: Record<string, unknown>,
+  context: { channel: RuntimeChatRequest["channel"]; telegramChatId?: string | null },
+) {
   const title = typeof requestJson.title === "string" ? requestJson.title.trim() : "";
   if (!title) {
     throw new Error("Task title is required.");
   }
 
+  const recentTasks = await dbClient.db.query.tasks.findMany({
+    where: eq(tasks.userId, userId),
+    orderBy: [desc(tasks.updatedAt)],
+    limit: 40,
+  });
+  const existing = recentTasks.find(
+    (task) =>
+      normalizeTaskTitle(task.title) === normalizeTaskTitle(title) &&
+      (task.status === "open" || task.status === "in_progress"),
+  );
+
+  if (existing) {
+    return {
+      responseJson: {
+        existing: true,
+        taskId: existing.id,
+        title: existing.title,
+      },
+      text: `That task already exists as "${existing.title}", so I left the existing reminder in place.`,
+    };
+  }
+
   const taskId = createMessageId();
+  const detail =
+    typeof requestJson.detail === "string" && requestJson.detail.trim()
+      ? requestJson.detail.trim()
+      : "Created from an explicit secretary task request.";
+  const dueAt =
+    typeof requestJson.dueAt === "string" && requestJson.dueAt
+      ? new Date(requestJson.dueAt)
+      : null;
   const reminderAt =
     typeof requestJson.reminderAt === "string" && requestJson.reminderAt
       ? new Date(requestJson.reminderAt)
       : null;
+  const deliveryChannelType =
+    typeof requestJson.deliveryChannelType === "string" && requestJson.deliveryChannelType.trim()
+      ? requestJson.deliveryChannelType.trim()
+      : context.channel === "telegram" && context.telegramChatId
+        ? "telegram"
+        : null;
+  const deliveryTargetRef =
+    typeof requestJson.deliveryTargetRef === "string" && requestJson.deliveryTargetRef.trim()
+      ? requestJson.deliveryTargetRef.trim()
+      : context.channel === "telegram" && context.telegramChatId
+        ? context.telegramChatId
+        : null;
 
   await dbClient.db.insert(tasks).values({
     id: taskId,
     userId,
     conversationId: null,
     title,
-    detail: "Created through the Phase 5 task tool.",
+    detail,
     status: "open",
-    dueAt: null,
+    dueAt,
     reminderAt,
-    deliveryChannelType: null,
-    deliveryTargetRef: null,
+    deliveryChannelType,
+    deliveryTargetRef,
     sourceKind: "tool",
     sourceRef: "task_create",
   });
 
+  const taskDraft = {
+    title,
+    dueAt,
+    reminderAt,
+  };
+
   return {
     responseJson: {
+      dueAt: dueAt?.toISOString() ?? null,
+      deliveryChannelType,
+      deliveryTargetRef,
       reminderAt: reminderAt?.toISOString() ?? null,
       taskId,
       title,
     },
-    text: reminderAt
-      ? `I created the task "${title}" with a reminder at ${reminderAt.toLocaleString()}.`
-      : `I created the task "${title}".`,
+    text: summarizeTaskSchedule(taskDraft),
   };
 }
 
@@ -1186,10 +1449,10 @@ async function findTaskByReference(dbClient: DbClient, userId: string, reference
     limit: 25,
   });
 
-  const normalizedReference = reference.toLowerCase();
+  const normalizedReference = normalizeTaskTitle(reference);
   return (
-    recent.find((task) => task.title.toLowerCase() === normalizedReference) ??
-    recent.find((task) => task.title.toLowerCase().includes(normalizedReference)) ??
+    recent.find((task) => normalizeTaskTitle(task.title) === normalizedReference) ??
+    recent.find((task) => normalizeTaskTitle(task.title).includes(normalizedReference)) ??
     null
   );
 }
@@ -1213,14 +1476,22 @@ async function executeTaskUpdate(
     typeof requestJson.status === "string" && requestJson.status.trim()
       ? requestJson.status.trim()
       : task.status;
+  const dueAt =
+    typeof requestJson.dueAt === "string" && requestJson.dueAt ? new Date(requestJson.dueAt) : task.dueAt;
   const reminderAt =
     typeof requestJson.reminderAt === "string" && requestJson.reminderAt
       ? new Date(requestJson.reminderAt)
       : task.reminderAt;
+  const detail =
+    typeof requestJson.detail === "string" && requestJson.detail.trim()
+      ? requestJson.detail.trim()
+      : task.detail;
 
   await dbClient.db
     .update(tasks)
     .set({
+      detail,
+      dueAt,
       reminderAt,
       status: nextStatus,
       updatedAt: new Date(),
@@ -1229,6 +1500,7 @@ async function executeTaskUpdate(
 
   return {
     responseJson: {
+      dueAt: dueAt?.toISOString() ?? null,
       reminderAt: reminderAt?.toISOString() ?? null,
       status: nextStatus,
       taskId: task.id,
@@ -1237,7 +1509,7 @@ async function executeTaskUpdate(
     text:
       nextStatus === "done"
         ? `I marked "${task.title}" as done.`
-        : `I updated "${task.title}"${reminderAt ? ` and set its reminder to ${reminderAt.toLocaleString()}` : ""}.`,
+        : `I updated "${task.title}"${reminderAt ? ` and set its reminder to ${reminderAt.toLocaleString()}` : dueAt ? ` and set it due ${dueAt.toLocaleString()}` : ""}.`,
   };
 }
 
@@ -1384,16 +1656,146 @@ async function executeBrowserOpen(requestJson: Record<string, unknown>) {
     throw new Error("Browser target is required.");
   }
 
+  const targetDir = await ensureRuntimeGeneratedPath(BROWSER_TARGETS_DIR);
+  const createdAt = new Date().toISOString();
+  const note = typeof requestJson.note === "string" ? requestJson.note.trim() : "";
+  const fileName = `${Date.now()}-${sanitizeFileNamePart(new URL(target).hostname)}.md`;
+  const relativePath = `${BROWSER_TARGETS_DIR}/${fileName}`;
+  const content = [
+    `# Browser follow-up`,
+    "",
+    `Target: ${target}`,
+    `Created: ${createdAt}`,
+    note ? `Next action: ${note}` : "Next action: Review this page and continue the follow-up from the Activity history.",
+    "",
+    "This target was saved by the secretary for follow-through.",
+  ].join("\n");
+
+  await writeFile(resolve(targetDir, fileName), content, "utf8");
+
   return {
     responseJson: {
+      createdAt,
+      path: relativePath,
       target,
     },
-    text: `I prepared the browser target ${target}. The UI bridge for opening it directly is not wired yet.`,
+    text: `I saved the browser follow-up for ${target} to ${relativePath}. You can review it later without losing the link or next step.`,
+  };
+}
+
+async function executeCalendarCreate(requestJson: Record<string, unknown>) {
+  const title = typeof requestJson.title === "string" ? requestJson.title.trim() : "";
+  const startAt = typeof requestJson.startAt === "string" ? new Date(requestJson.startAt) : null;
+  const durationMinutes =
+    typeof requestJson.durationMinutes === "number" && Number.isFinite(requestJson.durationMinutes)
+      ? Math.max(15, Math.round(requestJson.durationMinutes))
+      : 60;
+  const detail = typeof requestJson.detail === "string" ? requestJson.detail.trim() : "";
+
+  if (!title || !startAt || Number.isNaN(startAt.getTime())) {
+    throw new Error("Calendar event title and start time are required.");
+  }
+
+  const endAt = new Date(startAt.getTime() + durationMinutes * 60_000);
+  const targetDir = await ensureRuntimeGeneratedPath(CALENDAR_EXPORTS_DIR);
+  const fileName = `${Date.now()}-${sanitizeFileNamePart(title)}.ics`;
+  const relativePath = `${CALENDAR_EXPORTS_DIR}/${fileName}`;
+  const formatIcsDate = (value: Date) =>
+    value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const content = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Secretary//Light Work//EN",
+    "BEGIN:VEVENT",
+    `UID:${createMessageId()}@secretary.local`,
+    `DTSTAMP:${formatIcsDate(new Date())}`,
+    `DTSTART:${formatIcsDate(startAt)}`,
+    `DTEND:${formatIcsDate(endAt)}`,
+    `SUMMARY:${title.replace(/[\\,;]/g, "")}`,
+    detail ? `DESCRIPTION:${detail.replace(/\n/g, "\\n").replace(/[\\,;]/g, "")}` : "",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ]
+    .filter(Boolean)
+    .join("\r\n");
+
+  await writeFile(resolve(targetDir, fileName), content, "utf8");
+
+  return {
+    responseJson: {
+      durationMinutes,
+      endAt: endAt.toISOString(),
+      path: relativePath,
+      startAt: startAt.toISOString(),
+      title,
+    },
+    text: `I drafted the calendar event "${title}" and exported it to ${relativePath}. It starts ${startAt.toLocaleString()} for ${durationMinutes} minutes.`,
+  };
+}
+
+async function executeEmailDraft(requestJson: Record<string, unknown>) {
+  const to = typeof requestJson.to === "string" ? requestJson.to.trim() : "";
+  const subject = typeof requestJson.subject === "string" ? requestJson.subject.trim() : "";
+  const body = typeof requestJson.body === "string" ? requestJson.body.trim() : "";
+
+  if (!to || !subject) {
+    throw new Error("Email drafts need a recipient and subject.");
+  }
+
+  const targetDir = await ensureRuntimeGeneratedPath(EMAIL_DRAFTS_DIR);
+  const fileName = `${Date.now()}-${sanitizeFileNamePart(to)}-${sanitizeFileNamePart(subject)}.md`;
+  const relativePath = `${EMAIL_DRAFTS_DIR}/${fileName}`;
+  const draftBody =
+    body ||
+    `Hi ${to},\n\n${subject}\n\nBest,\n${defaultSecretaryName}`;
+  const content = [
+    `# Email Draft`,
+    "",
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `Created: ${new Date().toISOString()}`,
+    "",
+    draftBody,
+    "",
+    "_Drafted by the secretary for review before sending._",
+  ].join("\n");
+
+  await writeFile(resolve(targetDir, fileName), content, "utf8");
+
+  return {
+    responseJson: {
+      path: relativePath,
+      subject,
+      to,
+    },
+    text: `I drafted the email to ${to} and saved it to ${relativePath}. Review it there before sending.`,
+  };
+}
+
+async function resolveTaskExecutionContext(
+  dbClient: DbClient,
+  conversationId: string | null | undefined,
+) {
+  if (!conversationId) {
+    return {
+      channel: "web" as const,
+      telegramChatId: null,
+    };
+  }
+
+  const conversation = await dbClient.db.query.conversations.findFirst({
+    where: eq(conversations.id, conversationId),
+  });
+
+  return {
+    channel: conversation?.channelType === "telegram" ? ("telegram" as const) : ("web" as const),
+    telegramChatId: conversation?.channelType === "telegram" ? conversation.channelRef : null,
   };
 }
 
 async function executeToolRequest(params: {
   config: AppConfig;
+  conversationId?: string | null;
   dbClient: DbClient;
   requestJson: Record<string, unknown>;
   requestedBy: string;
@@ -1416,7 +1818,14 @@ async function executeToolRequest(params: {
     case "shell_command":
       return executeShellCommand(String(params.requestJson.command ?? ""));
     case "task_create":
-      return executeTaskCreate(params.dbClient, params.requestedBy, params.requestJson);
+      return executeTaskCreate(
+        params.dbClient,
+        params.requestedBy,
+        params.requestJson,
+        await resolveTaskExecutionContext(params.dbClient, params.conversationId),
+      );
+    case "task_list":
+      return executeTaskList(params.dbClient, params.requestedBy, params.requestJson);
     case "task_update":
       return executeTaskUpdate(params.dbClient, params.requestedBy, params.requestJson);
     case "memory_write":
@@ -1426,9 +1835,9 @@ async function executeToolRequest(params: {
     case "browser_open":
       return executeBrowserOpen(params.requestJson);
     case "calendar_create":
-      throw new Error("Calendar integration is not configured yet.");
+      return executeCalendarCreate(params.requestJson);
     case "email_draft":
-      throw new Error("Email drafting is not configured yet.");
+      return executeEmailDraft(params.requestJson);
     case "email_send":
       throw new Error("Email sending is not configured yet.");
     default:
@@ -1660,6 +2069,7 @@ export async function handleToolAwareTurn(params: {
     try {
       const result = await executeToolRequest({
         config: params.config,
+        conversationId: envelope.conversationId,
         dbClient: params.dbClient,
         requestJson: intent.requestJson,
         requestedBy: envelope.userId,
@@ -1874,6 +2284,7 @@ export async function decideToolExecution(params: {
     });
     const result = await executeToolRequest({
       config: params.config,
+      conversationId: execution.conversationId,
       dbClient: params.dbClient,
       requestJson: execution.requestJson,
       requestedBy: execution.requestedBy,

@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   InferenceModelListResponse,
   InferenceProviderId,
@@ -24,7 +24,7 @@ import type {
   UpdateInferenceSettingsRequest,
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, SurfaceCard } from "../lib/ui";
+import { ActionRow, AppPage, FieldHint, NoticeBanner, SurfaceCard } from "../lib/ui";
 import { SecretaryPortraitField } from "../lib/secretary-portrait-field";
 
 type PersonaDraft = {
@@ -174,9 +174,7 @@ ${draft.antiExampleReply.trim().length > 0 ? draft.antiExampleReply : "_none set
 `;
 }
 
-function FieldNote({ children }: { children: ReactNode }) {
-  return <span className="persona-field-note">{children}</span>;
-}
+const FieldNote = FieldHint;
 
 function createInferenceDraft(response: InferenceSettingsResponse): InferenceDraft | null {
   const selectedProvider =
@@ -303,6 +301,7 @@ export function PersonaConsole({
   const inferenceTab = inferenceDraft?.activeTarget ?? "provider";
   const showGeneral = mode !== "secretary";
   const showSecretary = mode !== "general";
+  const isLoaded = Boolean(data && draft && (!showGeneral || (inference && inferenceDraft)));
 
   async function load() {
     try {
@@ -705,6 +704,28 @@ export function PersonaConsole({
     }
   }
 
+  if (!isLoaded) {
+    return (
+      <AppPage>
+        <SurfaceCard
+          tone="dark"
+          title={mode === "secretary" ? "Secretary settings" : "General settings"}
+          description={
+            <p>
+              {mode === "secretary"
+                ? "Loading the secretary's portrait, voice, and writing profile..."
+                : "Loading inference and shared settings..."}
+            </p>
+          }
+        >
+          <p style={{ margin: 0, color: "var(--muted)" }}>
+            Preparing the current settings surface...
+          </p>
+        </SurfaceCard>
+      </AppPage>
+    );
+  }
+
   return (
     <AppPage>
       <div className="stack-md">
@@ -741,14 +762,7 @@ export function PersonaConsole({
               flexWrap: "wrap",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                gap: 12,
-                alignItems: "center",
-                flexWrap: "wrap",
-              }}
-            >
+            <div className="persona-summary-strip">
               {[
                 ...(showGeneral
                   ? ([
@@ -774,17 +788,7 @@ export function PersonaConsole({
                   : []),
                 ["Voice", activeVoiceName],
               ].map(([label, value], index) => (
-                <div
-                  key={String(label)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "baseline",
-                    gap: 6,
-                    minWidth: 0,
-                    paddingLeft: index === 0 ? 0 : 10,
-                    borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
-                  }}
-                >
+                <div key={String(label)} className="persona-summary-item">
                   <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
                     {label}
                   </span>
@@ -804,13 +808,11 @@ export function PersonaConsole({
             </div>
 
             <div className="pill" style={{ minWidth: 220, justifyContent: "center" }}>
-              {!data
-                ? "Loading settings..."
-                : mode === "secretary"
-                  ? "Secretary profile ready"
-                  : data.conversationEngine.mode === "provider"
-                    ? "Provider-backed conversation ready"
-                    : "Local fallback ready"}
+              {mode === "secretary"
+                ? "Secretary profile ready"
+                : data!.conversationEngine.mode === "provider"
+                  ? "Provider-backed conversation ready"
+                  : "Local fallback ready"}
             </div>
           </div>
 
@@ -819,11 +821,41 @@ export function PersonaConsole({
           ) : (
             <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
               {mode === "secretary"
-                ? "Keep the secretary&apos;s portrait, identity, and long-form voice aligned here."
+                ? "Shape the portrait, habits, and deeper writing voice from one focused profile surface."
                 : data?.conversationEngine.summary ??
                   "Load, tune, export, or import the current settings from one place."}
             </p>
           )}
+          {showSecretary ? (
+            <ActionRow align="start">
+              <div className="persona-action-cluster">
+                <button
+                  type="button"
+                  onClick={() => void exportSettings()}
+                  disabled={isExporting}
+                  className="button-secondary"
+                >
+                  {isExporting ? "Exporting..." : "Export settings"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => importFileRef.current?.click()}
+                  disabled={isImporting}
+                  className="button-secondary"
+                >
+                  {isImporting ? "Importing..." : "Import settings"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void save()}
+                  disabled={isSaving}
+                  className="button-primary"
+                >
+                  {isSaving ? "Saving..." : "Save persona"}
+                </button>
+              </div>
+            </ActionRow>
+          ) : null}
         </SurfaceCard>
       </div>
 
@@ -1352,6 +1384,7 @@ export function PersonaConsole({
                       color: "var(--text)",
                       padding: "10px 12px",
                       font: "inherit",
+                      maxWidth: 280,
                     }}
                     placeholder="SetAgentName"
                   />
@@ -1563,6 +1596,7 @@ export function PersonaConsole({
                   setDraft((current) => (current ? { ...current, title: event.target.value } : current))
                 }
                 placeholder="Chief of Staff, Private Secretary, Studio Operator..."
+                style={{ maxWidth: 420 }}
               />
               <FieldNote>
                 Use a title only if you want the secretary to occasionally identify herself with a role beyond her name.
@@ -1773,7 +1807,7 @@ export function PersonaConsole({
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Download companion file</span>
               <button
                 type="button"
-                className="persona-file-link"
+                className="persona-file-pill"
                 onClick={() => draft && downloadText("secretary-examples.md", buildSecretaryExamplesMarkdown(draft))}
                 disabled={!draft}
               >
@@ -1884,7 +1918,7 @@ export function PersonaConsole({
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Secretary soul</span>
               <button
                 type="button"
-                className="persona-file-link"
+                className="persona-file-pill"
                 onClick={() => draft && downloadText("secretary-soul.md", draft.promptTemplate)}
                 disabled={!draft}
               >
@@ -1918,7 +1952,7 @@ export function PersonaConsole({
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Persona profile</span>
               <button
                 type="button"
-                className="persona-file-link"
+                className="persona-file-pill"
                 onClick={() => draft && downloadText("secretary-persona.md", draft.personaProfile)}
                 disabled={!draft}
               >
@@ -1975,45 +2009,9 @@ export function PersonaConsole({
             Keep these short, durable, and operational. They work best as a clean list of high-value guardrails rather than a second persona essay.
           </FieldNote>
         </label>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-            Keep this tight and durable. The shorter this stays, the easier it is to maintain.
-          </p>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              onClick={() => void exportSettings()}
-              disabled={isExporting}
-              className="button-secondary"
-            >
-              {isExporting ? "Exporting..." : "Export settings"}
-            </button>
-            <button
-              type="button"
-              onClick={() => importFileRef.current?.click()}
-              disabled={isImporting}
-              className="button-secondary"
-            >
-              {isImporting ? "Importing..." : "Import settings"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={isSaving}
-              className="button-primary"
-            >
-              {isSaving ? "Saving..." : "Save persona"}
-            </button>
-          </div>
-        </div>
+        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+          Keep this tight and durable. The shorter this stays, the easier it is to maintain.
+        </p>
           <input
             ref={importFileRef}
             type="file"
