@@ -1,5 +1,5 @@
-import { OnboardingConsole } from "./onboarding-console";
+import { redirect } from "next/navigation";
 
 export default function OnboardingPage() {
-  return <OnboardingConsole />;
+  redirect("/overview");
 }

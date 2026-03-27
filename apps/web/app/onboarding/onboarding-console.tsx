@@ -96,7 +96,7 @@ export function OnboardingConsole() {
               ? "Model-backed"
               : "Fallback"
           }
-          detail="Whether Samantha text chat is using a real model or local fallback logic"
+          detail="Whether secretary text chat is using a real model or local fallback logic"
         />
         <StatCard label="Primary channels" value="Web + Telegram" detail="Desk and bot are active entry points" />
         <StatCard label="Voice path" value="Local STT + TTS" detail="Speech stays inside the local stack" />

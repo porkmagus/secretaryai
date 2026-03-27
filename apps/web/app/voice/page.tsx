@@ -1,5 +1,5 @@
-import { VoiceConsole } from "./voice-console";
+import { redirect } from "next/navigation";
 
 export default function VoicePage() {
-  return <VoiceConsole />;
+  redirect("/settings/voice");
 }

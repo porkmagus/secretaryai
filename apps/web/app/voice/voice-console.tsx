@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationListItem,
@@ -13,7 +12,7 @@ import type {
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero } from "../lib/ui";
+import { AppPage, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type VoicePageState = {
@@ -456,53 +455,75 @@ export function VoiceConsole() {
 
   return (
     <AppPage width="1240px">
-      <PageHero
-        eyebrow="Voice Console"
-        title="Speech, cloning, and push-to-talk"
-        description={
-          <p>
-            Manage cloned voice profiles, preview speech output, and run browser
-            push-to-talk through the same local speech pipeline as Telegram voice notes.
-          </p>
-        }
-        meta={
-          <p>
-            {error ??
-              (isLoading
-                ? "Loading voice workspace..."
-                : activeProfile
-                  ? `Active profile: ${activeProfile.name} via ${activeProfile.engineId}.`
-                  : "No voice profile found yet.")}
-          </p>
-        }
-        actions={
+      <SurfaceCard
+        tone="dark"
+        title="Voice"
+        description={<p>Profiles, preview synthesis, and push-to-talk through the same local speech pipeline.</p>}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {[
+              ["Active", activeProfile?.name ?? "none"],
+              ["Profiles", summary.profiles],
+              ["Samples", summary.samples],
+              ["STT", speechStatus?.stt.healthStatus ?? "loading"],
+              ["TTS", speechStatus?.tts.healthStatus ?? "loading"],
+              ["ffmpeg", speechStatus?.ffmpeg.available ? "ready" : "fallback"],
+            ].map(([label, value], index) => (
+              <div
+                key={String(label)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: 6,
+                  paddingLeft: index === 0 ? 0 : 10,
+                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
+                }}
+              >
+                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
+                  {label}
+                </span>
+                <span
+                  className="summary-chip-value"
+                  style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                >
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Link href="/channels" style={{ ...ghostButton, textDecoration: "none" }}>Channels</Link>
-            <Link href="/activity" style={{ ...ghostButton, textDecoration: "none" }}>Activity</Link>
             <button type="button" onClick={() => void refresh(selectedConversationId)} style={{ ...primaryButton, cursor: "pointer" }}>
               {isLoading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
-        }
-        tone="dark"
-      />
+        </div>
 
-      <div className="summary-strip">
-        {[
-          ["Profiles", summary.profiles],
-          ["Samples", summary.samples],
-          ["Transcripts", summary.transcripts],
-          ["TTS outputs", summary.tts],
-          ["STT", speechStatus?.stt.healthStatus ?? "loading"],
-          ["TTS", speechStatus?.tts.healthStatus ?? "loading"],
-          ["ffmpeg", speechStatus?.ffmpeg.available ? "ready" : "fallback"],
-        ].map(([label, value]) => (
-          <div key={String(label)} className="summary-chip">
-            <p className="summary-chip-label">{label}</p>
-            <p className="summary-chip-value">{value}</p>
-          </div>
-        ))}
-      </div>
+        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
+          {error ??
+            (isLoading
+              ? "Loading voice workspace..."
+              : activeProfile
+                ? `Active profile: ${activeProfile.name} via ${activeProfile.engineId}.`
+                : "No voice profile found yet.")}
+        </p>
+      </SurfaceCard>
 
       {notice ? (
         <NoticeBanner
@@ -533,7 +554,7 @@ export function VoiceConsole() {
       <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.5fr) minmax(320px, 0.95fr)" }}>
           <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
             <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Voice setup</h2>
+              <h2 style={{ margin: 0 }}>Profile manager</h2>
               <p style={{ margin: 0, color: "var(--muted)" }}>
                 {activeProfile?.name ?? "No active profile"} · {activeProfile?.speakingStyle ?? "no style yet"}
               </p>
@@ -554,20 +575,25 @@ export function VoiceConsole() {
                 <input value={createForm.qualityPreset ?? ""} onChange={(event) => setCreateForm((current) => ({ ...current, qualityPreset: event.target.value }))} placeholder="quality preset" style={input} />
                 <input value={createForm.speakingStyle ?? ""} onChange={(event) => setCreateForm((current) => ({ ...current, speakingStyle: event.target.value }))} placeholder="speaking style" style={input} />
               </div>
-              <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--muted)", fontSize: 14 }}>
-                <input checked={Boolean(createForm.isActive)} onChange={(event) => setCreateForm((current) => ({ ...current, isActive: event.target.checked }))} type="checkbox" />
-                make active immediately
-              </label>
+              <ToggleField
+                checked={Boolean(createForm.isActive)}
+                onChange={(next) => setCreateForm((current) => ({ ...current, isActive: next }))}
+                label="Make active immediately"
+                hint="Useful when this profile is intended to replace the current voice right away."
+              />
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>New profiles stay local until you save and activate them.</p>
                 <button type="button" onClick={() => void createProfile()} disabled={creatingProfile} style={{ ...primaryButton, cursor: creatingProfile ? "wait" : "pointer" }}>
                   {creatingProfile ? "Creating..." : "Create Profile"}
                 </button>
               </div>
-            </article>
-
-            <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Voice profiles</h2>
+              <div className="section-rule" />
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <h3 style={{ margin: 0, fontSize: 18 }}>Saved profiles</h3>
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                  {state.profiles.length} profile{state.profiles.length === 1 ? "" : "s"} on disk
+                </p>
+              </div>
               {state.profiles.length === 0 ? (
                 <p style={{ margin: 0, color: "var(--muted)" }}>No saved profiles yet.</p>
               ) : (
@@ -595,10 +621,12 @@ export function VoiceConsole() {
                           <input value={draft.speakingStyle} onChange={(event) => updateDraft(profile.id, { speakingStyle: event.target.value })} placeholder="speaking style" style={input} />
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--muted)", fontSize: 14 }}>
-                            <input checked={draft.isActive} onChange={(event) => updateDraft(profile.id, { isActive: event.target.checked })} type="checkbox" />
-                            make active
-                          </label>
+                          <ToggleField
+                            checked={draft.isActive}
+                            onChange={(next) => updateDraft(profile.id, { isActive: next })}
+                            label="Make active"
+                            hint="Switch Secretary to this profile on save."
+                          />
                           <div style={{ display: "grid", gap: 6, justifyItems: "end" }}>
                             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                               <input
@@ -646,7 +674,10 @@ export function VoiceConsole() {
 
           <aside style={{ display: "grid", gap: 20, alignContent: "start" }}>
             <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Preview Synthesis</h2>
+              <h2 style={{ margin: 0 }}>Speech testing</h2>
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                Preview the current voice, then run browser push-to-talk through the same speech path.
+              </p>
               <select value={previewProfileId} onChange={(event) => setPreviewProfileId(event.target.value)} style={input}>
                 <option value="active">active profile</option>
                 {state.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
@@ -661,10 +692,8 @@ export function VoiceConsole() {
                   <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>artifact {previewArtifactId ?? "stored"}</p>
                 </>
               ) : null}
-            </article>
-
-            <article style={{ ...panel, display: "grid", gap: 12 }}>
-              <h2 style={{ margin: 0 }}>Web Push To Talk</h2>
+              <div className="section-rule" />
+              <h3 style={{ margin: 0, fontSize: 18 }}>Web push to talk</h3>
               <select value={recordingConversationId} onChange={(event) => setRecordingConversationId(event.target.value)} style={input}>
                 <option value="new">new conversation</option>
                 {state.conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title ?? snippet(conversation.lastMessagePreview)}</option>)}

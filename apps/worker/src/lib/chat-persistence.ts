@@ -1,3 +1,4 @@
+import type { UIMessage } from "ai";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
@@ -10,26 +11,32 @@ import {
   type DbClient,
 } from "@secretary/db";
 import {
+  type DeskChatMessageMetadata,
   createConversationId,
   createMessageId,
-  type RuntimeContextMessage,
   type MemoryCandidateJobPayload,
   type RuntimeChatRequest,
+  type RuntimeChatResponse,
+  type RuntimeContextMessage,
+  type RuntimeTurnContext,
 } from "@secretary/core-runtime";
 import {
   getActiveTaskContext,
   retrieveRelevantMemories,
 } from "./memory-engine.js";
 import {
+  defaultSecretaryName,
   defaultSecretarySoul,
   loadSecretaryPersonaProfile,
   loadSecretarySoul,
 } from "./persona-soul.js";
+import { parseSecretaryCustomization } from "./admin-runtime.js";
 import {
   runResearchSpecialist,
   shouldUseResearchSpecialist,
 } from "./research-specialist.js";
 import { generateConversationReply } from "./conversation-model.js";
+import type { InferenceRuntimeConfig } from "./ai-sdk-registry.js";
 import { getInferenceRuntimeConfig } from "./inference-settings.js";
 
 type PersistTurnParams = {
@@ -45,6 +52,17 @@ type PersistedConversationMessage = Awaited<
   ReturnType<typeof getConversationMessages>
 >[number];
 
+export type PreparedChatTurn = {
+  conversationId: string;
+  context: RuntimeTurnContext;
+  inference: InferenceRuntimeConfig;
+  originalMessages: UIMessage<DeskChatMessageMetadata>[];
+  request: RuntimeChatRequest;
+  traceId: string;
+  userId: string;
+  userMessageId: string;
+};
+
 function toRuntimeContextMessage(
   message: PersistedConversationMessage,
 ): RuntimeContextMessage {
@@ -59,59 +77,97 @@ function toRuntimeContextMessage(
   };
 }
 
-export async function persistChatTurn({
-  config,
-  dbClient,
-  defaultPersonaId,
-  defaultUserId,
-  request,
-  traceId,
-}: PersistTurnParams) {
+function toDeskChatRole(message: PersistedConversationMessage["role"]) {
+  return message === "user" ? "user" : "assistant";
+}
+
+function toDeskChatMessage(
+  message: PersistedConversationMessage,
+): UIMessage<DeskChatMessageMetadata> {
+  return {
+    id: message.id,
+    role: toDeskChatRole(message.role),
+    parts: [
+      {
+        type: "text",
+        text: message.contentText,
+      },
+    ],
+  };
+}
+
+function buildContextSummary(context: RuntimeTurnContext) {
+  return {
+    memories: context.relevantMemories,
+    tasks: context.activeTasks,
+    research: context.researchResult ?? undefined,
+  };
+}
+
+function createMemoryPayload(params: {
+  conversationId: string;
+  userId: string;
+  request: RuntimeChatRequest;
+  messageId: string;
+  traceId: string;
+}): MemoryCandidateJobPayload {
+  return {
+    conversationId: params.conversationId,
+    messageId: params.messageId,
+    traceId: params.traceId,
+    userId: params.userId,
+    source: params.request.channel,
+    text: params.request.message.text,
+    telegramChatId: params.request.metadata?.telegramChatId ?? null,
+  };
+}
+
+async function ensureConversationEnvelope(params: PersistTurnParams) {
   const existingConversationId =
-    request.conversationId ??
-    (request.channel === "telegram" && request.metadata?.telegramChatId
+    params.request.conversationId ??
+    (params.request.channel === "telegram" && params.request.metadata?.telegramChatId
       ? await findConversationIdByChannelRef(
-          dbClient,
-          request.channel,
-          request.metadata.telegramChatId,
+          params.dbClient,
+          params.request.channel,
+          params.request.metadata.telegramChatId,
         )
       : null);
   const conversationId = existingConversationId ?? createConversationId();
-  const userId = request.userId || defaultUserId;
+  const userId = params.request.userId || params.defaultUserId;
   const userDisplayName =
-    request.metadata?.telegramUserDisplayName ?? "Local Owner";
+    params.request.metadata?.telegramUserDisplayName ?? "Local Owner";
   const userMessageId = createMessageId();
   const conversationTitle =
-    request.channel === "telegram" && request.metadata?.telegramChatLabel
-      ? `Telegram: ${request.metadata.telegramChatLabel}`
-      : request.message.text.slice(0, 80);
+    params.request.channel === "telegram" && params.request.metadata?.telegramChatLabel
+      ? `Telegram: ${params.request.metadata.telegramChatLabel}`
+      : params.request.message.text.slice(0, 80);
 
-  await dbClient.db.transaction(async (tx) => {
+  await params.dbClient.db.transaction(async (tx) => {
     await tx
       .insert(users)
       .values({
         id: userId,
         displayName: "Local Owner",
-        defaultPersonaId,
+        defaultPersonaId: params.defaultPersonaId,
       })
       .onConflictDoNothing();
 
     await tx
       .insert(personas)
       .values({
-        id: defaultPersonaId,
-        name: "Secretary",
+        id: params.defaultPersonaId,
+        name: defaultSecretaryName,
         toneProfile: {
           mode: "calm",
           gender: "female",
+          customization: parseSecretaryCustomization(null),
         },
-      behaviorRules: [
+        behaviorRules: [
           "Be warm, competent, and calm.",
           "Answer naturally instead of narrating internal system state unless the user asks for it.",
           "Protect local-first privacy defaults.",
         ],
-        promptTemplate:
-          defaultSecretarySoul,
+        promptTemplate: defaultSecretarySoul,
         isDefault: true,
       })
       .onConflictDoNothing();
@@ -121,9 +177,9 @@ export async function persistChatTurn({
       .values({
         id: conversationId,
         userId,
-        channelType: request.channel,
-        channelRef: request.metadata?.telegramChatId ?? null,
-        channelLabel: request.metadata?.telegramChatLabel ?? null,
+        channelType: params.request.channel,
+        channelRef: params.request.metadata?.telegramChatId ?? null,
+        channelLabel: params.request.metadata?.telegramChatLabel ?? null,
         title: conversationTitle,
         status: "active",
         lastMessageAt: new Date(),
@@ -131,9 +187,9 @@ export async function persistChatTurn({
       .onConflictDoUpdate({
         target: conversations.id,
         set: {
-          channelType: request.channel,
-          channelRef: request.metadata?.telegramChatId ?? null,
-          channelLabel: request.metadata?.telegramChatLabel ?? null,
+          channelType: params.request.channel,
+          channelRef: params.request.metadata?.telegramChatId ?? null,
+          channelLabel: params.request.metadata?.telegramChatLabel ?? null,
           lastMessageAt: new Date(),
           updatedAt: new Date(),
         },
@@ -143,11 +199,11 @@ export async function persistChatTurn({
       id: userMessageId,
       conversationId,
       role: "user",
-      contentText: request.message.text,
-      contentJson: request.message.attachments
-        ? { attachments: request.message.attachments }
+      contentText: params.request.message.text,
+      contentJson: params.request.message.attachments
+        ? { attachments: params.request.message.attachments }
         : null,
-      channelMessageId: request.metadata?.sourceMessageId,
+      channelMessageId: params.request.metadata?.sourceMessageId,
       parentMessageId: null,
     });
 
@@ -159,107 +215,162 @@ export async function persistChatTurn({
       jobId: null,
       eventName: "runtime.chat.received",
       payloadJson: {
-        channel: request.channel,
+        channel: params.request.channel,
         messageId: userMessageId,
-        traceId,
+        traceId: params.traceId,
       },
     });
   });
 
-  const recentMessages = await getConversationMessages(dbClient, conversationId);
-  const relevantMemories = await retrieveRelevantMemories(
-    dbClient,
-    request.message.text,
+  return {
+    conversationId,
+    userDisplayName,
+    userId,
+    userMessageId,
+  };
+}
+
+export async function prepareChatTurn(
+  params: PersistTurnParams,
+): Promise<PreparedChatTurn> {
+  const envelope = await ensureConversationEnvelope(params);
+  const recentMessages = await getConversationMessages(
+    params.dbClient,
+    envelope.conversationId,
   );
-  const activeTasks = await getActiveTaskContext(dbClient, userId);
+  const relevantMemories = await retrieveRelevantMemories(
+    params.dbClient,
+    params.request.message.text,
+  );
+  const activeTasks = await getActiveTaskContext(params.dbClient, envelope.userId);
   const personaRecord =
-    (await dbClient.db.query.personas.findFirst({
-      where: eq(personas.id, defaultPersonaId),
+    (await params.dbClient.db.query.personas.findFirst({
+      where: eq(personas.id, params.defaultPersonaId),
     })) ??
-    (await dbClient.db.query.personas.findFirst({
+    (await params.dbClient.db.query.personas.findFirst({
       where: eq(personas.isDefault, true),
     }));
   const soulText = await loadSecretarySoul(
     personaRecord?.promptTemplate ?? defaultSecretarySoul,
   );
   const personaProfileText = await loadSecretaryPersonaProfile();
-  const researchResult = shouldUseResearchSpecialist(request.message.text)
-    ? runResearchSpecialist(request.message.text)
+  const researchResult = shouldUseResearchSpecialist(params.request.message.text)
+    ? runResearchSpecialist(params.request.message.text)
     : null;
   const inference = await getInferenceRuntimeConfig();
-  const turnContext = {
-    conversationId,
-    recentMessages: recentMessages.map(toRuntimeContextMessage),
-    userDisplayName,
-    persona: personaRecord
-      ? {
-          name: personaRecord.name,
-          soul: soulText,
-          personaProfile: personaProfileText,
-          toneMode:
-            typeof personaRecord.toneProfile?.mode === "string"
-              ? personaRecord.toneProfile.mode
-              : null,
-          gender:
-            personaRecord.toneProfile?.gender === "male"
-              ? ("male" as const)
-              : ("female" as const),
-          behaviorRules: personaRecord.behaviorRules,
-        }
-      : undefined,
-    relevantMemories,
-    activeTasks,
-    researchResult,
-  };
-  const reply = await generateConversationReply({
-    inference,
-    request: {
-      ...request,
-      conversationId,
-    },
-    context: turnContext,
-    traceId,
-  });
-  const response = reply.response;
 
-  await dbClient.db.transaction(async (tx) => {
-    if (researchResult) {
+  return {
+    conversationId: envelope.conversationId,
+    context: {
+      conversationId: envelope.conversationId,
+      recentMessages: recentMessages.map(toRuntimeContextMessage),
+      userDisplayName: envelope.userDisplayName,
+      persona: personaRecord
+        ? {
+            name: personaRecord.name,
+            soul: soulText,
+            personaProfile: personaProfileText,
+            toneMode:
+              typeof personaRecord.toneProfile?.mode === "string"
+                ? personaRecord.toneProfile.mode
+                : null,
+            gender:
+              personaRecord.toneProfile?.gender === "male"
+                ? ("male" as const)
+                : ("female" as const),
+            customization: parseSecretaryCustomization(personaRecord.toneProfile),
+            behaviorRules: personaRecord.behaviorRules,
+          }
+        : undefined,
+      relevantMemories,
+      activeTasks,
+      researchResult,
+    },
+    inference,
+    originalMessages: recentMessages.map(toDeskChatMessage),
+    request: {
+      ...params.request,
+      conversationId: envelope.conversationId,
+      userId: envelope.userId,
+    },
+    traceId: params.traceId,
+    userId: envelope.userId,
+    userMessageId: envelope.userMessageId,
+  };
+}
+
+export async function finalizeChatTurn(params: {
+  dbClient: DbClient;
+  preparedTurn: PreparedChatTurn;
+  assistantMessageId: string;
+  outputText: string;
+  mode: "model" | "fallback" | "tool";
+  model?: string | null;
+  pendingApproval?: RuntimeChatResponse["pendingApproval"] | null;
+  providerError?: string | null;
+  actions?: RuntimeChatResponse["actions"];
+}) {
+  const responseActions = params.actions ?? [
+    {
+      kind: "memory_candidate_queued",
+      payload: {
+        source: params.preparedTurn.request.channel,
+        status: "queued",
+      },
+    },
+  ];
+
+  if (
+    params.preparedTurn.context.researchResult &&
+    !responseActions.some((action) => action.kind === "research_specialist_used")
+  ) {
+    responseActions.push({
+      kind: "research_specialist_used",
+      payload: {
+        mode: params.preparedTurn.context.researchResult.mode,
+        specialist: params.preparedTurn.context.researchResult.specialist,
+      },
+    });
+  }
+
+  await params.dbClient.db.transaction(async (tx) => {
+    if (params.preparedTurn.context.researchResult) {
       await tx.insert(activityTraces).values({
         id: createMessageId(),
         traceType: "specialist",
-        parentTraceId: traceId,
-        conversationId,
+        parentTraceId: params.preparedTurn.traceId,
+        conversationId: params.preparedTurn.conversationId,
         jobId: null,
         eventName: "research.specialist.completed",
-        payloadJson: researchResult,
+        payloadJson: params.preparedTurn.context.researchResult,
       });
     }
 
     await tx.insert(activityTraces).values({
       id: createMessageId(),
       traceType: "runtime",
-      parentTraceId: traceId,
-      conversationId,
+      parentTraceId: params.preparedTurn.traceId,
+      conversationId: params.preparedTurn.conversationId,
       jobId: null,
       eventName: "runtime.chat.context_assembled",
       payloadJson: {
-        memoryIds: relevantMemories.map((memory) => memory.id),
-        taskIds: activeTasks.map((task) => task.id),
-        researchUsed: Boolean(researchResult),
-        replyMode: reply.mode,
-        replyModel: reply.model ?? null,
-        providerError: reply.providerError ?? null,
+        memoryIds: params.preparedTurn.context.relevantMemories.map((memory) => memory.id),
+        taskIds: params.preparedTurn.context.activeTasks.map((task) => task.id),
+        researchUsed: Boolean(params.preparedTurn.context.researchResult),
+        replyMode: params.mode,
+        replyModel: params.model ?? null,
+        providerError: params.providerError ?? null,
       },
     });
 
     await tx.insert(messages).values({
-      id: response.messageId,
-      conversationId,
+      id: params.assistantMessageId,
+      conversationId: params.preparedTurn.conversationId,
       role: "assistant",
-      contentText: response.outputText,
+      contentText: params.outputText,
       contentJson: null,
       channelMessageId: null,
-      parentMessageId: userMessageId,
+      parentMessageId: params.preparedTurn.userMessageId,
     });
 
     await tx
@@ -268,46 +379,88 @@ export async function persistChatTurn({
         updatedAt: new Date(),
         lastMessageAt: new Date(),
       })
-      .where(eq(conversations.id, conversationId));
+      .where(eq(conversations.id, params.preparedTurn.conversationId));
 
     await tx.insert(activityTraces).values({
       id: createMessageId(),
       traceType: "runtime",
-      parentTraceId: traceId,
-      conversationId,
+      parentTraceId: params.preparedTurn.traceId,
+      conversationId: params.preparedTurn.conversationId,
       jobId: null,
       eventName: "runtime.chat.completed",
       payloadJson: {
-        assistantMessageId: response.messageId,
-        recentContextCount: recentMessages.length,
-        memoryIds: relevantMemories.map((memory) => memory.id),
-        taskIds: activeTasks.map((task) => task.id),
-        researchUsed: Boolean(researchResult),
-        replyMode: reply.mode,
-        replyModel: reply.model ?? null,
-        providerError: reply.providerError ?? null,
-        outputLength: response.outputText.length,
-        traceId,
+        assistantMessageId: params.assistantMessageId,
+        recentContextCount: params.preparedTurn.context.recentMessages.length,
+        memoryIds: params.preparedTurn.context.relevantMemories.map((memory) => memory.id),
+        taskIds: params.preparedTurn.context.activeTasks.map((task) => task.id),
+        researchUsed: Boolean(params.preparedTurn.context.researchResult),
+        replyMode: params.mode,
+        replyModel: params.model ?? null,
+        providerError: params.providerError ?? null,
+        outputLength: params.outputText.length,
+        traceId: params.preparedTurn.traceId,
       },
     });
   });
 
-  const memoryPayload: MemoryCandidateJobPayload = {
-    conversationId,
-    messageId: response.messageId,
-    traceId,
-    userId,
-    source: request.channel,
-    text: request.message.text,
-    telegramChatId: request.metadata?.telegramChatId ?? null,
-  };
+  const response = {
+    actions: responseActions,
+    contextSummary: buildContextSummary(params.preparedTurn.context),
+    conversationId: params.preparedTurn.conversationId,
+    messageId: params.assistantMessageId,
+    outputText: params.outputText,
+    pendingApproval: params.pendingApproval ?? null,
+    traceId: params.preparedTurn.traceId,
+  } satisfies RuntimeChatResponse;
 
   return {
-    conversationId,
-    memoryPayload,
+    conversationId: params.preparedTurn.conversationId,
+    memoryPayload: createMemoryPayload({
+      conversationId: params.preparedTurn.conversationId,
+      userId: params.preparedTurn.userId,
+      request: params.preparedTurn.request,
+      messageId: params.assistantMessageId,
+      traceId: params.preparedTurn.traceId,
+    }),
     response,
-    userMessageId,
+    userMessageId: params.preparedTurn.userMessageId,
   };
+}
+
+export async function persistChatTurn({
+  config,
+  dbClient,
+  defaultPersonaId,
+  defaultUserId,
+  request,
+  traceId,
+}: PersistTurnParams) {
+  void config;
+  const preparedTurn = await prepareChatTurn({
+    config,
+    dbClient,
+    defaultPersonaId,
+    defaultUserId,
+    request,
+    traceId,
+  });
+  const reply = await generateConversationReply({
+    inference: preparedTurn.inference,
+    request: preparedTurn.request,
+    context: preparedTurn.context,
+    traceId,
+  });
+  return finalizeChatTurn({
+    dbClient,
+    preparedTurn,
+    assistantMessageId: reply.response.messageId,
+    outputText: reply.outputText,
+    mode: reply.mode,
+    model: reply.model ?? null,
+    providerError: reply.providerError ?? null,
+    actions: reply.response.actions,
+    pendingApproval: reply.response.pendingApproval ?? null,
+  });
 }
 
 type QueueMemoryJobParams = {

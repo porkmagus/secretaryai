@@ -1,10 +1,16 @@
 import { readFile, writeFile } from "node:fs/promises";
+import {
+  createUIMessageStream,
+  pipeUIMessageStreamToResponse,
+  type UIMessage,
+} from "ai";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
   type CreateVoiceProfileRequest,
+  type DeskChatMessageMetadata,
   type ConversationListResponse,
   type ActivityTraceResponse,
   type ConversationHistoryResponse,
@@ -40,17 +46,23 @@ import {
   type VoicePreviewResponse,
   type VoiceProfileListResponse,
   type WebSpeechTurnResponse,
+  type MemoryCandidateJobPayload,
+  type RuntimeChatResponse,
+  createMessageId,
   createTraceId,
   type RuntimeChatRequest,
+  type RuntimeChatStreamRequest,
 } from "@secretary/core-runtime";
 import type { TelegramUpdate } from "@secretary/integrations";
 import { createInfrastructure } from "./lib/infrastructure.js";
 import {
   createQueuedMemoryJob,
+  finalizeChatTurn,
   getConversationMessages,
   listRecentConversations,
   markMemoryJobEnqueueFailed,
   persistChatTurn,
+  prepareChatTurn,
 } from "./lib/chat-persistence.js";
 import { createLogger } from "@secretary/observability";
 import {
@@ -92,6 +104,7 @@ import {
   getPersonaSettings,
   getSystemHealth,
   importSettingsSnapshot,
+  updatePersonaAvatar,
   updatePersonaSettings,
 } from "./lib/admin-runtime.js";
 import {
@@ -111,12 +124,116 @@ import {
   listTools,
   updateTool,
 } from "./lib/tools-runtime.js";
+import { createConversationReplyStream } from "./lib/conversation-model.js";
+import {
+  createPersonaAvatarStorageKey,
+  ensurePersonaStoragePath,
+  resolveManagedPersonaStoragePath,
+} from "./lib/persona-soul.js";
 
 export async function buildServer() {
   const config = loadAppConfig(process.env);
   const logger = createLogger("worker");
   const app = Fastify({ logger: false });
   const infrastructure = await createInfrastructure(config);
+
+  function extractText(message: UIMessage<DeskChatMessageMetadata> | undefined) {
+    if (!message) {
+      return "";
+    }
+
+    return message.parts
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("")
+      .trim();
+  }
+
+  function buildDeskChatMetadata(params: {
+    response: {
+      conversationId: string;
+      contextSummary?: DeskChatMessageMetadata["contextSummary"];
+      pendingApproval?: DeskChatMessageMetadata["pendingApproval"];
+      traceId: string;
+    };
+    mode: DeskChatMessageMetadata["replyMode"];
+    model?: string | null;
+    providerError?: string | null;
+    totalTokens?: number;
+  }) {
+    return {
+      conversationId: params.response.conversationId,
+      traceId: params.response.traceId,
+      replyMode: params.mode,
+      model: params.model ?? null,
+      providerError: params.providerError ?? null,
+      pendingApproval: params.response.pendingApproval ?? null,
+      contextSummary: params.response.contextSummary ?? {
+        memories: [],
+        tasks: [],
+        research: undefined,
+      },
+      totalTokens: params.totalTokens,
+    } satisfies DeskChatMessageMetadata;
+  }
+
+  async function finalizePersistedTurn(params: {
+    body: RuntimeChatRequest;
+    persistedTurn: {
+      memoryPayload: MemoryCandidateJobPayload;
+      response: RuntimeChatResponse;
+    };
+    traceId: string;
+  }) {
+    const jobId = await createQueuedMemoryJob({
+      dbClient: infrastructure.dbClient,
+      payload: params.persistedTurn.memoryPayload,
+      traceId: params.traceId,
+    });
+
+    try {
+      await infrastructure.memoryQueue.enqueue(
+        jobId,
+        params.persistedTurn.memoryPayload,
+      );
+    } catch (error) {
+      await markMemoryJobEnqueueFailed(
+        infrastructure.dbClient,
+        jobId,
+        error instanceof Error ? error.message : "Unknown enqueue error",
+      );
+
+      throw error;
+    }
+
+    logger.info("runtime.chat.completed", {
+      channel: params.body.channel,
+      conversationId: params.persistedTurn.response.conversationId,
+      jobId,
+      traceId: params.traceId,
+      userId: params.body.userId,
+    });
+
+    if (params.body.channel === "web") {
+      try {
+        await maybeDeliverTelegramAssistantMessage({
+          dbClient: infrastructure.dbClient,
+          config,
+          conversationId: params.persistedTurn.response.conversationId,
+          messageId: params.persistedTurn.response.messageId,
+          text: params.persistedTurn.response.outputText,
+          importance: params.persistedTurn.response.pendingApproval ? "important" : "normal",
+          source: "web",
+          traceId: params.traceId,
+        });
+      } catch (deliveryError) {
+        logger.error("runtime.chat.telegram_delivery_failed", {
+          error: deliveryError instanceof Error ? deliveryError.message : deliveryError,
+          traceId: params.traceId,
+        });
+      }
+    }
+  }
 
   await app.register(cors, {
     origin: true,
@@ -213,6 +330,91 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to update persona settings.",
+      });
+    }
+  });
+
+  app.get<{
+    Querystring: {
+      storageKey?: string;
+      mimeType?: string;
+    };
+  }>("/runtime/persona/avatar/file", async (request, reply) => {
+    try {
+      if (!request.query.storageKey) {
+        return reply.status(400).send({
+          error: "storageKey is required.",
+        });
+      }
+
+      const storagePath = resolveManagedPersonaStoragePath(request.query.storageKey);
+      const imageBuffer = await readFile(storagePath);
+
+      reply.header("Content-Type", request.query.mimeType ?? "application/octet-stream");
+      return reply.send(imageBuffer);
+    } catch (error) {
+      logger.error("runtime.persona.avatar_file_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(404).send({
+        error: "Secretary portrait is unavailable.",
+      });
+    }
+  });
+
+  app.post("/runtime/persona/avatar", async (request, reply) => {
+    try {
+      const upload = await request.file();
+
+      if (!upload) {
+        return reply.status(400).send({
+          error: "Portrait image is required.",
+        });
+      }
+
+      if (!["image/jpeg", "image/png", "image/webp"].includes(upload.mimetype)) {
+        return reply.status(400).send({
+          error: "Portrait images must be JPG, PNG, or WebP.",
+        });
+      }
+
+      const imageBuffer = await upload.toBuffer();
+
+      if (imageBuffer.byteLength > 5 * 1024 * 1024) {
+        return reply.status(400).send({
+          error: "Portrait images must be 5 MB or smaller.",
+        });
+      }
+
+      const extension =
+        upload.filename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") ||
+        (upload.mimetype === "image/png"
+          ? "png"
+          : upload.mimetype === "image/webp"
+            ? "webp"
+            : "jpg");
+      const storageKey = createPersonaAvatarStorageKey(
+        `${Date.now()}-secretary-portrait.${extension}`,
+      );
+      const storagePath = await ensurePersonaStoragePath(storageKey);
+      await writeFile(storagePath, imageBuffer);
+
+      const response: PersonaSettingsResponse = await updatePersonaAvatar({
+        dbClient: infrastructure.dbClient,
+        config,
+        storageKey,
+        mimeType: upload.mimetype,
+      });
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.persona.avatar_update_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update the secretary portrait.",
       });
     }
   });
@@ -1209,51 +1411,11 @@ export async function buildServer() {
           traceId,
         }));
 
-      const jobId = await createQueuedMemoryJob({
-        dbClient: infrastructure.dbClient,
-        payload: persistedTurn.memoryPayload,
+      await finalizePersistedTurn({
+        body,
+        persistedTurn,
         traceId,
       });
-
-      try {
-        await infrastructure.memoryQueue.enqueue(jobId, persistedTurn.memoryPayload);
-      } catch (error) {
-        await markMemoryJobEnqueueFailed(
-          infrastructure.dbClient,
-          jobId,
-          error instanceof Error ? error.message : "Unknown enqueue error",
-        );
-
-        throw error;
-      }
-
-      logger.info("runtime.chat.completed", {
-        channel: body.channel,
-        conversationId: persistedTurn.response.conversationId,
-        jobId,
-        traceId,
-        userId: body.userId,
-      });
-
-      if (body.channel === "web") {
-        try {
-          await maybeDeliverTelegramAssistantMessage({
-            dbClient: infrastructure.dbClient,
-            config,
-            conversationId: persistedTurn.response.conversationId,
-            messageId: persistedTurn.response.messageId,
-            text: persistedTurn.response.outputText,
-            importance: persistedTurn.response.pendingApproval ? "important" : "normal",
-            source: "web",
-            traceId,
-          });
-        } catch (deliveryError) {
-          logger.error("runtime.chat.telegram_delivery_failed", {
-            error: deliveryError instanceof Error ? deliveryError.message : deliveryError,
-            traceId,
-          });
-        }
-      }
 
       return persistedTurn.response;
     } catch (error) {
@@ -1268,6 +1430,231 @@ export async function buildServer() {
       });
     }
   });
+
+  app.post<{ Body: RuntimeChatStreamRequest }>(
+    "/runtime/chat/stream",
+    async (request, reply) => {
+      const body = request.body as RuntimeChatStreamRequest;
+      const text = body.text?.trim();
+
+      if (!text) {
+        return reply.status(400).send({
+          error: "Message text is required.",
+        });
+      }
+
+      const traceId = createTraceId();
+      const runtimeRequest: RuntimeChatRequest = {
+        conversationId: body.conversationId,
+        channel: "web",
+        userId: config.defaultUserId,
+        message: {
+          text,
+        },
+        metadata: {
+          requestId: traceId,
+        },
+      };
+
+      try {
+        const toolHandledTurn = await handleToolAwareTurn({
+          config,
+          dbClient: infrastructure.dbClient,
+          defaultPersonaId: config.defaultPersonaId,
+          defaultUserId: config.defaultUserId,
+          request: runtimeRequest,
+          traceId,
+        });
+
+        if (toolHandledTurn) {
+          await finalizePersistedTurn({
+            body: runtimeRequest,
+            persistedTurn: toolHandledTurn,
+            traceId,
+          });
+
+          const stream = createUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
+            execute: async ({ writer }) => {
+              writer.write({
+                type: "data-runtime-context",
+                data: buildDeskChatMetadata({
+                  response: toolHandledTurn.response,
+                  mode: "tool",
+                }),
+              });
+              writer.write({
+                type: "text-start",
+                id: toolHandledTurn.response.messageId,
+              });
+              writer.write({
+                type: "text-delta",
+                id: toolHandledTurn.response.messageId,
+                delta: toolHandledTurn.response.outputText,
+              });
+              writer.write({
+                type: "text-end",
+                id: toolHandledTurn.response.messageId,
+              });
+            },
+            generateId: createMessageId,
+          });
+
+          reply.hijack();
+          pipeUIMessageStreamToResponse({
+            response: reply.raw,
+            stream,
+            status: 200,
+          });
+          return reply;
+        }
+
+        const preparedTurn = await prepareChatTurn({
+          config,
+          dbClient: infrastructure.dbClient,
+          defaultPersonaId: config.defaultPersonaId,
+          defaultUserId: config.defaultUserId,
+          request: runtimeRequest,
+          traceId,
+        });
+        const streamPlan = createConversationReplyStream({
+          inference: preparedTurn.inference,
+          request: preparedTurn.request,
+          context: preparedTurn.context,
+          traceId,
+        });
+
+        const stream = createUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
+          originalMessages: preparedTurn.originalMessages,
+          generateId: createMessageId,
+          execute: async ({ writer }) => {
+            if (streamPlan.kind === "model") {
+              writer.merge(
+                streamPlan.result.toUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
+                  messageMetadata: ({ part }) => {
+                    if (part.type === "start") {
+                      return buildDeskChatMetadata({
+                        response: {
+                          conversationId: preparedTurn.conversationId,
+                          contextSummary: {
+                            memories: preparedTurn.context.relevantMemories,
+                            tasks: preparedTurn.context.activeTasks,
+                            research: preparedTurn.context.researchResult ?? undefined,
+                          },
+                          traceId,
+                        },
+                        mode: "model",
+                        model: streamPlan.model ?? null,
+                      });
+                    }
+
+                    if (part.type === "finish") {
+                      return buildDeskChatMetadata({
+                        response: {
+                          conversationId: preparedTurn.conversationId,
+                          contextSummary: {
+                            memories: preparedTurn.context.relevantMemories,
+                            tasks: preparedTurn.context.activeTasks,
+                            research: preparedTurn.context.researchResult ?? undefined,
+                          },
+                          traceId,
+                        },
+                        mode: "model",
+                        model: streamPlan.model ?? null,
+                        totalTokens: part.totalUsage.totalTokens,
+                      });
+                    }
+
+                    return undefined;
+                  },
+                }),
+              );
+              return;
+            }
+
+            writer.write({
+              type: "data-runtime-context",
+              data: buildDeskChatMetadata({
+                response: {
+                  conversationId: preparedTurn.conversationId,
+                  contextSummary: {
+                    memories: preparedTurn.context.relevantMemories,
+                    tasks: preparedTurn.context.activeTasks,
+                    research: preparedTurn.context.researchResult ?? undefined,
+                  },
+                  traceId,
+                },
+                mode: "fallback",
+                model: streamPlan.model ?? null,
+                providerError: streamPlan.providerError,
+              }),
+            });
+            writer.write({
+              type: "text-start",
+              id: "fallback-text",
+            });
+            writer.write({
+              type: "text-delta",
+              id: "fallback-text",
+              delta: streamPlan.text,
+            });
+            writer.write({
+              type: "text-end",
+              id: "fallback-text",
+            });
+          },
+          onFinish: async ({ responseMessage }) => {
+            const outputText = extractText(responseMessage);
+
+            if (!outputText) {
+              return;
+            }
+
+            const persistedTurn = await finalizeChatTurn({
+              dbClient: infrastructure.dbClient,
+              preparedTurn,
+              assistantMessageId: responseMessage.id,
+              outputText,
+              mode: streamPlan.mode,
+              model: streamPlan.model ?? null,
+              providerError: streamPlan.providerError ?? null,
+            });
+
+            await finalizePersistedTurn({
+              body: preparedTurn.request,
+              persistedTurn,
+              traceId,
+            });
+          },
+          onError: (error) => {
+            logger.error("runtime.chat.stream_failed", {
+              error: error instanceof Error ? error.message : error,
+              traceId,
+            });
+
+            return "Something went wrong while the secretary was replying.";
+          },
+        });
+
+        reply.hijack();
+        pipeUIMessageStreamToResponse({
+          response: reply.raw,
+          stream,
+          status: 200,
+        });
+        return reply;
+      } catch (error) {
+        logger.error("runtime.chat.stream_failed", {
+          error: error instanceof Error ? error.message : error,
+          traceId,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to stream chat reply.",
+          traceId,
+        });
+      }
+    },
+  );
 
   return {
     app,

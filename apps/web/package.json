@@ -11,7 +11,9 @@
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/react": "^3.0.142",
     "@secretary/core-runtime": "0.1.0",
+    "ai": "^6.0.140",
     "next": "16.2.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"

@@ -8,7 +8,7 @@ import { maybeDeliverTelegramAssistantMessage } from "./telegram-integration.js"
 
 const heartbeatIntegrationId = "heartbeat";
 const defaultHeartbeatPrompt =
-  "Pause, look over the current state of Samantha's environment, memory, and open work, then decide one concrete helpful thing to notice, suggest, prepare, or improve next. Answer naturally as Samantha.";
+  "Pause, look over the current state of the secretary's environment, memory, and open work, then decide one concrete helpful thing to notice, suggest, prepare, or improve next. Answer naturally as the secretary.";
 
 type HeartbeatIntegrationConfig = {
   intervalMinutes: number;
@@ -142,7 +142,7 @@ function toHeartbeatSummary(params: {
   lastErrorText: string | null;
 }) {
   if (!params.enabled) {
-    return "Heartbeat is disabled. Samantha will only self-check when you run it manually.";
+    return "Heartbeat is disabled. The secretary will only self-check when you run it manually.";
   }
 
   if (params.healthStatus === "degraded" && params.lastErrorText) {

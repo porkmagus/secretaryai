@@ -30,7 +30,7 @@ export function PageHero({
   actions,
   tone = "default",
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   description: ReactNode;
   meta?: ReactNode;
@@ -41,7 +41,7 @@ export function PageHero({
     <header className={joinClasses("hero-card", tone === "dark" && "hero-card--dark")}>
       <div className="hero-header">
         <div className="hero-copy-wrap">
-          <p className="eyebrow">{eyebrow}</p>
+          {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
           <h1 className="hero-title">{title}</h1>
           <div className="hero-copy">{description}</div>
           {meta ? <div className="hero-meta">{meta}</div> : null}
@@ -123,4 +123,45 @@ export function NoticeBanner({
   tone?: "info" | "success" | "warning" | "error";
 }) {
   return <div className={joinClasses("notice-banner", `notice-banner--${tone}`)}>{children}</div>;
+}
+
+export function ToggleField({
+  checked,
+  label,
+  onChange,
+  disabled = false,
+  hint,
+  className,
+}: {
+  checked: boolean;
+  label: ReactNode;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  hint?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-disabled={disabled}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={joinClasses(
+        "toggle-field",
+        checked && "toggle-field--checked",
+        disabled && "toggle-field--disabled",
+        className,
+      )}
+    >
+      <span className="toggle-field__control" aria-hidden="true">
+        <span className="toggle-field__thumb" />
+      </span>
+      <span className="toggle-field__copy">
+        <span className="toggle-field__label">{label}</span>
+        {hint ? <span className="toggle-field__hint">{hint}</span> : null}
+      </span>
+    </button>
+  );
 }

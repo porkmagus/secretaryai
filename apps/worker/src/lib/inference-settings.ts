@@ -2,13 +2,21 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { OpencodeModels } from "ai-sdk-provider-opencode-sdk";
+import { listModels as listCodexCliModels } from "ai-sdk-provider-codex-cli";
 import type {
   InferenceModelListResponse,
   InferenceProviderAuthMode,
   InferenceProviderId,
   InferenceSettingsResponse,
+  InferenceTarget,
   UpdateInferenceSettingsRequest,
 } from "@secretary/core-runtime";
+import {
+  getInferenceProviderDefinition,
+  inferenceProviderDefinitions,
+  isLocalRuntimeProvider,
+  providerSupportsStoredApiKey,
+} from "./inference-provider-definitions.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 const settingsFilePath = resolve(repoRoot, "runtime/config/inference-provider.json");
@@ -16,11 +24,12 @@ const secretFilePath = resolve(repoRoot, "runtime/secrets/inference-provider.jso
 
 type StoredInferenceSettings = {
   enabled: boolean;
+  activeTarget: InferenceTarget;
   selectedProviderId: InferenceProviderId | null;
   reasoningEffort: "minimal" | "low" | "medium" | "high";
   providers: Partial<
     Record<
-      InferenceProviderId,
+      string,
       {
         baseUrl?: string | null;
         model?: string | null;
@@ -32,97 +41,12 @@ type StoredInferenceSettings = {
 
 type StoredInferenceSecrets = Partial<
   Record<
-    InferenceProviderId,
+    string,
     {
       apiKey?: string;
     }
   >
 >;
-
-type ProviderDefinition = {
-  id: InferenceProviderId;
-  label: string;
-  description: string;
-  authMode: InferenceProviderAuthMode;
-  defaultBaseUrl: string | null;
-  defaultModel: string;
-  defaultMaxOutputTokens: number;
-  supportsModelFetch: boolean;
-  supportsReasoningEffort: boolean;
-};
-
-const providerDefinitions: ProviderDefinition[] = [
-  {
-    id: "moonshot",
-    label: "Kimi Code (Moonshot)",
-    description: "Direct Moonshot/Kimi API via the Vercel AI SDK Moonshot provider.",
-    authMode: "api_key",
-    defaultBaseUrl: "https://api.moonshot.ai/v1",
-    defaultModel: "kimi-k2.5",
-    defaultMaxOutputTokens: 700,
-    supportsModelFetch: true,
-    supportsReasoningEffort: true,
-  },
-  {
-    id: "ollama_local",
-    label: "Ollama",
-    description: "Direct local Ollama runtime on your machine or LAN.",
-    authMode: "none",
-    defaultBaseUrl: "http://127.0.0.1:11434",
-    defaultModel: "qwen3:8b",
-    defaultMaxOutputTokens: 600,
-    supportsModelFetch: true,
-    supportsReasoningEffort: false,
-  },
-  {
-    id: "ollama_cloud",
-    label: "Ollama Cloud",
-    description: "Hosted Ollama account through its OpenAI-compatible API.",
-    authMode: "api_key",
-    defaultBaseUrl: "https://ollama.com/v1",
-    defaultModel: "qwen3:30b",
-    defaultMaxOutputTokens: 900,
-    supportsModelFetch: true,
-    supportsReasoningEffort: false,
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    description: "OpenRouter direct provider with its own model routing and provider mix.",
-    authMode: "api_key",
-    defaultBaseUrl: "https://openrouter.ai/api/v1",
-    defaultModel: "moonshotai/kimi-k2.5",
-    defaultMaxOutputTokens: 700,
-    supportsModelFetch: true,
-    supportsReasoningEffort: true,
-  },
-  {
-    id: "huggingface",
-    label: "Hugging Face",
-    description: "Hugging Face Inference Router through the official AI SDK provider.",
-    authMode: "api_key",
-    defaultBaseUrl: "https://router.huggingface.co/v1",
-    defaultModel: "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-    defaultMaxOutputTokens: 700,
-    supportsModelFetch: true,
-    supportsReasoningEffort: false,
-  },
-  {
-    id: "opencode",
-    label: "OpenCode",
-    description: "Local/account-authorized OpenCode runtime for subscription-backed access.",
-    authMode: "account_authorized",
-    defaultBaseUrl: "http://127.0.0.1:4096",
-    defaultModel: OpencodeModels["claude-sonnet-4-5"],
-    defaultMaxOutputTokens: 700,
-    supportsModelFetch: true,
-    supportsReasoningEffort: false,
-  },
-];
-
-const providerDefinitionMap = Object.fromEntries(
-  providerDefinitions.map((provider) => [provider.id, provider]),
-) as Record<InferenceProviderId, ProviderDefinition>;
 
 async function readJsonFile<T>(path: string): Promise<T | null> {
   try {
@@ -153,64 +77,68 @@ function normalizeReasoningEffort(
   }
 }
 
-function normalizeProviderId(
-  providerId?: string | null,
-): InferenceProviderId | null {
-  if (!providerId) {
-    return null;
-  }
-
-  return providerDefinitionMap[providerId as InferenceProviderId]
-    ? (providerId as InferenceProviderId)
-    : null;
+function normalizeProviderId(providerId?: string | null): InferenceProviderId | null {
+  return getInferenceProviderDefinition(providerId)?.id ?? null;
 }
 
-function normalizeBaseUrl(
-  providerId: InferenceProviderId,
-  baseUrl?: string | null,
-) {
-  const defaultBaseUrl = providerDefinitionMap[providerId].defaultBaseUrl;
+function normalizeBaseUrl(providerId: InferenceProviderId, baseUrl?: string | null) {
+  const definition = getInferenceProviderDefinition(providerId);
 
-  if (!defaultBaseUrl) {
+  if (!definition) {
     return baseUrl?.trim() || null;
   }
 
-  const normalized = (baseUrl?.trim() || defaultBaseUrl).replace(/\/+$/, "");
+  const fallback = definition.defaultBaseUrl;
+  const normalizedSource = baseUrl?.trim() || fallback;
 
-  if (
-    providerId === "ollama_cloud" &&
-    /^https:\/\/ollama\.com$/i.test(normalized)
-  ) {
+  if (!normalizedSource) {
+    return null;
+  }
+
+  const normalized = normalizedSource.replace(/\/+$/, "");
+
+  if (providerId === "ollama_cloud" && /^https:\/\/ollama\.com$/i.test(normalized)) {
     return "https://ollama.com/v1";
   }
 
   return normalized;
 }
 
-function normalizeModel(
-  providerId: InferenceProviderId,
-  model?: string | null,
-) {
-  return model?.trim() || providerDefinitionMap[providerId].defaultModel;
+function normalizeModel(providerId: InferenceProviderId, model?: string | null) {
+  const definition = getInferenceProviderDefinition(providerId);
+  const normalized = model?.trim();
+
+  if (normalized) {
+    return normalized;
+  }
+
+  return definition?.defaultModel ?? null;
 }
 
 function normalizeMaxOutputTokens(
   providerId: InferenceProviderId,
   maxOutputTokens?: number | null,
 ) {
+  const definition = getInferenceProviderDefinition(providerId);
+  const fallback = definition?.defaultMaxOutputTokens ?? 1000;
+
   if (typeof maxOutputTokens !== "number" || !Number.isFinite(maxOutputTokens)) {
-    return providerDefinitionMap[providerId].defaultMaxOutputTokens;
+    return fallback;
   }
 
   return Math.max(64, Math.min(12000, Math.round(maxOutputTokens)));
 }
 
-function normalizeStoredSettings(
-  settings: StoredInferenceSettings | null,
-): StoredInferenceSettings {
+function normalizeStoredSettings(settings: StoredInferenceSettings | null): StoredInferenceSettings {
+  const selectedProviderId = normalizeProviderId(settings?.selectedProviderId) ?? null;
+
   return {
     enabled: settings?.enabled ?? false,
-    selectedProviderId: normalizeProviderId(settings?.selectedProviderId) ?? null,
+    activeTarget:
+      settings?.activeTarget === "local" || isLocalRuntimeProvider(selectedProviderId)
+        ? "local"
+        : "provider",
+    selectedProviderId,
     reasoningEffort: normalizeReasoningEffort(settings?.reasoningEffort),
     providers: settings?.providers ?? {},
   };
@@ -237,34 +165,39 @@ function providerHasUsableAuth(params: {
   return true;
 }
 
-function toProviderSummary(params: {
-  definition: ProviderDefinition;
+function buildProviderSummary(params: {
+  label: string;
+  authMode: InferenceProviderAuthMode;
   baseUrl: string | null;
-  model: string;
-  apiKey: string | null;
+  model: string | null;
   isSelected: boolean;
+  apiKeyConfigured: boolean;
+  accessMode: InferenceSettingsResponse["providers"][number]["accessMode"];
 }) {
-  const { definition, model, apiKey, isSelected } = params;
+  const modelLine = params.model ? ` on ${params.model}` : "";
 
-  if (definition.authMode === "api_key") {
-    if (apiKey) {
-      return isSelected
-        ? `${definition.label} is selected and ready on ${model}.`
-        : `Saved key available for ${definition.label}.`;
-    }
+  switch (params.authMode) {
+    case "api_key":
+      if (!params.apiKeyConfigured) {
+        return `No saved API key for ${params.label} yet.`;
+      }
 
-    return `No saved API key for ${definition.label} yet.`;
+      return params.isSelected
+        ? `${params.label} is selected and ready${modelLine}.`
+        : `Saved key available for ${params.label}.`;
+    case "api_key_or_account":
+      return params.isSelected
+        ? `${params.label} is selected${modelLine}. It can use a saved key or ambient cloud authentication.`
+        : `${params.label} can use a saved key or ambient cloud authentication.`;
+    case "account_authorized":
+      return params.isSelected
+        ? `${params.label} is selected${modelLine}. It relies on a linked local or account-authorized runtime.`
+        : `${params.label} can use a linked local or account-authorized runtime.`;
+    default:
+      return params.isSelected
+        ? `${params.label} is selected${modelLine} at ${params.baseUrl ?? "its default local endpoint"}.`
+        : `${params.label} is available as a local runtime.`;
   }
-
-  if (definition.id === "opencode") {
-    return isSelected
-      ? `OpenCode is selected and will use the local/account-authorized runtime at ${params.baseUrl ?? "its default endpoint"}.`
-      : "OpenCode can use your local/account-authorized runtime without a stored API key.";
-  }
-
-  return isSelected
-    ? `${definition.label} is selected and will use ${params.baseUrl ?? "its default local endpoint"}.`
-    : `${definition.label} is available without a stored API key.`;
 }
 
 function buildSummary(params: {
@@ -276,7 +209,7 @@ function buildSummary(params: {
     return {
       mode: "deterministic_fallback" as const,
       summary:
-        "Samantha text conversation is running on the local deterministic fallback until an inference provider is configured.",
+        "Secretary text conversation is running on the local deterministic fallback until an inference provider is configured.",
     };
   }
 
@@ -288,26 +221,39 @@ function buildSummary(params: {
     return {
       mode: "deterministic_fallback" as const,
       summary:
-        "Samantha text conversation is running on the local deterministic fallback until an inference provider is configured.",
+        "Secretary text conversation is running on the local deterministic fallback until an inference provider is configured.",
     };
   }
 
-  const definition = providerDefinitionMap[selectedProvider.id];
+  if (!selectedProvider.model) {
+    return {
+      mode: "deterministic_fallback" as const,
+      summary: `${selectedProvider.label} is selected, but no model is set yet. The secretary is still on local deterministic fallback.`,
+    };
+  }
+
   const runtimeReady = providerHasUsableAuth({
-    authMode: definition.authMode,
+    authMode: selectedProvider.authMode,
     apiKey: selectedProvider.apiKeyConfigured ? "configured" : null,
   });
 
   if (!runtimeReady) {
     return {
       mode: "deterministic_fallback" as const,
-      summary: `Samantha is set to use ${selectedProvider.label}, but credentials are missing. The local deterministic fallback is still active.`,
+      summary: `The secretary is set to use ${selectedProvider.label}, but credentials are missing. The local deterministic fallback is still active.`,
     };
   }
 
+  const endpointPhrase =
+    selectedProvider.accessMode === "local_runtime"
+      ? "local runtime"
+      : selectedProvider.accessMode === "linked_account"
+        ? "linked runtime"
+        : "provider";
+
   return {
     mode: "provider" as const,
-    summary: `Samantha text conversation is configured to use ${selectedProvider.label} on ${selectedProvider.model}.`,
+    summary: `Secretary text conversation is configured to use ${selectedProvider.label} on ${selectedProvider.model} through the ${endpointPhrase} path.`,
   };
 }
 
@@ -315,7 +261,7 @@ export async function loadInferenceSettings(): Promise<InferenceSettingsResponse
   const storedSettings = await readStoredSettings();
   const storedSecrets = await readStoredSecrets();
 
-  const providers = providerDefinitions.map((definition) => {
+  const providers = inferenceProviderDefinitions.map((definition) => {
     const storedProvider = storedSettings.providers[definition.id];
     const apiKey = storedSecrets[definition.id]?.apiKey?.trim() || null;
     const baseUrl = normalizeBaseUrl(definition.id, storedProvider?.baseUrl);
@@ -331,19 +277,26 @@ export async function loadInferenceSettings(): Promise<InferenceSettingsResponse
       label: definition.label,
       description: definition.description,
       authMode: definition.authMode,
+      docsUrl: definition.docsUrl,
+      packageName: definition.packageName,
+      providerFamily: definition.providerFamily,
+      accessMode: definition.accessMode,
+      availableInApp: definition.availableInApp,
       baseUrl,
       model,
       maxOutputTokens,
-      apiKeyConfigured: Boolean(apiKey),
+      apiKeyConfigured: providerSupportsStoredApiKey(definition.authMode) && Boolean(apiKey),
       supportsModelFetch: definition.supportsModelFetch,
       supportsReasoningEffort: definition.supportsReasoningEffort,
       isSelected,
-      summary: toProviderSummary({
-        definition,
+      summary: buildProviderSummary({
+        label: definition.label,
+        authMode: definition.authMode,
         baseUrl,
         model,
-        apiKey,
         isSelected,
+        apiKeyConfigured: Boolean(apiKey),
+        accessMode: definition.accessMode,
       }),
     };
   });
@@ -358,6 +311,7 @@ export async function loadInferenceSettings(): Promise<InferenceSettingsResponse
     settings: {
       enabled: storedSettings.enabled,
       mode: summary.mode,
+      activeTarget: storedSettings.activeTarget,
       selectedProviderId: storedSettings.selectedProviderId,
       reasoningEffort: storedSettings.reasoningEffort,
       source: "file",
@@ -374,7 +328,12 @@ export async function updateInferenceSettings(params: {
   const currentSecrets = await readStoredSecrets();
 
   if (params.request.providerConfig) {
-    const providerId = params.request.providerConfig.id;
+    const providerId = normalizeProviderId(params.request.providerConfig.id);
+
+    if (!providerId) {
+      throw new Error("Inference provider is not supported.");
+    }
+
     currentSettings.providers[providerId] = {
       baseUrl:
         params.request.providerConfig.baseUrl !== undefined
@@ -397,12 +356,17 @@ export async function updateInferenceSettings(params: {
     }
   }
 
+  const nextSelectedProviderId =
+    params.request.selectedProviderId !== undefined
+      ? normalizeProviderId(params.request.selectedProviderId)
+      : currentSettings.selectedProviderId;
+
   const nextSettings: StoredInferenceSettings = {
     enabled: params.request.enabled ?? currentSettings.enabled,
-    selectedProviderId:
-      params.request.selectedProviderId !== undefined
-        ? normalizeProviderId(params.request.selectedProviderId)
-        : currentSettings.selectedProviderId,
+    activeTarget:
+      params.request.activeTarget ??
+      (isLocalRuntimeProvider(nextSelectedProviderId) ? "local" : currentSettings.activeTarget),
+    selectedProviderId: nextSelectedProviderId,
     reasoningEffort: normalizeReasoningEffort(
       params.request.reasoningEffort ?? currentSettings.reasoningEffort,
     ),
@@ -419,37 +383,40 @@ function stripToOllamaRoot(baseUrl: string) {
   return baseUrl.replace(/\/v1$/i, "");
 }
 
-async function listMoonshotModels(params: {
+async function listGenericModels(params: {
+  providerId: InferenceProviderId;
   baseUrl: string;
   apiKey: string | null;
 }): Promise<InferenceModelListResponse> {
-  if (!params.apiKey) {
-    throw new Error("Set a Moonshot API key before fetching models.");
+  const headers: Record<string, string> = {};
+
+  if (params.apiKey) {
+    headers.Authorization = `Bearer ${params.apiKey}`;
   }
 
-  const response = await fetch(`${params.baseUrl}/models`, {
-    headers: {
-      Authorization: `Bearer ${params.apiKey}`,
-    },
-  });
+  const response = await fetch(`${params.baseUrl}/models`, { headers });
 
   if (!response.ok) {
-    throw new Error(`Moonshot model fetch failed (${response.status}).`);
+    throw new Error(`${params.providerId} model fetch failed (${response.status}).`);
   }
 
   const payload = (await response.json()) as {
     data?: Array<{
       id: string;
+      name?: string | null;
       owned_by?: string | null;
+      description?: string | null;
     }>;
   };
 
   return {
-    providerId: "moonshot",
+    providerId: params.providerId,
     source: "remote",
     models: (payload.data ?? []).map((model) => ({
       id: model.id,
+      name: model.name ?? model.id,
       ownedBy: model.owned_by ?? null,
+      description: model.description ?? null,
     })),
   };
 }
@@ -481,7 +448,7 @@ async function listOpenRouterModels(baseUrl: string): Promise<InferenceModelList
 }
 
 async function listOllamaModels(params: {
-  providerId: "ollama_local" | "ollama_cloud";
+  providerId: InferenceProviderId;
   baseUrl: string;
   apiKey: string | null;
 }): Promise<InferenceModelListResponse> {
@@ -553,47 +520,105 @@ function listOpencodeModels(): InferenceModelListResponse {
   };
 }
 
+async function listCodexModels(): Promise<InferenceModelListResponse> {
+  const payload = await listCodexCliModels();
+
+  return {
+    providerId: "codex_cli",
+    source: "static",
+    models: payload.models.map((model) => ({
+      id: model.id,
+      name: model.name ?? model.id,
+      ownedBy: model.modelProvider ?? null,
+      description: model.description ?? null,
+    })),
+  };
+}
+
 export async function listInferenceModels(
   providerId?: InferenceProviderId | null,
 ): Promise<InferenceModelListResponse> {
   const settings = await loadInferenceSettings();
-  const selectedProviderId =
-    providerId ?? settings.settings.selectedProviderId ?? "moonshot";
+  const selectedProviderId = providerId ?? settings.settings.selectedProviderId;
+
+  if (!selectedProviderId) {
+    throw new Error("Choose an inference provider before fetching models.");
+  }
+
   const selectedProvider = settings.providers.find(
     (provider) => provider.id === selectedProviderId,
   );
+  const definition = getInferenceProviderDefinition(selectedProviderId);
 
-  if (!selectedProvider) {
+  if (!selectedProvider || !definition) {
     throw new Error("Inference provider not found.");
+  }
+
+  if (!definition.supportsModelFetch) {
+    throw new Error(`Model fetch is not available for ${definition.label} yet.`);
   }
 
   const apiKey = selectedProvider.apiKeyConfigured
     ? (await readStoredSecrets())[selectedProvider.id]?.apiKey?.trim() || null
     : null;
 
-  switch (selectedProvider.id) {
-    case "moonshot":
-      return listMoonshotModels({
-        baseUrl: selectedProvider.baseUrl ?? providerDefinitionMap.moonshot.defaultBaseUrl!,
-        apiKey,
-      });
+  switch (definition.runtimeKind) {
     case "openrouter":
       return listOpenRouterModels(
-        selectedProvider.baseUrl ?? providerDefinitionMap.openrouter.defaultBaseUrl!,
+        selectedProvider.baseUrl ?? definition.defaultBaseUrl ?? "https://openrouter.ai/api/v1",
       );
-    case "ollama_local":
-    case "ollama_cloud":
-      return listOllamaModels({
-        providerId: selectedProvider.id,
-        baseUrl:
-          selectedProvider.baseUrl ??
-          providerDefinitionMap[selectedProvider.id].defaultBaseUrl!,
-        apiKey,
-      });
     case "huggingface":
       return listHuggingFaceModels();
     case "opencode":
       return listOpencodeModels();
+    case "codex_cli":
+      return listCodexModels();
+    case "ollama":
+      return listOllamaModels({
+        providerId: selectedProvider.id,
+        baseUrl:
+          selectedProvider.baseUrl ??
+          definition.defaultBaseUrl ??
+          "http://127.0.0.1:11434",
+        apiKey,
+      });
+    case "openai_compatible":
+      if (
+        selectedProvider.id === "ollama_cloud" &&
+        selectedProvider.baseUrl?.includes("ollama.com")
+      ) {
+        return listOllamaModels({
+          providerId: selectedProvider.id,
+          baseUrl: selectedProvider.baseUrl,
+          apiKey,
+        });
+      }
+
+      return listGenericModels({
+        providerId: selectedProvider.id,
+        baseUrl:
+          selectedProvider.baseUrl ??
+          definition.defaultBaseUrl ??
+          "http://127.0.0.1:1234/v1",
+        apiKey,
+      });
+    case "openai":
+    case "xai":
+    case "moonshot":
+    case "togetherai":
+    case "deepseek":
+    case "fireworks":
+    case "groq":
+      return listGenericModels({
+        providerId: selectedProvider.id,
+        baseUrl:
+          selectedProvider.baseUrl ??
+          definition.defaultBaseUrl ??
+          "https://api.openai.com/v1",
+        apiKey,
+      });
+    default:
+      throw new Error(`Model fetch is not available for ${definition.label} yet.`);
   }
 }
 
@@ -603,7 +628,7 @@ export async function getInferenceRuntimeConfig() {
     (provider) => provider.id === settings.settings.selectedProviderId,
   );
 
-  if (!settings.settings.enabled || !selectedProvider) {
+  if (!settings.settings.enabled || !selectedProvider || !selectedProvider.model) {
     return {
       enabled: false,
       providerId: null,
@@ -618,10 +643,11 @@ export async function getInferenceRuntimeConfig() {
     };
   }
 
-  const definition = providerDefinitionMap[selectedProvider.id];
-  const secret = (await readStoredSecrets())[selectedProvider.id]?.apiKey?.trim() || null;
+  const secret = selectedProvider.apiKeyConfigured
+    ? (await readStoredSecrets())[selectedProvider.id]?.apiKey?.trim() || null
+    : null;
   const runtimeReady = providerHasUsableAuth({
-    authMode: definition.authMode,
+    authMode: selectedProvider.authMode,
     apiKey: secret,
   });
 
@@ -629,7 +655,7 @@ export async function getInferenceRuntimeConfig() {
     enabled: runtimeReady,
     providerId: selectedProvider.id,
     providerLabel: selectedProvider.label,
-    authMode: definition.authMode,
+    authMode: selectedProvider.authMode,
     baseUrl: selectedProvider.baseUrl,
     model: selectedProvider.model,
     maxOutputTokens: selectedProvider.maxOutputTokens,

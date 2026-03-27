@@ -1,5 +1,5 @@
-import { HealthConsole } from "./health-console";
+import { redirect } from "next/navigation";
 
 export default function HealthPage() {
-  return <HealthConsole />;
+  redirect("/overview");
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { MemoryRecord, MemoryType, TaskRecord } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
+import { AppPage, NoticeBanner, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type MemoryApiResponse = {
@@ -282,22 +282,12 @@ export function MemoryBrowser() {
                   </option>
                 ))}
               </select>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  color: "var(--muted)",
-                  fontSize: 14,
-                }}
-              >
-                <input
-                  checked={includeSuppressed}
-                  onChange={(event) => setIncludeSuppressed(event.target.checked)}
-                  type="checkbox"
-                />
-                Show suppressed
-              </label>
+              <ToggleField
+                checked={includeSuppressed}
+                onChange={setIncludeSuppressed}
+                label="Show suppressed"
+                hint="Include hidden or muted memory items in the navigator."
+              />
             </div>
 
             <div className="compact-list inspector-list">
@@ -533,44 +523,38 @@ export function MemoryBrowser() {
                   <div
                     style={{
                       display: "flex",
-                      gap: 16,
+                      gap: 12,
                       flexWrap: "wrap",
-                      color: "var(--muted)",
-                      fontSize: 14,
                     }}
                   >
-                    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <input
-                        checked={selectedDraft.pinned}
-                        onChange={(event) =>
-                          setDrafts((current) => ({
-                            ...current,
-                            [selectedMemory.id]: {
-                              ...current[selectedMemory.id],
-                              pinned: event.target.checked,
-                            },
-                          }))
-                        }
-                        type="checkbox"
-                      />
-                      pinned
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <input
-                        checked={selectedDraft.suppressed}
-                        onChange={(event) =>
-                          setDrafts((current) => ({
-                            ...current,
-                            [selectedMemory.id]: {
-                              ...current[selectedMemory.id],
-                              suppressed: event.target.checked,
-                            },
-                          }))
-                        }
-                        type="checkbox"
-                      />
-                      suppressed
-                    </label>
+                    <ToggleField
+                      checked={selectedDraft.pinned}
+                      onChange={(next) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [selectedMemory.id]: {
+                            ...current[selectedMemory.id],
+                            pinned: next,
+                          },
+                        }))
+                      }
+                      label="Pinned"
+                      hint="Keep this memory surfaced more aggressively."
+                    />
+                    <ToggleField
+                      checked={selectedDraft.suppressed}
+                      onChange={(next) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [selectedMemory.id]: {
+                            ...current[selectedMemory.id],
+                            suppressed: next,
+                          },
+                        }))
+                      }
+                      label="Suppressed"
+                      hint="Hide it from normal recall without deleting it."
+                    />
                   </div>
                 </div>
 

@@ -1,5 +1,5 @@
-import { PersonaConsole } from "./persona-console";
+import { redirect } from "next/navigation";
 
 export default function PersonaPage() {
-  return <PersonaConsole />;
+  redirect("/settings/secretary");
 }

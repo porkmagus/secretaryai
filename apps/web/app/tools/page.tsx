@@ -1,5 +1,5 @@
-import { ToolsConsole } from "./tools-console";
+import { redirect } from "next/navigation";
 
 export default function ToolsPage() {
-  return <ToolsConsole />;
+  redirect("/settings/tools");
 }

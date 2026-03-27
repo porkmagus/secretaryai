@@ -47,6 +47,27 @@ export type RuntimeChatResponse = {
   }>;
 };
 
+export type RuntimeChatStreamRequest = {
+  conversationId?: string;
+  messageId?: string;
+  text?: string;
+};
+
+export type DeskChatMessageMetadata = {
+  conversationId: string;
+  traceId: string;
+  replyMode: "model" | "fallback" | "tool";
+  model: string | null;
+  providerError: string | null;
+  pendingApproval?: RuntimeChatResponse["pendingApproval"] | null;
+  contextSummary: {
+    memories: RuntimeMemoryContextItem[];
+    tasks: RuntimeTaskContextItem[];
+    research?: ResearchSpecialistResult;
+  };
+  totalTokens?: number;
+};
+
 export type MemoryType =
   | "semantic"
   | "episodic"
@@ -216,16 +237,73 @@ export type ToolApprovalDecisionResponse = {
 
 export type PersonaGender = "male" | "female";
 
+export type SecretaryMode =
+  | "workday"
+  | "personal"
+  | "travel"
+  | "deep_focus"
+  | "operator";
+
+export type SecretaryRelationshipRole =
+  | "private_secretary"
+  | "chief_of_staff"
+  | "operator"
+  | "companion"
+  | "household_coordinator";
+
+export type SecretaryPresenceStyle =
+  | "composed"
+  | "warm"
+  | "playful"
+  | "formal"
+  | "assertive";
+
+export type SecretaryResponseLength = "concise" | "balanced" | "expansive";
+export type SecretaryDirectness = "soft" | "balanced" | "direct";
+export type SecretaryInitiative = "reactive" | "balanced" | "proactive";
+export type SecretaryPlanningStyle = "checklist" | "narrative" | "executive";
+export type SecretaryGreetingStyle = "minimal" | "name_forward" | "warm";
+export type SecretaryClosingStyle = "none" | "next_steps" | "summary";
+export type SecretaryClarifyingStyle = "sparing" | "balanced" | "proactive";
+export type SecretaryReminderStyle = "gentle" | "balanced" | "firm";
+
+export type SecretaryCustomizationRecord = {
+  title: string | null;
+  mode: SecretaryMode;
+  relationshipRole: SecretaryRelationshipRole;
+  presenceStyle: SecretaryPresenceStyle;
+  responseLength: SecretaryResponseLength;
+  directness: SecretaryDirectness;
+  initiative: SecretaryInitiative;
+  planningStyle: SecretaryPlanningStyle;
+  greetingStyle: SecretaryGreetingStyle;
+  closingStyle: SecretaryClosingStyle;
+  clarifyingStyle: SecretaryClarifyingStyle;
+  reminderStyle: SecretaryReminderStyle;
+  addressPreference: string | null;
+  avoidances: string[];
+  exampleReply: string | null;
+  antiExampleReply: string | null;
+};
+
 export type PersonaSettingsRecord = {
   id: string;
   name: string;
   promptTemplate: string;
   toneMode: string | null;
   gender: PersonaGender | null;
+  avatar: PersonaAvatarRecord | null;
+  customization: SecretaryCustomizationRecord;
   behaviorRules: string[];
   voiceProfileId: string | null;
   isDefault: boolean;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type PersonaAvatarRecord = {
+  storageKey: string;
+  mimeType: string | null;
   updatedAt: string;
 };
 
@@ -243,46 +321,72 @@ export type PersonaSettingsResponse = {
   voiceProfiles: VoiceProfileRecord[];
 };
 
-export type InferenceProviderId =
-  | "moonshot"
-  | "ollama_local"
-  | "ollama_cloud"
-  | "openrouter"
-  | "huggingface"
-  | "opencode";
+export type InferenceProviderId = string;
 
 export type InferenceProviderAuthMode =
   | "api_key"
   | "none"
-  | "account_authorized";
+  | "account_authorized"
+  | "api_key_or_account";
+
+export type InferenceTarget = "provider" | "local";
+export type InferenceProviderCatalogFamily =
+  | "ai_sdk_provider"
+  | "openai_compatible"
+  | "community";
+export type InferenceProviderCatalogAccessMode =
+  | "direct_api"
+  | "linked_account"
+  | "local_runtime"
+  | "mcp_client";
+export type InferenceProviderCatalogEntry = {
+  id: string;
+  label: string;
+  docsUrl: string;
+  packageName: string | null;
+  providerFamily: InferenceProviderCatalogFamily;
+  accessMode: InferenceProviderCatalogAccessMode;
+  availableInApp: boolean;
+  summary: string;
+  source: "sdk_docs";
+};
+
+export type InferenceProviderRecord = {
+  id: InferenceProviderId;
+  label: string;
+  description: string;
+  authMode: InferenceProviderAuthMode;
+  docsUrl: string;
+  packageName: string | null;
+  providerFamily: InferenceProviderCatalogFamily;
+  accessMode: InferenceProviderCatalogAccessMode;
+  availableInApp: boolean;
+  baseUrl: string | null;
+  model: string | null;
+  maxOutputTokens: number | null;
+  apiKeyConfigured: boolean;
+  supportsModelFetch: boolean;
+  supportsReasoningEffort: boolean;
+  isSelected: boolean;
+  summary: string;
+};
 
 export type InferenceSettingsResponse = {
   settings: {
     enabled: boolean;
     mode: "deterministic_fallback" | "provider";
+    activeTarget: InferenceTarget;
     selectedProviderId: InferenceProviderId | null;
     reasoningEffort: "minimal" | "low" | "medium" | "high";
     source: "file" | "env" | "default";
     summary: string;
   };
-  providers: Array<{
-    id: InferenceProviderId;
-    label: string;
-    description: string;
-    authMode: InferenceProviderAuthMode;
-    baseUrl: string | null;
-    model: string | null;
-    maxOutputTokens: number | null;
-    apiKeyConfigured: boolean;
-    supportsModelFetch: boolean;
-    supportsReasoningEffort: boolean;
-    isSelected: boolean;
-    summary: string;
-  }>;
+  providers: InferenceProviderRecord[];
 };
 
 export type UpdateInferenceSettingsRequest = {
   enabled?: boolean;
+  activeTarget?: InferenceTarget;
   selectedProviderId?: InferenceProviderId | null;
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
   providerConfig?: {
@@ -313,6 +417,7 @@ export type UpdatePersonaSettingsRequest = {
   behaviorRules?: string[];
   personaProfile?: string;
   voiceProfileId?: string | null;
+  customization?: Partial<SecretaryCustomizationRecord>;
 };
 
 export type SystemHealthResponse = {
@@ -507,6 +612,7 @@ export type RuntimePersonaContext = {
   soul: string;
   toneMode?: string | null;
   gender?: PersonaGender | null;
+  customization?: SecretaryCustomizationRecord;
   behaviorRules: string[];
 };
 
@@ -851,12 +957,83 @@ function soulStyleLead(context: RuntimeTurnContext) {
   const personaName = context.persona?.name?.trim() || "Secretary";
   const tone = context.persona?.toneMode?.trim();
   const soulLine = firstSentence(context.persona?.soul);
+  const customization = context.persona?.customization;
 
   return {
+    customization,
     personaName,
     soulLine,
     tone,
   };
+}
+
+function pickReplyShape<T>(
+  context: RuntimeTurnContext,
+  options: {
+    concise: T;
+    balanced: T;
+    expansive?: T;
+  },
+) {
+  const preference = context.persona?.customization?.responseLength ?? "balanced";
+
+  if (preference === "concise") {
+    return options.concise;
+  }
+
+  if (preference === "expansive") {
+    return options.expansive ?? options.balanced;
+  }
+
+  return options.balanced;
+}
+
+function pickDirectness<T>(
+  context: RuntimeTurnContext,
+  options: {
+    soft: T;
+    balanced: T;
+    direct: T;
+  },
+) {
+  const preference = context.persona?.customization?.directness ?? "balanced";
+  return options[preference];
+}
+
+function greetingPrefix(context: RuntimeTurnContext) {
+  const preference = context.persona?.customization?.greetingStyle ?? "minimal";
+  const address =
+    context.persona?.customization?.addressPreference?.trim() ||
+    context.userDisplayName?.trim() ||
+    "";
+
+  if (preference === "minimal") {
+    return "";
+  }
+
+  if (preference === "warm") {
+    return address ? `${address}, ` : "Of course. ";
+  }
+
+  return address ? `${address}, ` : "";
+}
+
+function closingLine(context: RuntimeTurnContext, activeTasks: RuntimeTaskContextItem[]) {
+  const preference = context.persona?.customization?.closingStyle ?? "next_steps";
+
+  if (preference === "none") {
+    return "";
+  }
+
+  if (preference === "summary") {
+    return " In short: we have the context we need and can keep moving.";
+  }
+
+  if (activeTasks.length > 0) {
+    return ` Next step: ${activeTasks[0]?.title}.`;
+  }
+
+  return " Next step: point me at the next move and I'll keep it tidy.";
 }
 
 export function generateSecretaryReply(
@@ -867,7 +1044,7 @@ export function generateSecretaryReply(
   const { hasPriorContext, lastAssistantMessage, lastUserMessage } = summarizeRecentContext(
     context.recentMessages,
   );
-  const { personaName, soulLine, tone } = soulStyleLead(context);
+  const { personaName, soulLine, tone, customization } = soulStyleLead(context);
   const relevantMemories = context.relevantMemories.slice(0, 3);
   const activeTasks = context.activeTasks
     .filter(
@@ -888,6 +1065,7 @@ export function generateSecretaryReply(
   const shouldMentionMemoryLead =
     relevantMemories.length > 0 &&
     !wasRecentlyMentioned(lastAssistantMessage, memoryLead);
+  const warmLead = greetingPrefix(context);
   const taskLead =
     activeTasks.length > 0
       ? `Open reminders/tasks: ${activeTasks.map((task) => task.title).join(", ")}.`
@@ -907,9 +1085,15 @@ export function generateSecretaryReply(
 
   if (isGreeting(text)) {
     const soulPrefix = soulLine ? `${soulLine} ` : "";
-    return shouldMentionMemoryLead
+    const baseReply = shouldMentionMemoryLead
       ? `${soulPrefix}${personaName} is ready. ${memoryLead} I can help with planning, note-taking, and carrying memory forward between conversations.`
       : `${soulPrefix}${personaName} is ready. I can help with planning, note-taking, and carrying memory forward between conversations.`;
+
+    return `${warmLead}${pickReplyShape(context, {
+      concise: `${personaName} is ready.`,
+      balanced: baseReply,
+      expansive: `${baseReply}${closingLine(context, activeTasks)}`,
+    })}`.trim();
   }
 
   if (isFeelingQuestion(text)) {
@@ -921,9 +1105,17 @@ export function generateSecretaryReply(
       return "Yes, more normal. I'm sounding more like myself and less like a runtime log now.";
     }
 
-    return tone
-      ? `Steady. ${personaName} feels ${tone.toLowerCase()} and fully here with you.`
-      : `Steady, warm, and present. ${personaName} is here with you.`;
+    return pickDirectness(context, {
+      soft: tone
+        ? `${warmLead}Steady. ${personaName} feels ${tone.toLowerCase()} and fully here with you.`
+        : `${warmLead}Steady, warm, and present. ${personaName} is here with you.`,
+      balanced: tone
+        ? `${personaName} feels ${tone.toLowerCase()} and fully here with you.`
+        : `${personaName} is steady, warm, and present.`,
+      direct: tone
+        ? `${personaName} feels ${tone.toLowerCase()} and present.`
+        : `${personaName} is present and steady.`,
+    }).trim();
   }
 
   if (isMemoryRecallIntent(text)) {
@@ -936,7 +1128,11 @@ export function generateSecretaryReply(
   }
 
   if (isStatusQuestion(text)) {
-    return `${personaName} can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply.`;
+    return pickReplyShape(context, {
+      concise: `${personaName} can keep history, retrieve memory, manage tasks, and route internal research before replying.`,
+      balanced: `${personaName} can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply.`,
+      expansive: `${personaName} can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply. ${closingLine(context, activeTasks).trim()}`,
+    });
   }
 
   if (isMetaRuntimeQuestion(text)) {
@@ -959,12 +1155,16 @@ export function generateSecretaryReply(
       "add clearer daily-use conveniences like shortcuts, quick actions, and a calmer notification rhythm",
     ];
 
-    return `I would focus on five upgrades next: ${suggestions.join("; ")}. If you want, I can turn that into a priority order and start working through it.`;
+    return pickReplyShape(context, {
+      concise: `Five upgrades stand out: ${suggestions.slice(0, 3).join("; ")}.`,
+      balanced: `I would focus on five upgrades next: ${suggestions.join("; ")}. If you want, I can turn that into a priority order and start working through it.`,
+      expansive: `I would focus on five upgrades next: ${suggestions.join("; ")}. If you want, I can turn that into a priority order and start working through it.${closingLine(context, activeTasks)}`,
+    });
   }
 
   if (isOpinionIntent(text)) {
     return hasPriorContext
-      ? "Here is my honest take: keep the Desk central, keep Samantha sounding human, and keep reducing friction anywhere the system still feels like infrastructure instead of company."
+      ? "Here is my honest take: keep the Desk central, keep the secretary sounding human, and keep reducing friction anywhere the system still feels like infrastructure instead of company."
       : "Here is my honest take: keep the experience calm, human, and easy to live with before adding more complexity.";
   }
 
@@ -976,8 +1176,16 @@ export function generateSecretaryReply(
       )
     ) {
       return tone
-        ? `More honestly: I feel ${tone.toLowerCase()}, attentive, and a lot less mechanical than I did earlier. I'm not fighting the thread now, and I feel more present with you inside it.`
-        : "More honestly: I feel steady, attentive, and much less mechanical than I did earlier. I'm present in the conversation instead of narrating the machinery behind it.";
+        ? pickDirectness(context, {
+            soft: `More honestly: I feel ${tone.toLowerCase()}, attentive, and a lot less mechanical than I did earlier. I'm not fighting the thread now, and I feel more present with you inside it.`,
+            balanced: `More honestly: I feel ${tone.toLowerCase()}, attentive, and much less mechanical than I did earlier. I'm present with you in the thread now.`,
+            direct: `More honestly: I feel ${tone.toLowerCase()} and much less mechanical now.`,
+          })
+        : pickDirectness(context, {
+            soft: "More honestly: I feel steady, attentive, and much less mechanical than I did earlier. I'm present in the conversation instead of narrating the machinery behind it.",
+            balanced: "More honestly: I feel steady, attentive, and much less mechanical than I did earlier.",
+            direct: "More honestly: I feel steady and much less mechanical now.",
+          });
     }
 
     if (lastUserMessage && isVoiceQuestion(lastUserMessage)) {
@@ -985,10 +1193,14 @@ export function generateSecretaryReply(
     }
 
     if (lastUserMessage && isImprovementIntent(lastUserMessage)) {
-      return "The sharpest upgrade is still Samantha's conversational layer. Once she sounds natural every turn, the voice layer, memory layer, and onboarding polish all land better.";
+      return "The sharpest upgrade is still the secretary's conversational layer. Once the replies sound natural every turn, the voice layer, memory layer, and onboarding polish all land better.";
     }
 
-    return "I can go deeper. Point me at the part you want expanded and I'll stay concrete.";
+      return pickReplyShape(context, {
+        concise: "I can go deeper. Point me at the part you want expanded.",
+        balanced: "I can go deeper. Point me at the part you want expanded and I'll stay concrete.",
+        expansive: `I can go deeper. Point me at the part you want expanded and I'll stay concrete.${closingLine(context, activeTasks)}`,
+      });
   }
 
   if (isPushForDirectAnswer(text)) {
@@ -996,7 +1208,17 @@ export function generateSecretaryReply(
   }
 
   if (isAcknowledgement(text) && isShortFollowUp(text)) {
-    return hasPriorContext ? "Understood. I'm with you." : "Understood. I'm ready.";
+    return hasPriorContext
+      ? pickDirectness(context, {
+          soft: "Understood. I'm with you.",
+          balanced: "Understood. I'm with you.",
+          direct: "Understood.",
+        })
+      : pickDirectness(context, {
+          soft: "Understood. I'm ready.",
+          balanced: "Understood. I'm ready.",
+          direct: "Ready.",
+        });
   }
 
   const trimmedPreview =
@@ -1019,11 +1241,25 @@ export function generateSecretaryReply(
 
     return (
       researchLead ||
-      "Ask me for a quick take, options, or a concrete plan and I'll keep it plain."
+      pickDirectness(context, {
+        soft: "Ask me for a quick take, options, or a concrete plan and I'll keep it plain.",
+        balanced: "Ask me for a quick take, options, or a concrete plan and I'll keep it plain.",
+        direct: "Ask for a take, options, or a concrete plan.",
+      })
     );
   }
 
-  return researchLead || "Alright. I'm with you.";
+  return (
+    researchLead ||
+    pickReplyShape(context, {
+      concise: "Alright.",
+      balanced: "Alright. I'm with you.",
+      expansive:
+        customization?.initiative === "proactive"
+          ? "Alright. I'm with you and already thinking about the next useful move."
+          : "Alright. I'm with you.",
+    })
+  );
 }
 
 export function createTurnResponseFromText(params: {

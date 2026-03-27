@@ -1,5 +1,5 @@
-import { TelegramSettings } from "./telegram-settings";
+import { redirect } from "next/navigation";
 
 export default function ChannelsPage() {
-  return <TelegramSettings />;
+  redirect("/settings/channels");
 }

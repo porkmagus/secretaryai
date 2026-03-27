@@ -1,5 +1,5 @@
-import { MemoryBrowser } from "./memory-browser";
+import { redirect } from "next/navigation";
 
 export default function MemoryPage() {
-  return <MemoryBrowser />;
+  redirect("/activity/memory");
 }

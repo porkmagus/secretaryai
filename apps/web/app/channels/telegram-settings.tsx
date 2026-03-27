@@ -12,7 +12,7 @@ import type {
   TelegramSyncWebhookResponse,
   TelegramTestMessageResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
+import { AppPage, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type DraftState = {
@@ -292,52 +292,83 @@ export function TelegramSettings() {
 
   return (
     <AppPage>
-      <PageHero
-        eyebrow="Channels"
-        title="Telegram integration"
-        description={
-          <p>
-            Operate the live Telegram channel, verify webhook health, test outbound
-            delivery, and keep an eye on routed chats and reminder delivery from one surface.
-          </p>
-        }
-        meta={
-          <p>
-            {error ?? notice ?? (isLoading ? "Loading Telegram workspace..." : state.telegram?.healthSummary ?? "Telegram integration ready.")}
-          </p>
-        }
-        actions={
-          <div className="pill" style={{ borderColor: tone.border, color: tone.color, minWidth: 220, justifyContent: "center" }}>
-            Telegram status: {isLoading ? "loading" : tone.label}
-          </div>
-        }
+      <SurfaceCard
         tone="dark"
-      />
-
-      <div className="summary-strip">
-        {[
-          ["Health", state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown")],
-          ["Mode", state.telegram?.mode ?? draft.mode],
-          [
-            "Delivery",
-            draft.deliveryMode === "mirror_all"
-              ? "mirror"
-              : draft.deliveryMode === "telegram_when_away"
-                ? "when away"
-                : draft.deliveryMode === "important_only"
-                  ? "important only"
-                  : "web only",
-          ],
-          ["Conversations", String(state.telegram?.conversationCount ?? 0)],
-          ["Messages", String(state.telegram?.messageCount ?? 0)],
-          ["Due reminders", String(state.telegram?.dueReminderCount ?? 0)],
-        ].map(([label, value]) => (
-          <div key={label} className="summary-chip">
-            <p className="summary-chip-label">{label}</p>
-            <p className="summary-chip-value">{value}</p>
+        title="Channels"
+        description={<p>Telegram setup, delivery behavior, and reminder reach in one place.</p>}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {[
+              ["Health", state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown")],
+              ["Mode", state.telegram?.mode ?? draft.mode],
+              [
+                "Delivery",
+                draft.deliveryMode === "mirror_all"
+                  ? "mirror"
+                  : draft.deliveryMode === "telegram_when_away"
+                    ? "when away"
+                    : draft.deliveryMode === "important_only"
+                      ? "important only"
+                      : "web only",
+              ],
+              ["Conversations", String(state.telegram?.conversationCount ?? 0)],
+              ["Due", String(state.telegram?.dueReminderCount ?? 0)],
+            ].map(([label, value], index) => (
+              <div
+                key={String(label)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: 6,
+                  paddingLeft: index === 0 ? 0 : 10,
+                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
+                }}
+              >
+                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
+                  {label}
+                </span>
+                <span className="summary-chip-value" style={{ fontSize: 12 }}>
+                  {value}
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div
+              className="pill"
+              style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
+            >
+              Telegram: {isLoading ? "loading" : tone.label}
+            </div>
+            <button type="button" onClick={() => void refresh()} className="button-secondary">
+              {isLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+        </div>
+
+        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
+          {error ??
+            notice ??
+            (isLoading ? "Loading Telegram workspace..." : state.telegram?.healthSummary ?? "Telegram integration ready.")}
+        </p>
+      </SurfaceCard>
 
       {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
       {!error && notice ? <NoticeBanner tone="info">{notice}</NoticeBanner> : null}
@@ -346,13 +377,15 @@ export function TelegramSettings() {
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
             <SurfaceCard title="Telegram settings" description={<p>{state.telegram?.healthSummary ?? "Loading Telegram integration health..."}</p>} className="stack-md">
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text)", fontWeight: 600 }}>
-                  <input checked={draft.enabled} onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))} type="checkbox" />
-                  <span>Enable Telegram integration</span>
-                </label>
-                <button type="button" onClick={() => void refresh()} className="button-secondary">
-                  Refresh
-                </button>
+                <ToggleField
+                  checked={draft.enabled}
+                  onChange={(next) => setDraft((current) => ({ ...current, enabled: next }))}
+                  label="Enable Telegram integration"
+                  hint="Turns the Telegram channel on or off without changing the saved bot token."
+                />
+                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                  Keep Telegram setup here, then use the status card for runtime context.
+                </p>
               </div>
 
               <label style={{ display: "grid", gap: 6 }}>
@@ -403,7 +436,7 @@ export function TelegramSettings() {
                 </p>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ color: "var(--muted)", fontSize: 13 }}>How Samantha should reach you</span>
+                  <span style={{ color: "var(--muted)", fontSize: 13 }}>How the secretary should reach you</span>
                   <select
                     value={draft.deliveryMode}
                     onChange={(event) =>
@@ -414,7 +447,7 @@ export function TelegramSettings() {
                     }
                   >
                     <option value="web_only">Web only</option>
-                    <option value="mirror_all">Mirror every Samantha reply to Telegram</option>
+                    <option value="mirror_all">Mirror every secretary reply to Telegram</option>
                     <option value="telegram_when_away">Send to Telegram when the Desk has gone idle</option>
                     <option value="important_only">Telegram only for approvals, heartbeat, and important items</option>
                   </select>
@@ -437,7 +470,7 @@ export function TelegramSettings() {
                 </label>
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
                   The Desk reports light presence while it is open and visible. In <strong style={{ color: "var(--text)" }}>when away</strong> mode,
-                  Samantha mirrors replies to Telegram after that idle window passes.
+                  The secretary mirrors replies to Telegram after that idle window passes.
                 </p>
               </div>
 
@@ -480,44 +513,14 @@ export function TelegramSettings() {
               </div>
             </SurfaceCard>
 
-            <SurfaceCard
-              title="Recent Telegram conversations"
-              description={<p>Quick visibility into chats already routed into the shared memory core.</p>}
-              className="stack-md"
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                <Link href="/activity" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 700 }}>
-                  Open Activity
-                </Link>
-              </div>
-
-              {telegramConversations.length === 0 ? (
-                <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram conversations have been recorded yet.</p>
-              ) : (
-                <div className="compact-list">
-                  {telegramConversations.map((conversation) => (
-                    <div key={conversation.id} style={{ display: "grid", gap: 6, padding: "12px 0" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                        <p style={{ margin: 0, fontWeight: 700 }}>{conversation.title ?? "Telegram conversation"}</p>
-                        <span style={{ color: "var(--accent-strong)", fontSize: 12, fontWeight: 700 }}>
-                          {conversation.messageCount} messages
-                        </span>
-                      </div>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
-                        {snippet(conversation.lastMessagePreview, 140)}
-                      </p>
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                        Last activity {formatTimestamp(conversation.lastMessageAt)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SurfaceCard>
           </div>
 
           <aside style={{ display: "grid", gap: 20, alignContent: "start" }}>
-            <SurfaceCard title="Connection snapshot" className="stack-md">
+            <SurfaceCard
+              title="Status and delivery"
+              description={<p>Connection health, due reminders, and recent Telegram traffic in one compact column.</p>}
+              className="stack-md"
+            >
               <div className="compact-list">
                 {readiness.map((entry) => (
                   <div key={entry.label} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--muted)", padding: "9px 0" }}>
@@ -577,9 +580,13 @@ export function TelegramSettings() {
                   Last Telegram error: {state.telegram.lastError}
                 </p>
               ) : null}
-            </SurfaceCard>
-
-            <SurfaceCard title="Reminder delivery queue" className="stack-md">
+              <div className="section-rule" />
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Reminder queue</h3>
+                <Link href="/activity/tasks" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 700 }}>
+                  Open tasks
+                </Link>
+              </div>
               {telegramTasks.length === 0 ? (
                 <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram reminder tasks are visible yet.</p>
               ) : (
@@ -605,6 +612,36 @@ export function TelegramSettings() {
                       </div>
                     );
                   })}
+                </div>
+              )}
+              <div className="section-rule" />
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Recent Telegram conversations</h3>
+                <Link href="/activity" style={{ color: "var(--accent)", textDecoration: "none", fontWeight: 700 }}>
+                  Open activity
+                </Link>
+              </div>
+
+              {telegramConversations.length === 0 ? (
+                <p style={{ margin: 0, color: "var(--muted)" }}>No Telegram conversations have been recorded yet.</p>
+              ) : (
+                <div className="compact-list">
+                  {telegramConversations.map((conversation) => (
+                    <div key={conversation.id} style={{ display: "grid", gap: 6, padding: "12px 0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                        <p style={{ margin: 0, fontWeight: 700 }}>{conversation.title ?? "Telegram conversation"}</p>
+                        <span style={{ color: "var(--accent-strong)", fontSize: 12, fontWeight: 700 }}>
+                          {conversation.messageCount} messages
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.5 }}>
+                        {snippet(conversation.lastMessagePreview, 140)}
+                      </p>
+                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                        Last activity {formatTimestamp(conversation.lastMessageAt)}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
             </SurfaceCard>

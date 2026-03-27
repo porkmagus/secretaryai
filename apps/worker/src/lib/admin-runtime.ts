@@ -6,6 +6,8 @@ import type { AppConfig } from "@secretary/config";
 import {
   createMessageId,
   type OnboardingStatusResponse,
+  type PersonaAvatarRecord,
+  type SecretaryCustomizationRecord,
   type PersonaGender,
   type PersonaSettingsRecord,
   type PersonaSettingsResponse,
@@ -25,6 +27,7 @@ import {
 } from "@secretary/db";
 import { getSpeechServiceStatus } from "./speech-health.js";
 import {
+  defaultSecretaryName,
   defaultSecretaryPersonaProfile,
   defaultSecretarySoul,
   getSecretaryPersonaFilePath,
@@ -53,6 +56,145 @@ function normalizePersonaGender(value: unknown): PersonaGender {
   return value === "male" ? "male" : "female";
 }
 
+export function defaultSecretaryCustomization(): SecretaryCustomizationRecord {
+  return {
+    title: null,
+    mode: "workday",
+    relationshipRole: "private_secretary",
+    presenceStyle: "composed",
+    responseLength: "balanced",
+    directness: "balanced",
+    initiative: "balanced",
+    planningStyle: "executive",
+    greetingStyle: "minimal",
+    closingStyle: "next_steps",
+    clarifyingStyle: "sparing",
+    reminderStyle: "gentle",
+    addressPreference: null,
+    avoidances: [],
+    exampleReply: null,
+    antiExampleReply: null,
+  };
+}
+
+function parsePersonaAvatar(
+  toneProfile: Record<string, unknown> | null | undefined,
+): PersonaAvatarRecord | null {
+  const avatar =
+    toneProfile && typeof toneProfile.avatar === "object" && toneProfile.avatar
+      ? (toneProfile.avatar as Record<string, unknown>)
+      : null;
+
+  if (!avatar || typeof avatar.storageKey !== "string" || avatar.storageKey.trim().length === 0) {
+    return null;
+  }
+
+  return {
+    storageKey: avatar.storageKey,
+    mimeType: typeof avatar.mimeType === "string" ? avatar.mimeType : null,
+    updatedAt:
+      typeof avatar.updatedAt === "string" ? avatar.updatedAt : new Date().toISOString(),
+  };
+}
+
+export function parseSecretaryCustomization(
+  toneProfile: Record<string, unknown> | null | undefined,
+): SecretaryCustomizationRecord {
+  const defaults = defaultSecretaryCustomization();
+  const customization =
+    toneProfile && typeof toneProfile.customization === "object" && toneProfile.customization
+      ? (toneProfile.customization as Record<string, unknown>)
+      : null;
+
+  if (!customization) {
+    return defaults;
+  }
+
+  return {
+    title: typeof customization.title === "string" && customization.title.trim().length > 0
+      ? customization.title.trim()
+      : null,
+    mode:
+      customization.mode === "personal" ||
+      customization.mode === "travel" ||
+      customization.mode === "deep_focus" ||
+      customization.mode === "operator"
+        ? customization.mode
+        : defaults.mode,
+    relationshipRole:
+      customization.relationshipRole === "chief_of_staff" ||
+      customization.relationshipRole === "operator" ||
+      customization.relationshipRole === "companion" ||
+      customization.relationshipRole === "household_coordinator"
+        ? customization.relationshipRole
+        : defaults.relationshipRole,
+    presenceStyle:
+      customization.presenceStyle === "warm" ||
+      customization.presenceStyle === "playful" ||
+      customization.presenceStyle === "formal" ||
+      customization.presenceStyle === "assertive"
+        ? customization.presenceStyle
+        : defaults.presenceStyle,
+    responseLength:
+      customization.responseLength === "concise" ||
+      customization.responseLength === "expansive"
+        ? customization.responseLength
+        : defaults.responseLength,
+    directness:
+      customization.directness === "soft" || customization.directness === "direct"
+        ? customization.directness
+        : defaults.directness,
+    initiative:
+      customization.initiative === "reactive" || customization.initiative === "proactive"
+        ? customization.initiative
+        : defaults.initiative,
+    planningStyle:
+      customization.planningStyle === "checklist" ||
+      customization.planningStyle === "narrative"
+        ? customization.planningStyle
+        : defaults.planningStyle,
+    greetingStyle:
+      customization.greetingStyle === "name_forward" ||
+      customization.greetingStyle === "warm"
+        ? customization.greetingStyle
+        : defaults.greetingStyle,
+    closingStyle:
+      customization.closingStyle === "none" || customization.closingStyle === "summary"
+        ? customization.closingStyle
+        : defaults.closingStyle,
+    clarifyingStyle:
+      customization.clarifyingStyle === "balanced" ||
+      customization.clarifyingStyle === "proactive"
+        ? customization.clarifyingStyle
+        : defaults.clarifyingStyle,
+    reminderStyle:
+      customization.reminderStyle === "balanced" || customization.reminderStyle === "firm"
+        ? customization.reminderStyle
+        : defaults.reminderStyle,
+    addressPreference:
+      typeof customization.addressPreference === "string" &&
+      customization.addressPreference.trim().length > 0
+        ? customization.addressPreference.trim()
+        : null,
+    avoidances: Array.isArray(customization.avoidances)
+      ? customization.avoidances
+          .filter((entry): entry is string => typeof entry === "string")
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      : defaults.avoidances,
+    exampleReply:
+      typeof customization.exampleReply === "string" &&
+      customization.exampleReply.trim().length > 0
+        ? customization.exampleReply.trim()
+        : null,
+    antiExampleReply:
+      typeof customization.antiExampleReply === "string" &&
+      customization.antiExampleReply.trim().length > 0
+        ? customization.antiExampleReply.trim()
+        : null,
+  };
+}
+
 function toPersonaRecord(record: typeof personas.$inferSelect): PersonaSettingsRecord {
   return {
     id: record.id,
@@ -61,6 +203,8 @@ function toPersonaRecord(record: typeof personas.$inferSelect): PersonaSettingsR
     toneMode:
       typeof record.toneProfile?.mode === "string" ? record.toneProfile.mode : null,
     gender: normalizePersonaGender(record.toneProfile?.gender),
+    avatar: parsePersonaAvatar(record.toneProfile),
+    customization: parseSecretaryCustomization(record.toneProfile),
     behaviorRules: record.behaviorRules,
     voiceProfileId: record.voiceProfileId ?? null,
     isDefault: record.isDefault,
@@ -71,18 +215,25 @@ function toPersonaRecord(record: typeof personas.$inferSelect): PersonaSettingsR
 
 async function getConversationEngineStatus(config: AppConfig) {
   const inference = await loadInferenceSettings();
+  const selectedProvider =
+    inference.providers.find(
+      (provider) => provider.id === inference.settings.selectedProviderId,
+    ) ?? null;
 
-  if (
-    inference.settings.mode === "provider" &&
-    inference.settings.selectedProviderId
-  ) {
+  if (inference.settings.mode === "provider") {
+    if (!selectedProvider) {
+      return {
+        mode: "deterministic_fallback" as const,
+        provider: null,
+        model: null,
+        summary: inference.settings.summary,
+      };
+    }
+
     return {
       mode: "provider" as const,
-      provider: inference.settings.selectedProviderId,
-      model:
-        inference.providers.find(
-          (provider) => provider.id === inference.settings.selectedProviderId,
-        )?.model ?? null,
+      provider: selectedProvider.id,
+      model: selectedProvider.model,
       summary: inference.settings.summary,
     };
   }
@@ -118,10 +269,11 @@ async function ensureDefaultPersonaRecord(dbClient: DbClient, config: AppConfig)
     .insert(personas)
     .values({
       id: config.defaultPersonaId,
-      name: "Secretary",
+      name: defaultSecretaryName,
       toneProfile: {
         mode: "calm",
         gender: "female",
+        customization: defaultSecretaryCustomization(),
       },
       behaviorRules: [
         "Be warm, competent, and calm.",
@@ -180,6 +332,7 @@ async function ensureDefaultPersonaRecord(dbClient: DbClient, config: AppConfig)
     typeof persona.toneProfile?.mode === "string" && persona.toneProfile.mode.trim().length > 0
       ? persona.toneProfile.mode
       : "calm";
+  const customization = parseSecretaryCustomization(persona.toneProfile);
   let voiceProfileId = persona.voiceProfileId ?? null;
 
   if (voiceProfileId) {
@@ -211,6 +364,7 @@ async function ensureDefaultPersonaRecord(dbClient: DbClient, config: AppConfig)
           ...(persona.toneProfile ?? {}),
           mode: toneMode,
           gender,
+          customization,
         },
         voiceProfileId,
         updatedAt: new Date(),
@@ -262,6 +416,33 @@ export async function updatePersonaSettings(params: {
     params.request.toneMode?.trim() ||
     (typeof persona.toneProfile?.mode === "string" ? persona.toneProfile.mode : "calm");
   let voiceProfileId = persona.voiceProfileId ?? null;
+  const currentCustomization = parseSecretaryCustomization(persona.toneProfile);
+  const nextCustomization = {
+    ...currentCustomization,
+    ...(params.request.customization ?? {}),
+    title:
+      params.request.customization?.title !== undefined
+        ? params.request.customization.title?.trim() || null
+        : currentCustomization.title,
+    addressPreference:
+      params.request.customization?.addressPreference !== undefined
+        ? params.request.customization.addressPreference?.trim() || null
+        : currentCustomization.addressPreference,
+    avoidances:
+      params.request.customization?.avoidances !== undefined
+        ? params.request.customization.avoidances
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        : currentCustomization.avoidances,
+    exampleReply:
+      params.request.customization?.exampleReply !== undefined
+        ? params.request.customization.exampleReply?.trim() || null
+        : currentCustomization.exampleReply,
+    antiExampleReply:
+      params.request.customization?.antiExampleReply !== undefined
+        ? params.request.customization.antiExampleReply?.trim() || null
+        : currentCustomization.antiExampleReply,
+  };
   const nextSoul = params.request.promptTemplate?.trim() || persona.promptTemplate;
   const nextPersonaProfile =
     params.request.personaProfile?.trim() ||
@@ -305,6 +486,7 @@ export async function updatePersonaSettings(params: {
         ...(persona.toneProfile ?? {}),
         mode: toneMode,
         gender,
+        customization: nextCustomization,
       },
       behaviorRules:
         params.request.behaviorRules?.map((rule) => rule.trim()).filter(Boolean) ??
@@ -316,6 +498,32 @@ export async function updatePersonaSettings(params: {
 
   await saveSecretarySoul(nextSoul);
   await saveSecretaryPersonaProfile(nextPersonaProfile);
+
+  return getPersonaSettings(params.dbClient, params.config);
+}
+
+export async function updatePersonaAvatar(params: {
+  dbClient: DbClient;
+  config: AppConfig;
+  storageKey: string;
+  mimeType: string | null;
+}) {
+  const persona = await ensureDefaultPersonaRecord(params.dbClient, params.config);
+
+  await params.dbClient.db
+    .update(personas)
+    .set({
+      toneProfile: {
+        ...(persona.toneProfile ?? {}),
+        avatar: {
+          storageKey: params.storageKey,
+          mimeType: params.mimeType,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      updatedAt: new Date(),
+    })
+    .where(eq(personas.id, persona.id));
 
   return getPersonaSettings(params.dbClient, params.config);
 }

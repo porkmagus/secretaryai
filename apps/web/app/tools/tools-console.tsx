@@ -9,7 +9,7 @@ import type {
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
+import { AppPage, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
 
 type EditableTool = {
@@ -18,6 +18,7 @@ type EditableTool = {
 };
 
 type ExecutionFilter = "all" | "pending" | "completed" | "denied" | "failed";
+type AccessPreset = "restrictive" | "full_access";
 
 function toolGroupLabel(tool: ToolRecord) {
   switch (tool.key) {
@@ -108,6 +109,51 @@ function formatRequest(requestJson: Record<string, unknown>) {
   return text === "no payload" ? "No request payload recorded." : text;
 }
 
+function presetLabel(preset: AccessPreset) {
+  return preset === "restrictive" ? "Restrictive" : "YOLO / Full access";
+}
+
+function presetHint(preset: AccessPreset) {
+  return preset === "restrictive"
+    ? "Keeps search flowing, but returns enabled tools to ask-first review."
+    : "Lets every enabled tool run immediately without approval prompts.";
+}
+
+function draftForPreset(tool: ToolRecord, preset: AccessPreset): EditableTool {
+  if (preset === "full_access") {
+    return {
+      approvalMode: tool.enabled ? "always_allow" : tool.approvalMode,
+      enabled: tool.enabled,
+    };
+  }
+
+  if (!tool.enabled) {
+    return {
+      approvalMode: tool.approvalMode,
+      enabled: false,
+    };
+  }
+
+  if (tool.key === "web_search") {
+    return {
+      approvalMode: "always_allow",
+      enabled: true,
+    };
+  }
+
+  if (tool.key === "email_send") {
+    return {
+      approvalMode: "deny",
+      enabled: tool.enabled,
+    };
+  }
+
+  return {
+    approvalMode: "ask_first",
+    enabled: true,
+  };
+}
+
 export function ToolsConsole() {
   const [tools, setTools] = useState<ToolRecord[]>([]);
   const [executions, setExecutions] = useState<ToolExecutionRecord[]>([]);
@@ -116,6 +162,7 @@ export function ToolsConsole() {
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [savingToolId, setSavingToolId] = useState<string | null>(null);
+  const [presetBusy, setPresetBusy] = useState<AccessPreset | null>(null);
   const [decisionId, setDecisionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -255,6 +302,53 @@ export function ToolsConsole() {
     }
   }
 
+  async function applyPreset(preset: AccessPreset) {
+    setPresetBusy(preset);
+    setError(null);
+    setStatusMessage(null);
+
+    const nextDrafts = Object.fromEntries(
+      tools.map((tool) => [tool.id, draftForPreset(tool, preset)]),
+    ) as Record<string, EditableTool>;
+
+    setDrafts((current) => ({
+      ...current,
+      ...nextDrafts,
+    }));
+
+    try {
+      const results = await Promise.all(
+        tools.map(async (tool) => {
+          const response = await fetch(`/api/tools/${tool.id}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(nextDrafts[tool.id]),
+          });
+          const payload = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(payload.error ?? `Unable to update ${tool.name}.`);
+          }
+
+          return true;
+        }),
+      );
+
+      if (results.length > 0) {
+        setStatusMessage(`${presetLabel(preset)} applied across ${tools.length} tools.`);
+      }
+      await load();
+    } catch (applyError) {
+      setError(
+        applyError instanceof Error ? applyError.message : "Unable to apply access preset.",
+      );
+    } finally {
+      setPresetBusy(null);
+    }
+  }
+
   const dirtyToolIds = useMemo(
     () =>
       tools
@@ -343,26 +437,81 @@ export function ToolsConsole() {
 
   return (
     <AppPage width="1280px">
-      <PageHero
-        eyebrow="Tools Console"
-        title="Tools, policies, and audit"
-        description={
-          <p>
-            Browse the tool registry by capability, tune one policy at a time, and open
-            a selected execution only when you need the detail.
-          </p>
-        }
-        meta={
-          <p>
-            {error ??
-              statusMessage ??
-              (isLoading
-                ? "Loading tool registry..."
-                : `${tools.length} tools · ${executions.length} recent executions · ${dirtyToolIds.length} unsaved policies`)}
-          </p>
-        }
+      <SurfaceCard
         tone="dark"
-      />
+        title="Tools"
+        description={<p>Policies first, audit second. Pick a tool, tune it, then inspect only the runs that matter.</p>}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {[
+              ["Pending", pending.length],
+              ["Completed", executions.filter((execution) => execution.executionStatus === "completed").length],
+              ["Failures", executions.filter((execution) => execution.executionStatus === "failed").length],
+              ["Dirty", dirtyToolIds.length],
+            ].map(([label, value], index) => (
+              <div
+                key={String(label)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "baseline",
+                  gap: 6,
+                  paddingLeft: index === 0 ? 0 : 10,
+                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
+                }}
+              >
+                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
+                  {label}
+                </span>
+                <span className="summary-chip-value" style={{ fontSize: 12 }}>
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {(["restrictive", "full_access"] as const).map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => void applyPreset(preset)}
+                className={preset === "full_access" ? "button-danger" : "button-secondary"}
+                disabled={presetBusy !== null}
+                title={presetHint(preset)}
+              >
+                {presetBusy === preset ? "Applying..." : presetLabel(preset)}
+              </button>
+            ))}
+            <button type="button" onClick={() => void load()} className="button-secondary">
+              {isLoading ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+        </div>
+
+        <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
+          {error ??
+            statusMessage ??
+            (isLoading
+              ? "Loading tool registry..."
+              : `${tools.length} tools loaded with ${executions.length} recent executions.`)}
+        </p>
+      </SurfaceCard>
 
       {(error || statusMessage) ? (
         <NoticeBanner tone={error ? "error" : "success"}>
@@ -370,28 +519,69 @@ export function ToolsConsole() {
         </NoticeBanner>
       ) : null}
 
-      <div className="summary-strip">
-        {[
-          ["Pending approvals", pending.length],
-          ["Completed actions", executions.filter((execution) => execution.executionStatus === "completed").length],
-          ["Recent failures", executions.filter((execution) => execution.executionStatus === "failed").length],
-          ["Policy changes", dirtyToolIds.length],
-        ].map(([label, value]) => (
-          <div key={String(label)} className="summary-chip">
-            <p className="summary-chip-label">{label}</p>
-            <p className="summary-chip-value">{value}</p>
-          </div>
-        ))}
-      </div>
-
       <section className="inspector-grid">
         <aside className="inspector-sidebar">
           <SurfaceCard
             tone="dark"
             title="Tool navigator"
-            description={<p>Pick a capability group, then inspect one tool policy in focus.</p>}
+            description={<p>Pick a capability group, inspect one tool policy, and keep approvals in the same lane.</p>}
             className="stack-sm"
           >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                {pending.length === 0
+                  ? "Nothing is waiting for approval."
+                  : `${pending.length} execution${pending.length === 1 ? "" : "s"} waiting for approval.`}
+              </p>
+              <button type="button" onClick={() => void load()} className="button-secondary">
+                Refresh
+              </button>
+            </div>
+
+            {pending.length > 0 ? (
+              <>
+                <div className="compact-list">
+                  {pending.slice(0, 3).map((execution) => (
+                    <div key={execution.id} style={{ display: "grid", gap: 8, padding: "10px 0" }}>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>{execution.toolName}</p>
+                        <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                          {snippet(execution.summary, 100)}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => void decide(execution.id, true)}
+                          disabled={decisionId === execution.id}
+                          className="button-primary"
+                        >
+                          {decisionId === execution.id ? "Working..." : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void decide(execution.id, false)}
+                          disabled={decisionId === execution.id}
+                          className="button-danger"
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="section-rule" />
+              </>
+            ) : null}
+
             <div className="compact-list inspector-list">
               {groupedTools.map((entry) => (
                 <div key={entry.group} style={{ display: "grid", gap: 8, padding: "6px 0 10px" }}>
@@ -454,47 +644,6 @@ export function ToolsConsole() {
             </div>
           </SurfaceCard>
 
-          <SurfaceCard title="Pending approvals" className="stack-sm">
-            <button type="button" onClick={() => void load()} className="button-secondary">
-              Refresh
-            </button>
-            {pending.length === 0 ? (
-              <p style={{ margin: 0, color: "var(--muted)" }}>
-                Nothing is waiting for approval right now.
-              </p>
-            ) : (
-              <div className="compact-list">
-                {pending.slice(0, 4).map((execution) => (
-                  <div key={execution.id} style={{ display: "grid", gap: 8, padding: "12px 0" }}>
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>{execution.toolName}</p>
-                      <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
-                        {execution.summary}
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        onClick={() => void decide(execution.id, true)}
-                        disabled={decisionId === execution.id}
-                        className="button-primary"
-                      >
-                        {decisionId === execution.id ? "Working..." : "Approve"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void decide(execution.id, false)}
-                        disabled={decisionId === execution.id}
-                        className="button-danger"
-                      >
-                        Deny
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </SurfaceCard>
         </aside>
 
         <div className="inspector-panel">
@@ -506,7 +655,12 @@ export function ToolsConsole() {
             </SurfaceCard>
           ) : (
             <>
-              <SurfaceCard tone="dark" className="stack-sm">
+              <SurfaceCard
+                tone="dark"
+                title="Selected tool"
+                description={<p>Edit the live policy here, then drop into execution history only when you need the audit trail.</p>}
+                className="stack-sm"
+              >
                 <div
                   style={{
                     display: "flex",
@@ -547,7 +701,7 @@ export function ToolsConsole() {
                 </div>
               </SurfaceCard>
 
-              <SurfaceCard title="Policy inspector" className="stack-md">
+              <SurfaceCard title="Policy" className="stack-md">
                 <div
                   style={{
                     display: "grid",
@@ -573,22 +727,20 @@ export function ToolsConsole() {
                     <option value="deny">Deny</option>
                   </select>
 
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
-                    <input
-                      checked={selectedDraft.enabled}
-                      onChange={(event) =>
-                        setDrafts((current) => ({
-                          ...current,
-                          [selectedTool.id]: {
-                            ...current[selectedTool.id],
-                            enabled: event.target.checked,
-                          },
-                        }))
-                      }
-                      type="checkbox"
-                    />
-                    Tool enabled
-                  </label>
+                  <ToggleField
+                    checked={selectedDraft.enabled}
+                    onChange={(next) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedTool.id]: {
+                          ...current[selectedTool.id],
+                          enabled: next,
+                        },
+                      }))
+                    }
+                    label="Tool enabled"
+                    hint="Disabled tools remain visible but cannot execute."
+                  />
                 </div>
 
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.55 }}>
@@ -631,7 +783,11 @@ export function ToolsConsole() {
                 </div>
               </SurfaceCard>
 
-              <SurfaceCard title="Execution browser" className="stack-md">
+              <SurfaceCard
+                title="Execution browser"
+                description={<p>Filter recent runs, then inspect the payloads only for the execution you care about.</p>}
+                className="stack-md"
+              >
                 <div
                   style={{
                     display: "grid",

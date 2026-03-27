@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import type { RuntimeChatRequest, RuntimeChatResponse } from "@secretary/core-runtime";
+import type { RuntimeChatStreamRequest } from "@secretary/core-runtime";
 
 type IncomingBody = {
   conversationId?: string;
+  messageId?: string;
   text?: string;
 };
 
@@ -19,21 +20,14 @@ export async function POST(request: Request) {
 
   const workerBaseUrl =
     process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
-
-  const payload: RuntimeChatRequest = {
+  const payload: RuntimeChatStreamRequest = {
     conversationId: body.conversationId,
-    channel: "web",
-    userId: process.env.DEFAULT_USER_ID ?? "local-owner",
-    message: {
-      text,
-    },
-    metadata: {
-      requestId: `web_${crypto.randomUUID()}`,
-    },
+    messageId: body.messageId,
+    text,
   };
 
   try {
-    const response = await fetch(`${workerBaseUrl}/runtime/chat`, {
+    const response = await fetch(`${workerBaseUrl}/runtime/chat/stream`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -43,14 +37,25 @@ export async function POST(request: Request) {
     });
 
     if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
       return NextResponse.json(
-        { error: "Worker request failed." },
-        { status: 502 },
+        { error: errorPayload?.error ?? "Worker request failed." },
+        { status: response.status === 400 ? 400 : 502 },
       );
     }
 
-    const data = (await response.json()) as RuntimeChatResponse;
-    return NextResponse.json(data);
+    return new Response(response.body, {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type":
+          response.headers.get("Content-Type") ?? "text/event-stream",
+      },
+      status: response.status,
+      statusText: response.statusText,
+    });
   } catch {
     return NextResponse.json(
       { error: "Worker is unavailable." },

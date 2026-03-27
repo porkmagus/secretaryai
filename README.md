@@ -25,7 +25,7 @@ First time only:
 2. Open [`.env`](./.env) and fill in what you care about:
    - `TELEGRAM_BOT_TOKEN` if you want the live Telegram bot
    - `APP_AUTH_PASSWORD` and `APP_SESSION_SECRET` if you want the sign-in gate
-   - any inference provider keys you want Samantha to use
+  - any inference provider keys you want the secretary to use
 3. Double-click [`start-secretary-dev.cmd`](./start-secretary-dev.cmd)
 
 Daily use after that:

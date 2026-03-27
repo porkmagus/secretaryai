@@ -31,6 +31,7 @@ runtime/caddy/data/*
 runtime/caddy/config/*
 runtime/backups/*
 runtime/exports/*
+runtime/persona/avatars/*
 runtime/venvs/*
 !runtime/postgres/.gitkeep
 !runtime/redis/.gitkeep

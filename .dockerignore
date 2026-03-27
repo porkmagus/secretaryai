@@ -24,6 +24,7 @@ runtime/speech/tts
 runtime/speech/profiles
 runtime/backups
 runtime/exports
+runtime/persona/avatars
 runtime/venvs
 *.log
 .env

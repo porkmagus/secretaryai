@@ -1,19 +1,15 @@
-import { generateText } from "ai";
-import { createHuggingFace } from "@ai-sdk/huggingface";
-import { createMoonshotAI } from "@ai-sdk/moonshotai";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { createOpencode } from "ai-sdk-provider-opencode-sdk";
-import { createOllama } from "ollama-ai-provider-v2";
-import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
+import { generateText, streamText } from "ai";
 import {
   createTurnResponseFromText,
   generateSecretaryReply,
-  type InferenceProviderId,
   type RuntimeChatRequest,
   type RuntimeChatResponse,
   type RuntimeTurnContext,
 } from "@secretary/core-runtime";
+import {
+  resolveInferenceLanguageModel,
+  type InferenceRuntimeConfig,
+} from "./ai-sdk-registry.js";
 
 type ConversationReplyResult = {
   mode: "model" | "fallback";
@@ -23,21 +19,21 @@ type ConversationReplyResult = {
   response: RuntimeChatResponse;
 };
 
-type InferenceRuntimeConfig = {
-  providerId: InferenceProviderId | null;
-  apiKey: string | null;
-  baseUrl: string | null;
-  model: string | null;
-  maxOutputTokens: number | null;
-  reasoningEffort: "minimal" | "low" | "medium" | "high";
-  enabled: boolean;
-};
-
-function hasElevatedReasoning(
-  reasoningEffort: InferenceRuntimeConfig["reasoningEffort"],
-) {
-  return reasoningEffort === "medium" || reasoningEffort === "high";
-}
+export type ConversationStreamPlan =
+  | {
+      kind: "model";
+      mode: "model";
+      model?: string;
+      providerError: null;
+      result: ReturnType<typeof streamText>;
+    }
+  | {
+      kind: "text";
+      mode: "fallback";
+      model?: string;
+      providerError: string | null;
+      text: string;
+    };
 
 function getMaxOutputTokens(inference: InferenceRuntimeConfig) {
   return inference.maxOutputTokens ?? 700;
@@ -51,7 +47,52 @@ function formatList(title: string, items: string[]) {
   return `${title}:\n${items.map((item) => `- ${item}`).join("\n")}`;
 }
 
+function formatSecretarySettings(context: RuntimeTurnContext) {
+  const customization = context.persona?.customization;
+
+  if (!customization) {
+    return "";
+  }
+
+  const lines = [
+    `Role posture: ${customization.relationshipRole.replaceAll("_", " ")}`,
+    `Operating mode: ${customization.mode.replaceAll("_", " ")}`,
+    `Presence style: ${customization.presenceStyle}`,
+    `Reply length: ${customization.responseLength}`,
+    `Directness: ${customization.directness}`,
+    `Initiative level: ${customization.initiative}`,
+    `Planning style: ${customization.planningStyle}`,
+    `Greeting style: ${customization.greetingStyle}`,
+    `Closing style: ${customization.closingStyle}`,
+    `Clarifying questions: ${customization.clarifyingStyle}`,
+    `Reminder tone: ${customization.reminderStyle}`,
+  ];
+
+  if (customization.title) {
+    lines.push(`Displayed title: ${customization.title}`);
+  }
+
+  if (customization.addressPreference) {
+    lines.push(`Preferred way to address the user: ${customization.addressPreference}`);
+  }
+
+  if (customization.avoidances.length > 0) {
+    lines.push(`Avoid: ${customization.avoidances.join(", ")}`);
+  }
+
+  if (customization.exampleReply) {
+    lines.push(`Positive example reply:\n${customization.exampleReply}`);
+  }
+
+  if (customization.antiExampleReply) {
+    lines.push(`Reply to avoid:\n${customization.antiExampleReply}`);
+  }
+
+  return `Secretary presentation and habits:\n${lines.map((line) => `- ${line}`).join("\n")}`;
+}
+
 function buildConversationInstructions(context: RuntimeTurnContext) {
+  const secretaryName = context.persona?.name?.trim();
   const soul = context.persona?.soul?.trim() || "";
   const personaProfile = context.persona?.personaProfile?.trim() || "";
   const behaviorRules = context.persona?.behaviorRules ?? [];
@@ -76,7 +117,7 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
     : "";
 
   return [
-    "You are writing Samantha's next reply in an ongoing private conversation.",
+    `You are writing ${secretaryName && secretaryName !== "SetAgentName" ? `${secretaryName}'s` : "the secretary's"} next reply in an ongoing private conversation.`,
     "Answer naturally and directly. Sound like a real person, not a status panel or runtime log.",
     "Use memory and task context only when it genuinely helps the current answer.",
     "Do not mention hidden system state, traces, or tooling unless the user asks for internals.",
@@ -84,6 +125,7 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
     "If the user asks for more detail, expand on the previous answer instead of resetting the thread.",
     soul,
     personaProfile,
+    formatSecretarySettings(context),
     formatList("Behavior rules", behaviorRules),
     memories.length > 0 ? formatList("Relevant memories", memories) : "",
     shouldSurfaceTasks ? formatList("Open tasks", tasks) : "",
@@ -96,13 +138,16 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
 function looksLikePromptLeakage(text: string) {
   const normalized = text.toLowerCase();
   const leakageSignals = [
-    "samantha persona profile",
-    "# samantha soul",
-    "# samantha persona profile",
+    "persona profile",
+    "# setagentname soul",
+    "# setagentname persona profile",
+    "# secretary soul",
+    "# secretary persona profile",
     "behavior rules",
     "local owner",
     "role: private secretary",
-    "what samantha feels like",
+    "what the secretary feels like",
+    "secretary presentation and habits",
     "avoid -",
   ];
 
@@ -130,7 +175,7 @@ function renderRecentConversation(context: RuntimeTurnContext) {
   const lines = context.recentMessages.slice(-12).map((message) => {
     const role =
       message.role === "assistant" || message.role === "specialist" || message.role === "tool"
-        ? "Samantha"
+        ? context.persona?.name?.trim() || "Secretary"
         : message.role === "system"
           ? "System"
           : context.userDisplayName || "User";
@@ -141,125 +186,22 @@ function renderRecentConversation(context: RuntimeTurnContext) {
   return lines.join("\n");
 }
 
-function resolveLanguageModel(
-  inference: InferenceRuntimeConfig,
-): {
-  model: LanguageModelV3;
-  providerOptions?: SharedV3ProviderOptions;
-} | null {
-  if (!inference.enabled || !inference.providerId || !inference.model) {
-    return null;
-  }
-
-  switch (inference.providerId) {
-    case "moonshot": {
-      if (!inference.apiKey) {
-        return null;
-      }
-
-      return {
-        model: createMoonshotAI({
-          apiKey: inference.apiKey,
-          baseURL: inference.baseUrl ?? undefined,
-        })(inference.model),
-        providerOptions:
-          hasElevatedReasoning(inference.reasoningEffort)
-            ? {
-                moonshotai: {
-                  thinking: {
-                    type: "enabled",
-                  },
-                },
-              } satisfies SharedV3ProviderOptions
-            : undefined,
-      };
-    }
-
-    case "openrouter": {
-      if (!inference.apiKey) {
-        return null;
-      }
-
-      return {
-        model: createOpenRouter({
-          apiKey: inference.apiKey,
-          baseURL: inference.baseUrl ?? undefined,
-          compatibility: "strict",
-        }).chat(inference.model),
-        providerOptions:
-          inference.reasoningEffort === "minimal"
-            ? undefined
-            : ({
-                openrouter: {
-                  reasoning: {
-                    effort: inference.reasoningEffort,
-                  },
-                },
-              } satisfies SharedV3ProviderOptions),
-      };
-    }
-
-    case "huggingface": {
-      if (!inference.apiKey) {
-        return null;
-      }
-
-      return {
-        model: createHuggingFace({
-          apiKey: inference.apiKey,
-          baseURL: inference.baseUrl ?? undefined,
-        }).responses(inference.model),
-        providerOptions: undefined,
-      };
-    }
-
-    case "ollama_local": {
-      return {
-        model: createOllama({
-          baseURL: inference.baseUrl ?? undefined,
-          compatibility: "strict",
-          name: "ollama",
-        }).chat(inference.model),
-        providerOptions: undefined,
-      };
-    }
-
-    case "ollama_cloud": {
-      if (!inference.apiKey) {
-        return null;
-      }
-
-      const compatibleProvider = createOpenAICompatible({
-        name: "ollama-cloud",
-        baseURL: inference.baseUrl ?? "https://ollama.com/v1",
-        apiKey: inference.apiKey,
-      });
-
-      return {
-        model: compatibleProvider.chatModel(inference.model),
-        providerOptions:
-          inference.reasoningEffort === "minimal"
-            ? undefined
-            : ({
-                openaiCompatible: {
-                  reasoningEffort: inference.reasoningEffort,
-                },
-              } satisfies SharedV3ProviderOptions),
-      };
-    }
-
-    case "opencode":
-      return {
-        model: createOpencode({
-          baseUrl: inference.baseUrl ?? undefined,
-          autoStartServer: true,
-          defaultSettings: {
-            agent: "general",
-          },
-        }).chat(inference.model),
-        providerOptions: undefined,
-      };
-  }
+function createFallbackStreamPlan(params: {
+  request: RuntimeChatRequest;
+  context: RuntimeTurnContext;
+  inference: InferenceRuntimeConfig;
+  providerError: string | null;
+}) {
+  return {
+    kind: "text",
+    mode: "fallback",
+    model:
+      params.inference.providerId && params.inference.model
+        ? `${params.inference.providerId}:${params.inference.model}`
+        : undefined,
+    providerError: params.providerError,
+    text: generateSecretaryReply(params.request, params.context),
+  } satisfies ConversationStreamPlan;
 }
 
 function normalizeProviderError(error: unknown) {
@@ -286,7 +228,7 @@ async function generateProviderReply(params: {
   inference: InferenceRuntimeConfig;
   context: RuntimeTurnContext;
 }) {
-  const resolved = resolveLanguageModel(params.inference);
+  const resolved = resolveInferenceLanguageModel(params.inference);
 
   if (!resolved) {
     return null;
@@ -328,6 +270,64 @@ async function generateProviderReply(params: {
   }
 
   throw new Error("Inference provider returned no usable text.");
+}
+
+export function createConversationReplyStream(params: {
+  inference: InferenceRuntimeConfig;
+  request: RuntimeChatRequest;
+  context: RuntimeTurnContext;
+  traceId: string;
+}): ConversationStreamPlan {
+  const resolved = resolveInferenceLanguageModel(params.inference);
+
+  if (!resolved) {
+    return createFallbackStreamPlan({
+      request: params.request,
+      context: params.context,
+      inference: params.inference,
+      providerError: null,
+    });
+  }
+
+  try {
+    const result = streamText({
+      model: resolved.model,
+      system: buildConversationInstructions(params.context),
+      prompt: renderRecentConversation(params.context),
+      maxOutputTokens: getMaxOutputTokens(params.inference),
+      providerOptions: resolved.providerOptions,
+    });
+
+    return {
+      kind: "model",
+      mode: "model",
+      model: resolved.modelId,
+      providerError: null,
+      result,
+    };
+  } catch (error) {
+    const providerError = normalizeProviderError(error);
+
+    console.error(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "error",
+        service: "worker",
+        event: "runtime.inference.stream_failed",
+        traceId: params.traceId,
+        providerId: params.inference.providerId,
+        model: params.inference.model,
+        error: providerError,
+      }),
+    );
+
+    return createFallbackStreamPlan({
+      request: params.request,
+      context: params.context,
+      inference: params.inference,
+      providerError,
+    });
+  }
 }
 
 export async function generateConversationReply(params: {

@@ -1,72 +1,514 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { DefaultChatTransport } from "ai";
+import { useChat } from "@ai-sdk/react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import type { UIMessage } from "ai";
 import type {
-  ActivityTraceResponse,
   ConversationHistoryResponse,
   ConversationListItem,
   ConversationListResponse,
-  ResearchSpecialistResult,
-  RuntimeChatResponse,
-  RuntimeMemoryContextItem,
-  RuntimeTaskContextItem,
+  DeskChatMessageMetadata,
+  PersonaSettingsResponse,
   ToolApprovalDecisionResponse,
   ToolExecutionListResponse,
   ToolExecutionRecord,
 } from "@secretary/core-runtime";
-import { AppPage } from "./lib/ui";
-import { formatTimestamp, formatTracePayload, snippet } from "./lib/presenters";
+import { AppPage, ToggleField } from "./lib/ui";
+import { snippet } from "./lib/presenters";
+import { SecretaryPortraitField } from "./lib/secretary-portrait-field";
 
-type DeskMessage = {
-  id: string;
-  role: "user" | "assistant" | "system" | "tool" | "specialist";
-  text: string;
-};
+type DeskChatMessage = UIMessage<DeskChatMessageMetadata>;
 
-const starterMessages: DeskMessage[] = [
+const starterMessages: DeskChatMessage[] = [
   {
     id: "assistant-intro",
     role: "assistant",
-    text: "Secretary is online with memory, channels, voice, and the new Phase 5 action layer. Ask for help, request a tool action, or approve a pending operation.",
+    parts: [
+      {
+        type: "text",
+        text: "Secretary is online with memory, channels, voice, and the action layer. Ask for help, request a tool action, or approve a pending operation.",
+      },
+    ],
   },
 ];
 
 const deskVoicePreferenceKey = "secretary.desk.autoSpeak";
 
-function formatApprovalRequest(requestJson: Record<string, unknown>) {
-  const rendered = formatTracePayload(requestJson);
-  return rendered === "no payload" ? "No request payload recorded yet." : rendered;
+function extractText(message: DeskChatMessage | undefined) {
+  if (!message) {
+    return "";
+  }
+
+  return message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+    .trim();
+}
+
+function extractMetadata(message: DeskChatMessage | undefined) {
+  return (message?.metadata ?? null) as DeskChatMessageMetadata | null;
+}
+
+function toDeskChatMessage(
+  message: ConversationHistoryResponse["messages"][number],
+): DeskChatMessage {
+  return {
+    id: message.id,
+    role: message.role === "user" ? "user" : "assistant",
+    parts: [
+      {
+        type: "text",
+        text: message.text,
+      },
+    ],
+    metadata: undefined,
+  };
+}
+
+function formatModelBadge(metadata: DeskChatMessageMetadata | null) {
+  if (!metadata) {
+    return null;
+  }
+
+  if (metadata.replyMode === "fallback") {
+    return "fallback";
+  }
+
+  if (metadata.model) {
+    return metadata.model.replace(/^.*:/, "");
+  }
+
+  return "streaming";
+}
+
+function followUpSuggestions(message: DeskChatMessage | undefined) {
+  const text = extractText(message);
+
+  if (!text) {
+    return [
+      "Give me the short version",
+      "What should we do next?",
+      "Turn that into a task",
+    ];
+  }
+
+  if (/\b(task|reminder|schedule|deadline)\b/i.test(text)) {
+    return [
+      "Turn that into a task",
+      "What should happen next?",
+      "Give me the short version",
+    ];
+  }
+
+  return [
+    "Go one level deeper",
+    "Give me the short version",
+    "What should we do next?",
+  ];
+}
+
+type DeskConversationPaneProps = {
+  activeConversationId?: string;
+  conversationTitle?: string;
+  approvalBusyId: string | null;
+  deskPortraitError: string | null;
+  deskVoiceError: string | null;
+  initialMessages: DeskChatMessage[];
+  isRefreshing: boolean;
+  pendingApproval: ToolExecutionRecord | null;
+  onDecideApproval: (executionId: string, approve: boolean) => void;
+  onConversationLinked: (conversationId: string) => void;
+  onReplyMetadata: (metadata: DeskChatMessageMetadata) => void;
+  onReplyReady: (message: DeskChatMessage) => void;
+  onSpeakMessage: (message: DeskChatMessage) => void;
+  secretaryName: string;
+  speakingMessageId: string | null;
+};
+
+function DeskConversationPane(props: DeskConversationPaneProps) {
+  const [input, setInput] = useState("");
+  const streamRef = useRef<HTMLDivElement | null>(null);
+  const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
+  const secretaryName = props.secretaryName.trim() || "Secretary";
+  const secretaryReference =
+    secretaryName === "SetAgentName" ? "the secretary" : secretaryName;
+  const composerTarget =
+    secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
+
+  useEffect(() => {
+    conversationIdRef.current = props.activeConversationId;
+  }, [props.activeConversationId]);
+
+  const { messages, sendMessage, status, stop, error, clearError } =
+    useChat<DeskChatMessage>({
+      messages: props.initialMessages,
+      transport: new DefaultChatTransport({
+        api: "/api/chat",
+        prepareSendMessagesRequest: ({ messages }) => {
+          const latestMessage = messages[messages.length - 1] as DeskChatMessage | undefined;
+
+          return {
+            body: {
+              conversationId: conversationIdRef.current,
+              messageId: latestMessage?.id,
+              text: extractText(latestMessage),
+            },
+          };
+        },
+      }),
+      experimental_throttle: 50,
+      onData: (part) => {
+        if (part.type !== "data-runtime-context") {
+          return;
+        }
+
+        const metadata = part.data as DeskChatMessageMetadata;
+        props.onReplyMetadata(metadata);
+        props.onConversationLinked(metadata.conversationId);
+      },
+      onFinish: ({ message }) => {
+        const metadata = extractMetadata(message);
+
+        if (metadata) {
+          props.onReplyMetadata(metadata);
+          props.onConversationLinked(metadata.conversationId);
+        }
+
+        props.onReplyReady(message);
+      },
+      onError: () => {
+        // Render a generic message in the composer footer.
+      },
+    });
+
+  const latestAssistantMessage = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant");
+  const latestMetadata = extractMetadata(latestAssistantMessage);
+  const suggestionOptions = followUpSuggestions(latestAssistantMessage);
+  const composerStatus =
+    props.deskVoiceError ??
+    (error ? "The Desk could not reach the worker. Check the worker and try again." : null) ??
+    (status === "submitted"
+      ? `Sending to ${secretaryReference}...`
+      : status === "streaming"
+        ? `${secretaryReference} is replying...`
+          : props.isRefreshing
+            ? "Refreshing saved history..."
+            : props.activeConversationId
+              ? "Linked to saved conversation"
+              : "Fresh conversation ready");
+
+  useEffect(() => {
+    const nextFrame = window.requestAnimationFrame(() => {
+      const node = streamRef.current;
+
+      if (!node) {
+        return;
+      }
+
+      node.scrollTo({
+        top: node.scrollHeight,
+        behavior: status === "ready" ? "smooth" : "auto",
+      });
+    });
+
+    return () => window.cancelAnimationFrame(nextFrame);
+  }, [messages, status]);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = input.trim();
+
+    if (!text || status === "submitted" || status === "streaming") {
+      return;
+    }
+
+    clearError();
+    await sendMessage({
+      text,
+    });
+    setInput("");
+  }
+
+  async function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+
+      if (status === "submitted" || status === "streaming" || input.trim().length === 0) {
+        return;
+      }
+
+      clearError();
+      await sendMessage({
+        text: input.trim(),
+      });
+      setInput("");
+    }
+  }
+
+  const stageTitle =
+    props.conversationTitle ?? (props.activeConversationId ? "Saved correspondence" : "Fresh correspondence");
+  const stageDescription =
+    status === "streaming"
+      ? `${secretaryReference} is actively composing with memory, voice, and actions in reach.`
+      : props.activeConversationId
+        ? "This thread is linked to saved context, approvals, and channel history."
+        : "Begin a fresh exchange and turn it into a working thread as the secretary gathers context.";
+  const activeNotice =
+    props.pendingApproval
+      ? {
+          title: `${props.pendingApproval.toolName} needs approval`,
+          copy: props.pendingApproval.summary,
+        }
+      : props.deskVoiceError
+        ? {
+            title: "Voice playback needs attention",
+            copy: props.deskVoiceError,
+          }
+        : props.deskPortraitError
+          ? {
+              title: "Portrait update needs attention",
+              copy: props.deskPortraitError,
+            }
+          : null;
+
+  return (
+    <div className="desk-chat-shell">
+      <header className="desk-stage-head">
+        <div className="desk-stage-copy">
+          <p className="desk-stage-eyebrow">Desk</p>
+          <h1 className="desk-stage-title">{stageTitle}</h1>
+          <p className="desk-stage-description">{stageDescription}</p>
+        </div>
+        <div className="desk-stage-glance">
+          <span className="desk-stage-pill">
+            {props.activeConversationId ? "Saved thread" : "Fresh thread"}
+          </span>
+          <span className="desk-stage-pill desk-stage-pill--accent">
+            {status === "streaming" ? "Live reply" : "Ready"}
+          </span>
+        </div>
+      </header>
+      {activeNotice ? (
+        <div className="desk-stage-notice">
+          <div className="desk-stage-notice__copy">
+            <p className="desk-stage-notice__title">{activeNotice.title}</p>
+            <p className="desk-stage-notice__text">{activeNotice.copy}</p>
+          </div>
+          {props.pendingApproval ? (
+            <div className="desk-stage-notice__actions">
+              <button
+                type="button"
+                onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
+                disabled={props.approvalBusyId === props.pendingApproval.id}
+                className="button-primary"
+              >
+                {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
+              </button>
+              <button
+                type="button"
+                onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
+                disabled={props.approvalBusyId === props.pendingApproval.id}
+                className="button-danger"
+              >
+                Deny
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="desk-message-stream" ref={streamRef}>
+        {messages.map((message) => {
+          const text = extractText(message);
+          const metadata = extractMetadata(message);
+          const isUser = message.role === "user";
+          const reasoningParts = message.parts.filter((part) => part.type === "reasoning");
+          const sourceParts = message.parts.filter(
+            (part) => part.type === "source-url" || part.type === "source-document",
+          );
+          const textParts = message.parts.filter((part) => part.type === "text");
+          const isStreamingAssistant =
+            !isUser &&
+            (message.parts.some(
+              (part) =>
+                (part.type === "text" || part.type === "reasoning") &&
+                part.state === "streaming",
+            ) ||
+              (status === "streaming" && latestAssistantMessage?.id === message.id));
+
+          return (
+            <article
+              key={message.id}
+              className={`desk-message ${isUser ? "desk-message--user" : "desk-message--assistant"}`}
+            >
+              <div className="desk-message-head">
+                <p className={`desk-message-speaker ${isUser ? "desk-message-speaker--user" : ""}`}>
+                  {isUser ? "you" : secretaryName}
+                </p>
+                {!isUser && metadata ? (
+                  <div className="desk-message-meta">
+                    <span className="desk-model-chip">{formatModelBadge(metadata)}</span>
+                    {metadata.totalTokens ? (
+                      <span className="desk-token-chip">{metadata.totalTokens} tokens</span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="desk-message-body">
+                {textParts.map((part, index) => (
+                  <p
+                    key={`${message.id}-text-${index}`}
+                    className={`desk-message-text ${
+                      part.state === "streaming" ? "desk-message-text--streaming" : ""
+                    }`}
+                  >
+                    {part.text}
+                  </p>
+                ))}
+                {reasoningParts.length > 0 ? (
+                  <details className="desk-reasoning">
+                    <summary>
+                      Thinking
+                      {reasoningParts.some((part) => part.state === "streaming") ? "..." : ""}
+                    </summary>
+                    <div className="desk-reasoning-copy">
+                      {reasoningParts.map((part, index) => (
+                        <p key={`${message.id}-reasoning-${index}`}>{part.text}</p>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
+                {sourceParts.length > 0 ? (
+                  <div className="desk-sources">
+                    {sourceParts.map((part, index) =>
+                      part.type === "source-url" ? (
+                        <a
+                          key={`${message.id}-source-${index}`}
+                          href={part.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="desk-source-chip"
+                        >
+                          {part.title ?? new URL(part.url).hostname}
+                        </a>
+                      ) : (
+                        <span key={`${message.id}-source-${index}`} className="desk-source-chip">
+                          {part.title ?? part.filename ?? "Document"}
+                        </span>
+                      ),
+                    )}
+                  </div>
+                ) : null}
+              </div>
+              {isStreamingAssistant ? (
+                <div className="desk-streaming-indicator" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              ) : null}
+              {!isUser ? (
+                <div className="desk-message-actions">
+                  <button
+                    type="button"
+                    onClick={() => props.onSpeakMessage(message)}
+                    className="button-secondary"
+                    style={{ padding: "6px 10px", fontSize: 11 }}
+                  >
+                    {props.speakingMessageId === message.id ? "Stop" : "Speak"}
+                  </button>
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+
+      <form onSubmit={onSubmit} className="desk-composer">
+        <div className="desk-composer-halo" aria-hidden="true" />
+        <div className="desk-composer-head">
+          <div className="desk-composer-copy">
+            <p className="desk-composer-eyebrow">Compose</p>
+            <p className="desk-composer-title">Write to {composerTarget}</p>
+          </div>
+          <p className="desk-composer-note">Ctrl+Enter to send</p>
+        </div>
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            void onComposerKeyDown(event);
+          }}
+          placeholder={`Ask ${composerTarget} something...`}
+          rows={4}
+        />
+        <div className="desk-composer-foot">
+          <p className="desk-composer-status">{composerStatus}</p>
+          <div className="desk-composer-actions">
+            {(status === "submitted" || status === "streaming") ? (
+              <button type="button" onClick={() => stop()} className="button-secondary">
+                Stop
+              </button>
+            ) : null}
+            <button
+              type="submit"
+              disabled={status === "submitted" || status === "streaming" || input.trim().length === 0}
+              className="button-primary"
+            >
+              {status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
+            </button>
+          </div>
+        </div>
+        {status === "ready" && latestAssistantMessage && messages.length > 1 ? (
+          <div className="desk-followups">
+            {suggestionOptions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="desk-followup-chip"
+                onClick={() => setInput(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </form>
+    </div>
+  );
 }
 
 export function DeskShell() {
-  const [messages, setMessages] = useState<DeskMessage[]>(starterMessages);
-  const [input, setInput] = useState("");
+  const [conversationSeedMessages, setConversationSeedMessages] =
+    useState<DeskChatMessage[]>(starterMessages);
+  const [conversationSeedKey, setConversationSeedKey] = useState(0);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
-  const [isSending, setIsSending] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastTraceId, setLastTraceId] = useState<string | null>(null);
-  const [memoryContext, setMemoryContext] = useState<RuntimeMemoryContextItem[]>([]);
-  const [taskContext, setTaskContext] = useState<RuntimeTaskContextItem[]>([]);
-  const [researchContext, setResearchContext] = useState<ResearchSpecialistResult | null>(
-    null,
-  );
-  const [activity, setActivity] = useState<ActivityTraceResponse["traces"]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<ToolExecutionRecord[]>([]);
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [sidebarError, setSidebarError] = useState<string | null>(null);
   const [autoSpeakReplies, setAutoSpeakReplies] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [deskPortraitError, setDeskPortraitError] = useState<string | null>(null);
   const [deskVoiceError, setDeskVoiceError] = useState<string | null>(null);
-  const hasLoadedHistory = useRef<string | null>(null);
-  const lastPresencePingAtRef = useRef(0);
+  const [secretaryProfile, setSecretaryProfile] = useState<{
+    name: string;
+    avatar: PersonaSettingsResponse["persona"]["avatar"];
+  }>({
+    name: "SetAgentName",
+    avatar: null,
+  });
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioObjectUrlRef = useRef<string | null>(null);
+  const hasLoadedHistory = useRef<string | null>(null);
+  const lastPresencePingAtRef = useRef(0);
   const selectedConversation = conversations.find(
     (conversation) => conversation.id === conversationId,
   );
-  const latestTrace = activity[0] ?? null;
   const primaryPendingApproval = pendingApprovals[0] ?? null;
 
   function stopMessagePlayback() {
@@ -84,8 +526,10 @@ export function DeskShell() {
     setSpeakingMessageId(null);
   }
 
-  async function playAssistantMessage(message: DeskMessage) {
-    if (message.role !== "assistant") {
+  async function playAssistantMessage(message: DeskChatMessage) {
+    const text = extractText(message);
+
+    if (!text) {
       return;
     }
 
@@ -105,7 +549,7 @@ export function DeskShell() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: message.text,
+          text,
         }),
       });
 
@@ -160,6 +604,26 @@ export function DeskShell() {
     }
   }
 
+  async function loadSecretaryProfile() {
+    try {
+      const response = await fetch("/api/persona", {
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error("Request failed");
+      }
+
+      const data = (await response.json()) as PersonaSettingsResponse;
+      setSecretaryProfile({
+        name: data.persona.name || "SetAgentName",
+        avatar: data.persona.avatar,
+      });
+    } catch {
+      // Keep the local default if the worker is unavailable.
+    }
+  }
+
   async function reportDeskPresence() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return;
@@ -183,7 +647,7 @@ export function DeskShell() {
         }),
       });
     } catch {
-      // Presence is best-effort and should never interrupt the Desk.
+      // Presence is best-effort.
     }
   }
 
@@ -209,6 +673,7 @@ export function DeskShell() {
 
   useEffect(() => {
     void loadConversations();
+    void loadSecretaryProfile();
   }, []);
 
   useEffect(() => {
@@ -295,20 +760,18 @@ export function DeskShell() {
           return;
         }
 
-        setMessages(
+        setConversationSeedMessages(
           data.messages.length > 0
-            ? data.messages.map((message) => ({
-                id: message.id,
-                role: message.role,
-                text: message.text,
-              }))
+            ? data.messages.map(toDeskChatMessage)
             : starterMessages,
         );
+        setConversationSeedKey((current) => current + 1);
         hasLoadedHistory.current = data.conversationId;
         void loadPendingApprovals(data.conversationId);
       } catch {
         if (!cancelled) {
-          setError("Saved conversation history could not be loaded.");
+          setConversationSeedMessages(starterMessages);
+          setConversationSeedKey((current) => current + 1);
         }
       } finally {
         if (!cancelled) {
@@ -324,75 +787,31 @@ export function DeskShell() {
     };
   }, [conversationId]);
 
-  useEffect(() => {
-    if (!conversationId) {
-      setActivity([]);
-      setPendingApprovals([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    async function loadActivity() {
-      try {
-        const response = await fetch(`/api/activity/${conversationId}`, {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error("Request failed");
-        }
-
-        const data = (await response.json()) as ActivityTraceResponse;
-
-        if (!cancelled) {
-          setActivity(data.traces.slice(-8).reverse());
-        }
-      } catch {
-        if (!cancelled) {
-          setActivity([]);
-        }
-      }
-    }
-
-    void loadActivity();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, lastTraceId]);
-
-  function resetComposerState() {
-    setMemoryContext([]);
-    setTaskContext([]);
-    setResearchContext(null);
-    setLastTraceId(null);
+  function resetConversationContext() {
+    setDeskPortraitError(null);
     setDeskVoiceError(null);
   }
 
   function startFreshConversation() {
     stopMessagePlayback();
     setConversationId(undefined);
-    setMessages(starterMessages);
-    setActivity([]);
+    setConversationSeedMessages(starterMessages);
+    setConversationSeedKey((current) => current + 1);
     setPendingApprovals([]);
-    setError(null);
     hasLoadedHistory.current = null;
-    resetComposerState();
+    resetConversationContext();
   }
 
   async function openConversation(nextConversationId: string) {
     stopMessagePlayback();
     setConversationId(nextConversationId);
     setPendingApprovals([]);
-    setError(null);
     hasLoadedHistory.current = null;
-    resetComposerState();
+    resetConversationContext();
   }
 
   async function decideApproval(executionId: string, approve: boolean) {
     setApprovalBusyId(executionId);
-    setError(null);
 
     try {
       const response = await fetch(
@@ -408,26 +827,22 @@ export function DeskShell() {
 
       const data = (await response.json()) as ToolApprovalDecisionResponse;
 
-      if (data.assistantMessage) {
-        const assistantMessage: DeskMessage = {
+      if (data.assistantMessage && autoSpeakReplies) {
+        void playAssistantMessage({
           id: data.assistantMessage.id,
           role: "assistant",
-          text: data.assistantMessage.text,
-        };
-
-        setMessages((current) => [
-          ...current,
-          assistantMessage,
-        ]);
-        if (autoSpeakReplies) {
-          void playAssistantMessage(assistantMessage);
-        }
+          parts: [
+            {
+              type: "text",
+              text: data.assistantMessage.text,
+            },
+          ],
+        });
       }
 
       if (data.conversationId) {
         await loadPendingApprovals(data.conversationId);
         setConversationId(data.conversationId);
-        setLastTraceId(data.execution.updatedAt);
       } else {
         setPendingApprovals((current) =>
           current.filter((execution) => execution.id !== executionId),
@@ -435,470 +850,133 @@ export function DeskShell() {
       }
 
       void loadConversations();
-    } catch {
-      setError("Approval action failed. Try again.");
     } finally {
       setApprovalBusyId(null);
     }
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function handleReplyMetadata(metadata: DeskChatMessageMetadata) {
+    setConversationId(metadata.conversationId);
+  }
 
-    const text = input.trim();
+  function handleReplyReady(message: DeskChatMessage) {
+    const metadata = extractMetadata(message);
 
-    if (!text || isSending) {
-      return;
+    if (metadata?.conversationId) {
+      void loadPendingApprovals(metadata.conversationId);
     }
 
-    const userMessage: DeskMessage = {
-      id: `local-user-${Date.now()}`,
-      role: "user",
-      text,
-    };
-
-    setMessages((current) => [...current, userMessage]);
-    setInput("");
-    setIsSending(true);
-    setError(null);
-    hasLoadedHistory.current = null;
-
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          conversationId,
-          text,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      const data = (await response.json()) as RuntimeChatResponse;
-      const assistantMessage: DeskMessage = {
-        id: data.messageId,
-        role: "assistant",
-        text: data.outputText,
-      };
-
-      setConversationId(data.conversationId);
-      setLastTraceId(data.traceId);
-      setMemoryContext(data.contextSummary?.memories ?? []);
-      setTaskContext(data.contextSummary?.tasks ?? []);
-      setResearchContext(data.contextSummary?.research ?? null);
-      setMessages((current) => [...current, assistantMessage]);
-      if (autoSpeakReplies) {
-        void playAssistantMessage(assistantMessage);
-      }
-      if (data.conversationId) {
-        void loadPendingApprovals(data.conversationId);
-      }
-      void loadConversations();
-    } catch {
-      setError("The Desk could not reach the worker. Check the worker process and try again.");
-    } finally {
-      setIsSending(false);
+    if (autoSpeakReplies) {
+      void playAssistantMessage(message);
     }
+
+    void loadConversations();
   }
 
   return (
     <AppPage width="100%" className="app-page--desk">
       <section className="desk-grid desk-grid--workspace">
-          <aside className="desk-rail desk-rail--sticky">
-            <article
-              style={{
-                padding: 16,
-                borderRadius: 16,
-                border: "1px solid var(--border)",
-                background: "rgba(22, 18, 14, 0.94)",
-                display: "grid",
-                gap: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 12,
+        <aside className="desk-rail desk-rail--sticky">
+          <article className="desk-panel desk-panel--session">
+            <div className="desk-session-intro">
+              <div className="desk-panel-head desk-panel-head--stacked">
+                <p className="desk-panel-title-line">Secretary: {secretaryProfile.name}</p>
+              </div>
+              <SecretaryPortraitField
+                avatar={secretaryProfile.avatar}
+                name={secretaryProfile.name}
+                variant="desk"
+                onUploaded={(next) => {
+                  setSecretaryProfile({
+                    name: next.persona.name || "SetAgentName",
+                    avatar: next.persona.avatar,
+                  });
                 }}
-              >
-                <h2 style={{ margin: 0 }}>Conversations</h2>
-                <button
-                  type="button"
-                  onClick={startFreshConversation}
-                  className="button-secondary"
-                >
-                  New
-                </button>
-              </div>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 14 }}>
-                {sidebarError ?? `${Math.min(conversations.length, 3)} recent threads in view`}
-              </p>
-              <div className="desk-list">
-                {conversations.slice(0, 3).map((conversation) => (
-                  <button
-                    key={conversation.id}
-                    type="button"
-                    onClick={() => void openConversation(conversation.id)}
-                    style={{
-                      textAlign: "left",
-                      borderRadius: 12,
-                      border:
-                        conversationId === conversation.id
-                          ? "1px solid rgba(164, 141, 100, 0.24)"
-                          : "1px solid rgba(196, 180, 154, 0.12)",
-                      background:
-                        conversationId === conversation.id
-                          ? "rgba(164, 141, 100, 0.14)"
-                          : "rgba(18, 15, 12, 0.82)",
-                      color: "var(--text)",
-                      padding: 10,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 13 }}>
-                      {conversation.title ?? "Untitled conversation"}
-                    </p>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.35, fontSize: 12 }}>
-                      {snippet(conversation.lastMessagePreview).slice(0, 72)}
-                    </p>
-                    <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 11 }}>
-                      {conversation.channelType} · {conversation.messageCount} messages
-                    </p>
-                  </button>
-                ))}
-                {conversations.length > 3 ? (
-                  <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-                    Showing the 3 most recent threads.
-                  </p>
-                ) : null}
-              </div>
-            </article>
+                onStatusChange={(message, tone) => {
+                  if (message && tone === "error") {
+                    setDeskPortraitError(message);
+                    return;
+                  }
 
-            <article
-              style={{
-                padding: 16,
-                borderRadius: 16,
-                border: "1px solid var(--border)",
-                background: "rgba(22, 18, 14, 0.94)",
-                display: "grid",
-                gap: 10,
-              }}
-            >
-              <h2 style={{ margin: 0 }}>Prompts</h2>
-              {[
-                "Remember that I prefer short project updates.",
-                "What do you remember about my preferences?",
-              ].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => setInput(prompt)}
-                  style={{
-                    textAlign: "left",
-                    borderRadius: 10,
-                    border: "1px solid rgba(196, 180, 154, 0.12)",
-                    background: "rgba(18, 15, 12, 0.82)",
-                    color: "var(--text)",
-                    padding: 11,
-                    cursor: "pointer",
-                    font: "inherit",
-                    lineHeight: 1.4,
-                    width: "100%",
-                    whiteSpace: "normal",
-                  }}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </article>
-          </aside>
-
-          <div
-            className="desk-chat-shell"
-            style={{
-              padding: 16,
-              borderRadius: 16,
-              border: "1px solid var(--border)",
-              background: "linear-gradient(180deg, rgba(16, 13, 11, 0.98), rgba(11, 9, 8, 0.96))",
-              boxShadow: "var(--shadow-soft)",
-            }}
-          >
-            <div className="desk-message-stream">
-              {messages.map((message) => (
-                <article
-                  key={message.id}
-                  style={{
-                    justifySelf: message.role === "user" ? "end" : "start",
-                    width: "min(94%, 700px)",
-                    padding: "12px 14px",
-                    borderRadius: 12,
-                    background:
-                      message.role === "user"
-                        ? "rgba(164, 141, 100, 0.16)"
-                        : "rgba(20, 17, 14, 0.94)",
-                    border:
-                      message.role === "user"
-                        ? "1px solid rgba(164, 141, 100, 0.22)"
-                        : "1px solid rgba(196, 180, 154, 0.1)",
-                    boxShadow: "var(--shadow-soft)",
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: "0 0 6px",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: "0.12em",
-                      textTransform: "uppercase",
-                      color:
-                        message.role === "user" ? "var(--accent-strong)" : "var(--muted)",
-                    }}
-                  >
-                    {message.role}
-                  </p>
-                  <p style={{ margin: 0, lineHeight: 1.5, fontSize: 14 }}>{message.text}</p>
-                  {message.role === "assistant" ? (
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "flex-end",
-                        marginTop: 10,
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void playAssistantMessage(message)}
-                        className="button-secondary"
-                        style={{
-                          padding: "6px 10px",
-                          fontSize: 11,
-                        }}
-                      >
-                        {speakingMessageId === message.id ? "Stop" : "Speak"}
-                      </button>
-                    </div>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-
-            <form onSubmit={onSubmit} style={{ display: "grid", gap: 10 }}>
-              <textarea
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder="Ask the Secretary something..."
-                rows={4}
-                style={{
-                  width: "100%",
-                  resize: "vertical",
-                  borderRadius: 12,
-                  padding: 14,
-                  minHeight: 112,
+                  if (tone === "success") {
+                    setDeskPortraitError(null);
+                  }
                 }}
               />
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                }}
-              >
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                  {deskVoiceError ??
-                    error ??
-                    (isSending
-                      ? "Sending through the worker..."
-                      : isRefreshing
-                        ? "Refreshing saved history..."
-                        : conversationId
-                          ? "History linked and ready"
-                          : "Fresh conversation ready")}
-                </p>
-                <button
-                  type="submit"
-                  disabled={isSending || input.trim().length === 0}
-                  className="button-primary"
-                >
-                  {isSending ? "Sending..." : "Send message"}
-                </button>
-              </div>
-              <label
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  color: "var(--muted)",
-                  fontSize: 12,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={autoSpeakReplies}
-                  onChange={(event) => setAutoSpeakReplies(event.target.checked)}
-                />
-                Auto-voice Samantha replies
-              </label>
-            </form>
-          </div>
+            </div>
+            <ToggleField
+              checked={autoSpeakReplies}
+              onChange={setAutoSpeakReplies}
+              label="Auto-voice replies"
+              hint="Speak new secretary messages through the active voice profile."
+            />
+          </article>
+        </aside>
 
-          <aside className="desk-rail desk-rail--sticky">
-            <article
-              style={{
-                padding: 16,
-                borderRadius: 16,
-                border: "1px solid var(--border)",
-                background: "rgba(16, 13, 11, 0.96)",
-                boxShadow: "var(--shadow-soft)",
-              }}
-            >
-              <h2 style={{ marginTop: 0, marginBottom: 12 }}>Session</h2>
-              <div className="desk-live-row">
-                <div className="desk-live-chip">
-                  <p className="desk-live-chip-label">Thread</p>
-                  <p className="desk-live-chip-value">
-                    {selectedConversation?.title ?? (conversationId ? "Saved thread" : "Fresh thread")}
-                  </p>
-                </div>
-                <div className="desk-live-chip">
-                  <p className="desk-live-chip-label">Approvals</p>
-                  <p className="desk-live-chip-value">
-                    {pendingApprovals.length === 0 ? "Clear" : `${pendingApprovals.length} pending`}
-                  </p>
-                </div>
-                <div className="desk-live-chip">
-                  <p className="desk-live-chip-label">Traces</p>
-                  <p className="desk-live-chip-value">
-                    {activity.length === 0 ? "Quiet" : `${activity.length} recent events`}
-                  </p>
-                </div>
+        <div key={conversationSeedKey} className="desk-stage-column">
+          <DeskConversationPane
+            activeConversationId={conversationId}
+            approvalBusyId={approvalBusyId}
+            conversationTitle={selectedConversation?.title ?? undefined}
+            deskPortraitError={deskPortraitError}
+            deskVoiceError={deskVoiceError}
+            initialMessages={conversationSeedMessages}
+            isRefreshing={isRefreshing}
+            pendingApproval={primaryPendingApproval}
+            onDecideApproval={(executionId, approve) => {
+              void decideApproval(executionId, approve);
+            }}
+            onConversationLinked={(nextConversationId) => {
+              if (conversationId !== nextConversationId) {
+                setConversationId(nextConversationId);
+              }
+            }}
+            onReplyMetadata={handleReplyMetadata}
+            onReplyReady={handleReplyReady}
+            onSpeakMessage={playAssistantMessage}
+            secretaryName={secretaryProfile.name}
+            speakingMessageId={speakingMessageId}
+          />
+        </div>
+
+        <aside className="desk-rail desk-rail--sticky">
+          <article className="desk-panel desk-panel--drawer">
+            <div className="desk-panel-head">
+              <div>
+                <p className="desk-panel-eyebrow">Correspondence</p>
+                <h2 className="desk-panel-title">Recent correspondence</h2>
               </div>
-              <div className="desk-widget-separator" />
-              <div className="stack-sm">
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 12,
-                    color: "var(--muted)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.12em",
-                  }}
+              <button type="button" onClick={startFreshConversation} className="button-secondary">
+                New
+              </button>
+            </div>
+            <p className="desk-panel-copy">
+              {sidebarError ?? `${Math.min(conversations.length, 3)} recent threads in view`}
+            </p>
+            <div className="desk-list">
+              {conversations.slice(0, 3).map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => void openConversation(conversation.id)}
+                  className={`desk-correspondence-item ${
+                    conversationId === conversation.id ? "is-active" : ""
+                  }`}
                 >
-                  Context pulse
-                </p>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                  {memoryContext.length > 0
-                    ? `${memoryContext.length} memory cue${memoryContext.length === 1 ? "" : "s"}, `
-                    : "No memory cues, "}
-                  {taskContext.length > 0
-                    ? `${taskContext.length} task hook${taskContext.length === 1 ? "" : "s"}`
-                    : "no task hooks"}
-                  {researchContext ? ", research active." : "."}
-                </p>
-                <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                  {latestTrace
-                    ? `Latest event: ${latestTrace.eventName} at ${formatTimestamp(latestTrace.createdAt)}.`
-                    : conversationId
-                      ? "Saved thread loaded. Open Activity for the full runtime record."
-                      : "Nothing has executed yet in this fresh thread."}
-                </p>
-              </div>
-              {primaryPendingApproval ? (
-                <>
-                  <div className="desk-widget-separator" />
-                  <div className="stack-sm">
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 12,
-                        color: "var(--muted)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.12em",
-                      }}
-                    >
-                      Needs approval
-                    </p>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
-                      {primaryPendingApproval.toolName}
-                    </p>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
-                      {primaryPendingApproval.summary}
-                    </p>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 11, lineHeight: 1.4 }}>
-                      {formatApprovalRequest(primaryPendingApproval.requestJson)}
-                    </p>
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: 8,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void decideApproval(primaryPendingApproval.id, true)}
-                        disabled={approvalBusyId === primaryPendingApproval.id}
-                        className="button-primary"
-                      >
-                        {approvalBusyId === primaryPendingApproval.id ? "Working..." : "Approve"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void decideApproval(primaryPendingApproval.id, false)}
-                        disabled={approvalBusyId === primaryPendingApproval.id}
-                        className="button-danger"
-                      >
-                        Deny
-                      </button>
-                    </div>
-                    {pendingApprovals.length > 1 ? (
-                      <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
-                        {pendingApprovals.length - 1} more approval request
-                        {pendingApprovals.length - 1 === 1 ? "" : "s"} waiting in Tools.
-                      </p>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
-              <div className="desk-widget-separator" />
-              <div
-                style={{
-                  display: "flex",
-                  gap: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                <a
-                  href="/activity"
-                  style={{
-                    color: "var(--accent-strong)",
-                    fontSize: 12,
-                    textDecoration: "none",
-                  }}
-                >
-                  Open activity
-                </a>
-                <a
-                  href="/tools"
-                  style={{
-                    color: "var(--accent-strong)",
-                    fontSize: 12,
-                    textDecoration: "none",
-                  }}
-                >
-                  Open tools
-                </a>
-              </div>
-            </article>
-          </aside>
+                  <p className="desk-correspondence-title">
+                    {conversation.title ?? "Untitled conversation"}
+                  </p>
+                  <p className="desk-correspondence-copy">
+                    {snippet(conversation.lastMessagePreview).slice(0, 72)}
+                  </p>
+                  <p className="desk-correspondence-meta">
+                    {conversation.channelType} · {conversation.messageCount} messages
+                  </p>
+                </button>
+              ))}
+            </div>
+          </article>
+        </aside>
       </section>
     </AppPage>
   );

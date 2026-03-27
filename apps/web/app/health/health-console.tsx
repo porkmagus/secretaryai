@@ -6,7 +6,7 @@ import type {
   HeartbeatRunResponse,
   SystemHealthResponse,
 } from "@secretary/core-runtime";
-import { AppPage, PageHero, SurfaceCard } from "../lib/ui";
+import { AppPage, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
 
 function statusTone(status: string) {
   switch (status) {
@@ -259,8 +259,8 @@ export function HealthConsole() {
         title="Autonomy heartbeat"
         description={
           <p>
-            A configurable self-check for Samantha. Set how often it runs and what it
-            asks her to review, then test it with a manual run whenever you want.
+            A configurable self-check for the secretary. Set how often it runs and what it
+            asks the agent to review, then test it with a manual run whenever you want.
           </p>
         }
       >
@@ -318,25 +318,14 @@ export function HealthConsole() {
             />
           </label>
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              minHeight: 42,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={heartbeatDraft?.enabled ?? false}
-              onChange={(event) =>
-                setHeartbeatDraft((current) =>
-                  current ? { ...current, enabled: event.target.checked } : current,
-                )
-              }
-            />
-            <span style={{ color: "var(--text)", fontSize: 14 }}>Enable heartbeat</span>
-          </label>
+          <ToggleField
+            checked={heartbeatDraft?.enabled ?? false}
+            onChange={(next) =>
+              setHeartbeatDraft((current) => (current ? { ...current, enabled: next } : current))
+            }
+            label="Enable heartbeat"
+            hint="Keeps the worker running periodic autonomy checks."
+          />
         </div>
 
         <div className="compact-list">
