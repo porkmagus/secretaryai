@@ -48,7 +48,8 @@
     "bullmq": "^5.56.4",
     "dotenv": "17.3.1",
     "fastify": "^5.3.2",
-    "ollama-ai-provider-v2": "^3.5.0"
+    "ollama-ai-provider-v2": "^3.5.0",
+    "playwright": "^1.58.2"
   },
   "devDependencies": {
     "@types/node": "^24.12.0",

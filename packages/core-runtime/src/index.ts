@@ -248,6 +248,7 @@ export type AgentJobStatus =
   | "cancelled";
 
 export type AgentJobApprovalMode = "restrictive" | "builder" | "full_access";
+export type AgentExecutionBackend = "host_native" | "wsl_bash" | "docker_sandbox";
 
 export type AgentJobStepKind =
   | "plan"
@@ -288,7 +289,9 @@ export type AgentJobRequirementKind =
   | "package_manager"
   | "service"
   | "credential"
-  | "approval";
+  | "approval"
+  | "network"
+  | "port";
 
 export type AgentJobRequirementStatus =
   | "pending"
@@ -409,9 +412,15 @@ export type AgentJobActionResponse = {
 export type AgentJobSettingsRecord = {
   defaultWorkspacePath: string | null;
   defaultApprovalMode: AgentJobApprovalMode;
+  executionBackend: AgentExecutionBackend;
   maxAgentSteps: number;
   maxCommandTimeoutSeconds: number;
   maxVerificationAttempts: number;
+  maxJobRuntimeMinutes: number;
+  allowNetworkAccess: boolean;
+  browserVerificationEnabled: boolean;
+  redactSecretsInArtifacts: boolean;
+  allowedWorkspaceRoots: string[];
 };
 
 export type AgentJobSettingsResponse = {
@@ -421,9 +430,15 @@ export type AgentJobSettingsResponse = {
 export type UpdateAgentJobSettingsRequest = {
   defaultWorkspacePath?: string | null;
   defaultApprovalMode?: AgentJobApprovalMode;
+  executionBackend?: AgentExecutionBackend;
   maxAgentSteps?: number;
   maxCommandTimeoutSeconds?: number;
   maxVerificationAttempts?: number;
+  maxJobRuntimeMinutes?: number;
+  allowNetworkAccess?: boolean;
+  browserVerificationEnabled?: boolean;
+  redactSecretsInArtifacts?: boolean;
+  allowedWorkspaceRoots?: string[];
 };
 
 export type PersonaGender = "male" | "female";

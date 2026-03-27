@@ -1,10 +1,20 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import net from "node:net";
 import { promisify } from "node:util";
 import { ToolLoopAgent, stepCountIs, tool, type ModelMessage, type ToolApprovalResponse } from "ai";
 import { z } from "zod";
-import type { AgentJobApprovalMode, AgentJobSettingsRecord } from "@secretary/core-runtime";
+import type {
+  AgentExecutionBackend,
+  AgentJobApprovalMode,
+  AgentJobRequirementKind,
+  AgentJobSettingsRecord,
+} from "@secretary/core-runtime";
+import {
+  createAgentJobArtifactStorageKey,
+  ensureAgentJobArtifactStoragePath,
+} from "./agent-job-artifact-storage.js";
 import { resolveInferenceLanguageModel, type InferenceRuntimeConfig } from "./ai-sdk-registry.js";
 
 const execFileAsync = promisify(execFile);
@@ -73,6 +83,45 @@ type AgentRunOutcome = {
   };
 };
 
+export type DetectedExecutionRequirement = {
+  kind: AgentJobRequirementKind;
+  label: string;
+  detail: string;
+  metadataJson?: Record<string, unknown>;
+};
+
+type AgentToolName =
+  | "list_directory"
+  | "search_files"
+  | "read_file"
+  | "write_file"
+  | "replace_in_file"
+  | "make_directory"
+  | "remove_path"
+  | "run_command"
+  | "probe_http"
+  | "check_port"
+  | "browser_visit";
+
+type CommandExecutionResult = {
+  command: string;
+  cwd: string;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
+
+type ExecutionRunner = {
+  backend: AgentExecutionBackend;
+  label: string;
+  runShellCommand(params: {
+    command: string;
+    cwd: string;
+    timeoutSeconds: number;
+    settings: AgentJobSettingsRecord;
+  }): Promise<CommandExecutionResult>;
+};
+
 function truncateText(text: string, maxLength = MAX_TEXT_OUTPUT) {
   if (text.length <= maxLength) {
     return text;
@@ -81,15 +130,28 @@ function truncateText(text: string, maxLength = MAX_TEXT_OUTPUT) {
   return `${text.slice(0, maxLength)}\n...[truncated ${text.length - maxLength} chars]`;
 }
 
-export function normalizeWorkspacePath(inputPath: string) {
+function resolveExecutionBackend(backend: AgentExecutionBackend): AgentExecutionBackend {
+  if (backend === "wsl_bash" && process.platform !== "win32") {
+    return "host_native";
+  }
+
+  return backend;
+}
+
+export function normalizeWorkspacePath(
+  inputPath: string,
+  backend: AgentExecutionBackend = "host_native",
+) {
   const trimmed = inputPath.trim();
   const windowsMatch = trimmed.match(/^([A-Za-z]):[\\/](.*)$/);
   const wslMountMatch = trimmed.match(/^\/mnt\/([A-Za-z])\/(.*)$/);
   const isWindowsHost = process.platform === "win32";
+  const resolvedBackend = resolveExecutionBackend(backend);
+  const wantsWslPath = resolvedBackend === "wsl_bash";
 
   if (windowsMatch) {
     const [, drive, rest] = windowsMatch;
-    if (isWindowsHost) {
+    if (isWindowsHost && !wantsWslPath) {
       const normalizedRest = rest.replaceAll("/", "\\");
       return `${drive.toUpperCase()}:\\${normalizedRest}`;
     }
@@ -100,14 +162,18 @@ export function normalizeWorkspacePath(inputPath: string) {
 
   if (wslMountMatch) {
     const [, drive, rest] = wslMountMatch;
-    if (isWindowsHost) {
+    if (isWindowsHost && !wantsWslPath) {
       return `${drive.toUpperCase()}:\\${rest.replaceAll("/", "\\")}`;
     }
 
     return `/mnt/${drive.toLowerCase()}/${rest.replaceAll("\\", "/")}`;
   }
 
-  return isWindowsHost ? trimmed.replaceAll("/", "\\") : trimmed.replaceAll("\\", "/");
+  if (isWindowsHost && !wantsWslPath) {
+    return trimmed.replaceAll("/", "\\");
+  }
+
+  return trimmed.replaceAll("\\", "/");
 }
 
 function normalizePathForWorkspace(value: string) {
@@ -128,6 +194,401 @@ function ensureWithinWorkspace(workspacePath: string, targetPath: string) {
   return absoluteTarget;
 }
 
+function isWorkspaceAllowed(
+  settings: AgentJobSettingsRecord,
+  workspacePath: string,
+) {
+  if (settings.allowedWorkspaceRoots.length === 0) {
+    return true;
+  }
+
+  const candidate = resolve(workspacePath);
+  return settings.allowedWorkspaceRoots.some((root) => {
+    const allowedRoot = resolve(
+      normalizeWorkspacePath(root, settings.executionBackend),
+    );
+    return candidate === allowedRoot || candidate.startsWith(`${allowedRoot}\\`) || candidate.startsWith(`${allowedRoot}/`);
+  });
+}
+
+function looksLikeNetworkCommand(command: string) {
+  return /\b(curl|wget|npm\s+(install|add)|pnpm\s+(install|add)|yarn\s+(add|install)|bun\s+(add|install)|pip\s+install|uv\s+add|git\s+clone|Invoke-WebRequest|iwr|irm)\b/i.test(
+    command,
+  );
+}
+
+function redactSecrets(text: string) {
+  return text
+    .replace(/\b(sk-[A-Za-z0-9_\-]{12,})\b/g, "[redacted-secret]")
+    .replace(/\b(ghp_[A-Za-z0-9]{12,})\b/g, "[redacted-secret]")
+    .replace(/\b(xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[redacted-secret]")
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._\-]{12,}\b/gi, "$1[redacted-secret]");
+}
+
+async function commandExists(command: string, backend: AgentExecutionBackend) {
+  const resolvedBackend = resolveExecutionBackend(backend);
+
+  try {
+    if (process.platform === "win32" && resolvedBackend === "host_native") {
+      await execFileAsync("where.exe", [command], { windowsHide: true });
+      return true;
+    }
+
+    if (process.platform === "win32" && resolvedBackend === "wsl_bash") {
+      await execFileAsync("wsl.exe", ["-e", "bash", "-lc", `command -v ${command}`], {
+        windowsHide: true,
+      });
+      return true;
+    }
+
+    await execFileAsync("bash", ["-lc", `command -v ${command}`], { windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function redactCommandResult(settings: AgentJobSettingsRecord, result: CommandExecutionResult) {
+  return {
+    ...result,
+    stdout: truncateText(
+      settings.redactSecretsInArtifacts ? redactSecrets(result.stdout || "") : result.stdout || "",
+    ),
+    stderr: truncateText(
+      settings.redactSecretsInArtifacts ? redactSecrets(result.stderr || "") : result.stderr || "",
+    ),
+  };
+}
+
+function relativeWorkspaceCwd(workspacePath: string, cwd: string) {
+  const rel = relative(resolve(workspacePath), resolve(cwd));
+  if (!rel || rel === ".") {
+    return "/workspace";
+  }
+
+  return `/workspace/${rel.replaceAll("\\", "/")}`;
+}
+
+function createExecutionRunner(
+  settings: AgentJobSettingsRecord,
+  workspacePath: string,
+): ExecutionRunner {
+  const backend = resolveExecutionBackend(settings.executionBackend);
+
+  if (backend === "docker_sandbox") {
+    return {
+      backend,
+      label: "Docker sandbox",
+      async runShellCommand(params) {
+        const dockerArgs = [
+          "run",
+          "--rm",
+          "--init",
+          "-v",
+          `${resolve(workspacePath)}:/workspace`,
+          "-w",
+          relativeWorkspaceCwd(workspacePath, params.cwd),
+        ];
+
+        if (!settings.allowNetworkAccess) {
+          dockerArgs.push("--network", "none");
+        }
+
+        dockerArgs.push(
+          "mcr.microsoft.com/playwright:v1.52.0-noble",
+          "bash",
+          "-lc",
+          params.command,
+        );
+
+        try {
+          const { stdout, stderr } = await execFileAsync("docker", dockerArgs, {
+            cwd: workspacePath,
+            timeout: params.timeoutSeconds * 1000,
+            maxBuffer: 1024 * 1024 * 4,
+            windowsHide: true,
+          });
+
+          return redactCommandResult(settings, {
+            command: params.command,
+            cwd: params.cwd,
+            exitCode: 0,
+            stdout: stdout || "",
+            stderr: stderr || "",
+          });
+        } catch (error) {
+          const execError = error as {
+            code?: number;
+            stdout?: string;
+            stderr?: string;
+            message?: string;
+          };
+
+          return redactCommandResult(settings, {
+            command: params.command,
+            cwd: params.cwd,
+            exitCode: typeof execError.code === "number" ? execError.code : 1,
+            stdout: execError.stdout || "",
+            stderr: execError.stderr || execError.message || "Command failed.",
+          });
+        }
+      },
+    };
+  }
+
+  if (process.platform === "win32" && backend === "wsl_bash") {
+    return {
+      backend,
+      label: "WSL bash",
+      async runShellCommand(params) {
+        try {
+          const { stdout, stderr } = await execFileAsync(
+            "wsl.exe",
+            ["-e", "bash", "-lc", params.command],
+            {
+              cwd: params.cwd,
+              timeout: params.timeoutSeconds * 1000,
+              maxBuffer: 1024 * 1024 * 4,
+              windowsHide: true,
+            },
+          );
+
+          return redactCommandResult(settings, {
+            command: params.command,
+            cwd: params.cwd,
+            exitCode: 0,
+            stdout: stdout || "",
+            stderr: stderr || "",
+          });
+        } catch (error) {
+          const execError = error as {
+            code?: number;
+            stdout?: string;
+            stderr?: string;
+            message?: string;
+          };
+
+          return redactCommandResult(settings, {
+            command: params.command,
+            cwd: params.cwd,
+            exitCode: typeof execError.code === "number" ? execError.code : 1,
+            stdout: execError.stdout || "",
+            stderr: execError.stderr || execError.message || "Command failed.",
+          });
+        }
+      },
+    };
+  }
+
+  if (process.platform === "win32" && backend === "host_native") {
+    return {
+      backend,
+      label: "Host native shell",
+      async runShellCommand(params) {
+        try {
+          const { stdout, stderr } = await execFileAsync(
+            "powershell.exe",
+            ["-NoProfile", "-Command", params.command],
+            {
+              cwd: params.cwd,
+              timeout: params.timeoutSeconds * 1000,
+              maxBuffer: 1024 * 1024 * 4,
+              windowsHide: true,
+            },
+          );
+
+          return redactCommandResult(settings, {
+            command: params.command,
+            cwd: params.cwd,
+            exitCode: 0,
+            stdout: stdout || "",
+            stderr: stderr || "",
+          });
+        } catch (error) {
+          const execError = error as {
+            code?: number;
+            stdout?: string;
+            stderr?: string;
+            message?: string;
+          };
+
+          return redactCommandResult(settings, {
+            command: params.command,
+            cwd: params.cwd,
+            exitCode: typeof execError.code === "number" ? execError.code : 1,
+            stdout: execError.stdout || "",
+            stderr: execError.stderr || execError.message || "Command failed.",
+          });
+        }
+      },
+    };
+  }
+
+  return {
+    backend: "host_native",
+    label: "Host bash",
+    async runShellCommand(params) {
+      try {
+        const { stdout, stderr } = await execFileAsync("bash", ["-lc", params.command], {
+          cwd: params.cwd,
+          timeout: params.timeoutSeconds * 1000,
+          maxBuffer: 1024 * 1024 * 4,
+          windowsHide: true,
+        });
+
+        return redactCommandResult(settings, {
+          command: params.command,
+          cwd: params.cwd,
+          exitCode: 0,
+          stdout: stdout || "",
+          stderr: stderr || "",
+        });
+      } catch (error) {
+        const execError = error as {
+          code?: number;
+          stdout?: string;
+          stderr?: string;
+          message?: string;
+        };
+
+        return redactCommandResult(settings, {
+          command: params.command,
+          cwd: params.cwd,
+          exitCode: typeof execError.code === "number" ? execError.code : 1,
+          stdout: execError.stdout || "",
+          stderr: execError.stderr || execError.message || "Command failed.",
+        });
+      }
+    },
+  };
+}
+
+export async function detectExecutionRequirements(params: {
+  settings: AgentJobSettingsRecord;
+  workspacePath: string;
+}) {
+  const requirements: DetectedExecutionRequirement[] = [];
+  const backend = resolveExecutionBackend(params.settings.executionBackend);
+  const normalizedWorkspacePath = normalizeWorkspacePath(
+    params.workspacePath,
+    backend,
+  );
+
+  if (!isWorkspaceAllowed(params.settings, normalizedWorkspacePath)) {
+    requirements.push({
+      kind: "runtime",
+      label: "Workspace root is outside the allowed roots",
+      detail: `The workspace ${normalizedWorkspacePath} is not inside the allowed workspace roots configured for agent jobs.`,
+      metadataJson: {
+        workspacePath: normalizedWorkspacePath,
+        allowedWorkspaceRoots: params.settings.allowedWorkspaceRoots,
+      },
+    });
+  }
+
+  if (backend === "docker_sandbox") {
+    const hasDocker = await commandExists("docker", "host_native");
+    if (!hasDocker) {
+      requirements.push({
+        kind: "service",
+        label: "Docker is required for the selected sandbox backend",
+        detail: "Switch the execution backend to host native / WSL or make Docker available before continuing.",
+      });
+    }
+  }
+
+  if (backend === "wsl_bash" && process.platform === "win32") {
+    const hasWsl = await commandExists("wsl", "host_native");
+    if (!hasWsl) {
+      requirements.push({
+        kind: "runtime",
+        label: "WSL is required for the selected execution backend",
+        detail: "Switch the execution backend to host native or install and enable WSL before continuing.",
+      });
+    }
+  }
+
+  const entries = await readdir(normalizedWorkspacePath).catch(() => []);
+  const entrySet = new Set(entries.map((entry) => entry.toLowerCase()));
+
+  if (backend === "docker_sandbox") {
+    if (!params.settings.allowNetworkAccess) {
+      requirements.push({
+        kind: "network",
+        label: "Network access is disabled",
+        detail: "Jobs can still work locally, but installs, remote fetches, and browser-heavy verification will stay blocked until network access is enabled.",
+      });
+    }
+
+    return requirements;
+  }
+
+  if (entrySet.has("package.json")) {
+    if (!(await commandExists("node", params.settings.executionBackend))) {
+      requirements.push({
+        kind: "runtime",
+        label: "Node.js runtime is required",
+        detail: "This workspace has a package.json, so Node.js must be available before the job can continue.",
+      });
+    }
+
+    const packageManager =
+      entrySet.has("pnpm-lock.yaml") ? "pnpm" :
+      entrySet.has("yarn.lock") ? "yarn" :
+      entrySet.has("bun.lock") || entrySet.has("bun.lockb") ? "bun" :
+      "npm";
+
+    if (!(await commandExists(packageManager, params.settings.executionBackend))) {
+      requirements.push({
+        kind: "package_manager",
+        label: `${packageManager} is required for this workspace`,
+        detail: `The workspace appears to use ${packageManager}, but that package manager is not available on the selected execution backend.`,
+        metadataJson: {
+          packageManager,
+        },
+      });
+    }
+  }
+
+  if (entrySet.has("pyproject.toml") || entrySet.has("requirements.txt")) {
+    if (!(await commandExists("python", params.settings.executionBackend)) &&
+        !(await commandExists("python3", params.settings.executionBackend))) {
+      requirements.push({
+        kind: "runtime",
+        label: "Python runtime is required",
+        detail: "This workspace includes Python project files, so Python must be available before the job can continue.",
+      });
+    }
+  }
+
+  if ((entrySet.has("docker-compose.yml") || entrySet.has("compose.yml") || entrySet.has("dockerfile")) &&
+      !(await commandExists("docker", params.settings.executionBackend))) {
+    requirements.push({
+      kind: "service",
+      label: "Docker is required for this workspace",
+      detail: "This workspace includes Docker resources, so Docker must be available before the job can continue.",
+    });
+  }
+
+  if (!(await commandExists("git", params.settings.executionBackend))) {
+    requirements.push({
+      kind: "runtime",
+      label: "Git is required for autonomous coding work",
+      detail: "The agent expects git to be available for safe inspection and handoff flows.",
+    });
+  }
+
+  if (!params.settings.allowNetworkAccess) {
+    requirements.push({
+      kind: "network",
+      label: "Network access is disabled",
+      detail: "Jobs can still work locally, but installs, remote fetches, and browser-heavy verification will stay blocked until network access is enabled.",
+    });
+  }
+
+  return requirements;
+}
+
 function commandNeedsApproval(mode: AgentJobApprovalMode, command: string) {
   if (mode === "restrictive") {
     return true;
@@ -138,6 +599,12 @@ function commandNeedsApproval(mode: AgentJobApprovalMode, command: string) {
   }
 
   return /(^|\s)(sudo|su\b|passwd\b|shutdown\b|reboot\b|mkfs\b|dd\b|mount\b|umount\b|systemctl\b|service\b|chown\b|useradd\b|userdel\b|groupadd\b|groupdel\b|chmod\s+[0-7]{3,4}\b|rm\s+-rf\b|git\s+reset\s+--hard\b|git\s+clean\s+-fd\b|git\s+push\s+--force\b|docker\s+system\s+prune\b|docker\s+volume\s+rm\b)/.test(command);
+}
+
+function isForbiddenCommand(command: string) {
+  return /(^|\s)(shutdown\b|reboot\b|halt\b|poweroff\b|mkfs\b|fdisk\b|diskpart\b|format\b|bcdedit\b|reg\s+delete\b|cipher\s+\/w\b|rm\s+-rf\s+\/($|\s)|del\s+\/s\s+\/q\s+c:\\|Remove-Item\s+.+-Recurse.+[A-Za-z]:\\($|\s))/i.test(
+    command,
+  );
 }
 
 function makeAgentInstructions(request: JobRequestShape) {
@@ -196,6 +663,7 @@ function makeVerificationPrompt(params: {
   request: JobRequestShape;
   candidateCommands: string[];
   implementationSummary: string;
+  browserVerificationEnabled?: boolean;
 }) {
   const lines = [
     `Verify whether the job goal has been completed for: ${params.request.goal}`,
@@ -214,7 +682,12 @@ function makeVerificationPrompt(params: {
   lines.push(
     "",
     "When you finish, answer with whether the build is verified, what evidence you collected, and any remaining blocker.",
+    "Use check_port and probe_http when the app exposes a local service or endpoint worth checking.",
   );
+
+  if (params.browserVerificationEnabled) {
+    lines.push("Use browser_visit for a browser-level smoke pass once the app is reachable.");
+  }
 
   return lines.join("\n");
 }
@@ -359,6 +832,7 @@ async function removePathImpl(workspacePath: string, pathValue: string) {
 }
 
 async function runCommandImpl(params: {
+  settings: AgentJobSettingsRecord;
   workspacePath: string;
   command: string;
   cwd?: string | null;
@@ -366,35 +840,126 @@ async function runCommandImpl(params: {
 }) {
   const targetCwd = ensureWithinWorkspace(params.workspacePath, params.cwd?.trim() || ".");
 
-  try {
-    const { stdout, stderr } = await execFileAsync("/bin/bash", ["-lc", params.command], {
+  if (!params.settings.allowNetworkAccess && looksLikeNetworkCommand(params.command)) {
+    return {
+      command: params.command,
       cwd: targetCwd,
-      timeout: params.timeoutSeconds * 1000,
-      maxBuffer: 1024 * 1024 * 4,
+      exitCode: 1,
+      stdout: "",
+      stderr: "Blocked by agent settings: network access is disabled for this job.",
+    };
+  }
+
+  if (isForbiddenCommand(params.command)) {
+    return {
+      command: params.command,
+      cwd: targetCwd,
+      exitCode: 1,
+      stdout: "",
+      stderr: "Blocked by agent safety policy: this command is too destructive to run automatically.",
+    };
+  }
+
+  const runner = createExecutionRunner(params.settings, params.workspacePath);
+  return runner.runShellCommand({
+    command: params.command,
+    cwd: targetCwd,
+    timeoutSeconds: params.timeoutSeconds,
+    settings: params.settings,
+  });
+}
+
+async function probeHttpImpl(url: string) {
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+  });
+  const text = await response.text();
+  const headers: Record<string, string> = {};
+  response.headers.forEach((value, key) => {
+    headers[key] = value;
+  });
+
+  return {
+    url,
+    status: response.status,
+    ok: response.ok,
+    headers,
+    bodyPreview: truncateText(text, 4_000),
+  };
+}
+
+async function checkPortImpl(host: string, port: number, timeoutMs = 2_000) {
+  return new Promise<{ host: string; port: number; open: boolean; error: string | null }>((resolvePromise) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const finish = (open: boolean, error: string | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolvePromise({
+        host,
+        port,
+        open,
+        error,
+      });
+    };
+
+    socket.setTimeout(timeoutMs);
+    socket.once("connect", () => finish(true, null));
+    socket.once("timeout", () => finish(false, "Timed out"));
+    socket.once("error", (error) => finish(false, error.message));
+    socket.connect(port, host);
+  });
+}
+
+async function browserVisitImpl(params: {
+  url: string;
+  waitForText?: string | null;
+  timeoutMs?: number;
+}) {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ headless: true });
+
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 1440, height: 960 },
+    });
+    const response = await page.goto(params.url, {
+      waitUntil: "networkidle",
+      timeout: params.timeoutMs ?? 20_000,
     });
 
-    return {
-      command: params.command,
-      cwd: targetCwd,
-      exitCode: 0,
-      stdout: truncateText(stdout || ""),
-      stderr: truncateText(stderr || ""),
-    };
-  } catch (error) {
-    const execError = error as {
-      code?: number;
-      stdout?: string;
-      stderr?: string;
-      message?: string;
-    };
+    if (params.waitForText?.trim()) {
+      await page.getByText(params.waitForText.trim(), { exact: false }).first().waitFor({
+        timeout: params.timeoutMs ?? 10_000,
+      });
+    }
+
+    const title = await page.title();
+    const bodyText = await page.locator("body").innerText().catch(() => "");
+    const screenshot = await page.screenshot({ type: "png", fullPage: true });
+    const storageKey = createAgentJobArtifactStorageKey("browser", "verification.png");
+    const storagePath = await ensureAgentJobArtifactStoragePath(storageKey);
+    await writeFile(storagePath, screenshot);
 
     return {
-      command: params.command,
-      cwd: targetCwd,
-      exitCode: typeof execError.code === "number" ? execError.code : 1,
-      stdout: truncateText(execError.stdout || ""),
-      stderr: truncateText(execError.stderr || execError.message || "Command failed."),
+      url: params.url,
+      finalUrl: page.url(),
+      title,
+      status: response?.status() ?? null,
+      waitForText: params.waitForText?.trim() || null,
+      bodyPreview: truncateText(bodyText, 4_000),
+      screenshot: {
+        storageKey,
+        mimeType: "image/png",
+      },
     };
+  } finally {
+    await browser.close();
   }
 }
 
@@ -404,7 +969,7 @@ function createBuildAgent(params: {
   request: JobRequestShape;
   workspacePath: string;
   approvalMode: AgentJobApprovalMode;
-  activeTools?: Array<"list_directory" | "search_files" | "read_file" | "write_file" | "replace_in_file" | "make_directory" | "remove_path" | "run_command">;
+  activeTools?: AgentToolName[];
 }) {
   const resolved = resolveInferenceLanguageModel(params.inference);
 
@@ -500,10 +1065,42 @@ function createBuildAgent(params: {
       needsApproval: async ({ command }) => commandNeedsApproval(params.approvalMode, command),
       execute: async ({ command, cwd, timeoutSeconds }) =>
         runCommandImpl({
+          settings: params.settings,
           workspacePath: params.workspacePath,
           command,
           cwd,
           timeoutSeconds: timeoutSeconds ?? params.settings.maxCommandTimeoutSeconds,
+        }),
+    }),
+    probe_http: tool({
+      description: "Fetch an HTTP endpoint and capture status, headers, and a short response preview.",
+      inputSchema: z.object({
+        url: z.string().url(),
+      }),
+      needsApproval: !params.settings.allowNetworkAccess,
+      execute: async ({ url }) => probeHttpImpl(url),
+    }),
+    check_port: tool({
+      description: "Check whether a TCP host and port are accepting connections.",
+      inputSchema: z.object({
+        host: z.string().default("127.0.0.1"),
+        port: z.number().int().min(1).max(65535),
+      }),
+      execute: async ({ host, port }) => checkPortImpl(host, port),
+    }),
+    browser_visit: tool({
+      description: "Open a URL in a headless browser, capture page metadata, and save a screenshot artifact.",
+      inputSchema: z.object({
+        url: z.string().url(),
+        waitForText: z.string().nullable().optional(),
+        timeoutMs: z.number().int().min(1_000).max(60_000).optional(),
+      }),
+      needsApproval: !params.settings.allowNetworkAccess,
+      execute: async ({ url, waitForText, timeoutMs }) =>
+        browserVisitImpl({
+          url,
+          waitForText,
+          timeoutMs,
         }),
     }),
   };
@@ -587,7 +1184,7 @@ async function runAgentLoop(params: {
   approvalMode: AgentJobApprovalMode;
   prompt?: string;
   messages?: SerializedAgentMessage[];
-  activeTools?: Array<"list_directory" | "search_files" | "read_file" | "write_file" | "replace_in_file" | "make_directory" | "remove_path" | "run_command">;
+  activeTools?: AgentToolName[];
 }) {
   const agent = createBuildAgent({
     inference: params.inference,
@@ -709,6 +1306,7 @@ export async function runImplementationAgent(params: {
   inspectionSummary: string;
   priorVerifierNotes: string[];
   messages?: SerializedAgentMessage[];
+  activeTools?: AgentToolName[];
 }) {
   return runAgentLoop({
     inference: params.inference,
@@ -722,6 +1320,7 @@ export async function runImplementationAgent(params: {
       priorVerifierNotes: params.priorVerifierNotes,
     }),
     messages: params.messages,
+    activeTools: params.activeTools,
   });
 }
 
@@ -734,6 +1333,7 @@ export async function runVerificationAgent(params: {
   implementationSummary: string;
   packageMetadata: Record<string, unknown>;
   messages?: SerializedAgentMessage[];
+  activeTools?: AgentToolName[];
 }) {
   return runAgentLoop({
     inference: params.inference,
@@ -745,9 +1345,20 @@ export async function runVerificationAgent(params: {
       request: params.request,
       candidateCommands: guessVerificationCommands(params.workspacePath, params.packageMetadata),
       implementationSummary: params.implementationSummary,
+      browserVerificationEnabled: params.settings.browserVerificationEnabled,
     }),
     messages: params.messages,
-    activeTools: ["list_directory", "search_files", "read_file", "run_command"],
+    activeTools:
+      params.activeTools ??
+      [
+        "list_directory",
+        "search_files",
+        "read_file",
+        "run_command",
+        "probe_http",
+        "check_port",
+        ...(params.settings.browserVerificationEnabled ? (["browser_visit"] as const) : []),
+      ],
   });
 }
 

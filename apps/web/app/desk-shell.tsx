@@ -109,6 +109,11 @@ function followUpSuggestions(message: DeskChatMessage | undefined) {
   ];
 }
 
+function isAgentJobLaunchPrompt(message: DeskChatMessage | undefined) {
+  const text = extractText(message);
+  return /reply yes to start it as an agent job, or no to keep this/i.test(text);
+}
+
 type DeskConversationPaneProps = {
   activeConversationId?: string;
   conversationTitle?: string;
@@ -249,6 +254,17 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     }
   }
 
+  async function respondToAgentJobPrompt(decision: "yes" | "no") {
+    if (status === "submitted" || status === "streaming") {
+      return;
+    }
+
+    clearError();
+    await sendMessage({
+      text: decision,
+    });
+  }
+
   const stageTitle =
     props.conversationTitle ?? (props.activeConversationId ? "Saved correspondence" : "Fresh correspondence");
   const stageDescription =
@@ -330,6 +346,11 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             (part) => part.type === "source-url" || part.type === "source-document",
           );
           const textParts = message.parts.filter((part) => part.type === "text");
+          const showLaunchPromptActions =
+            !isUser &&
+            isAgentJobLaunchPrompt(message) &&
+            status !== "submitted" &&
+            status !== "streaming";
           const isStreamingAssistant =
             !isUser &&
             (message.parts.some(
@@ -412,6 +433,26 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
               ) : null}
               {!isUser ? (
                 <div className="desk-message-actions">
+                  {showLaunchPromptActions ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void respondToAgentJobPrompt("yes")}
+                        className="button-primary"
+                        style={{ padding: "6px 10px", fontSize: 11 }}
+                      >
+                        Start job
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void respondToAgentJobPrompt("no")}
+                        className="button-secondary"
+                        style={{ padding: "6px 10px", fontSize: 11 }}
+                      >
+                        Keep in chat
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}

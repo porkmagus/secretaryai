@@ -87,25 +87,29 @@ export async function postAgentJobConversationUpdate(
     conversation.channelRef &&
     params.config.telegram.botToken
   ) {
-    const delivery = await maybeDeliverTelegramAssistantMessage({
-      dbClient: params.dbClient,
-      config: params.config,
-      conversationId: conversation.id,
-      messageId,
-      text: params.text,
-      importance: params.importance ?? "normal",
-      source: "job",
-      traceId: createMessageId(),
-      forceChatId: conversation.channelRef,
-      ignoreDeliveryPolicy: true,
-    });
-
-    if (delivery.delivered && delivery.sentMessageIds[0]) {
-      await attachExternalMessageIdToMessage(
-        params.dbClient,
+    try {
+      const delivery = await maybeDeliverTelegramAssistantMessage({
+        dbClient: params.dbClient,
+        config: params.config,
+        conversationId: conversation.id,
         messageId,
-        delivery.sentMessageIds[0],
-      );
+        text: params.text,
+        importance: params.importance ?? "normal",
+        source: "job",
+        traceId: createMessageId(),
+        forceChatId: conversation.channelRef,
+        ignoreDeliveryPolicy: true,
+      });
+
+      if (delivery.delivered && delivery.sentMessageIds[0]) {
+        await attachExternalMessageIdToMessage(
+          params.dbClient,
+          messageId,
+          delivery.sentMessageIds[0],
+        );
+      }
+    } catch {
+      // Keep lifecycle updates durable even when an external chat channel is unavailable.
     }
   }
 

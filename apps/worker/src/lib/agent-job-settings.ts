@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   AgentJobApprovalMode,
+  AgentExecutionBackend,
   AgentJobSettingsRecord,
   AgentJobSettingsResponse,
   UpdateAgentJobSettingsRequest,
@@ -14,9 +15,15 @@ const settingsFilePath = resolve(repoRoot, "runtime/config/agent-jobs.json");
 const defaultSettings: AgentJobSettingsRecord = {
   defaultWorkspacePath: null,
   defaultApprovalMode: "builder",
+  executionBackend: "host_native",
   maxAgentSteps: 24,
   maxCommandTimeoutSeconds: 120,
   maxVerificationAttempts: 2,
+  maxJobRuntimeMinutes: 45,
+  allowNetworkAccess: true,
+  browserVerificationEnabled: false,
+  redactSecretsInArtifacts: true,
+  allowedWorkspaceRoots: [],
 };
 
 function clampInteger(value: unknown, minimum: number, maximum: number, fallback: number) {
@@ -35,6 +42,14 @@ function normalizeApprovalMode(value: unknown): AgentJobApprovalMode {
   return "builder";
 }
 
+function normalizeExecutionBackend(value: unknown): AgentExecutionBackend {
+  if (value === "wsl_bash" || value === "docker_sandbox") {
+    return value;
+  }
+
+  return "host_native";
+}
+
 function parseSettings(raw: Record<string, unknown> | null | undefined): AgentJobSettingsRecord {
   return {
     defaultWorkspacePath:
@@ -42,6 +57,7 @@ function parseSettings(raw: Record<string, unknown> | null | undefined): AgentJo
         ? raw.defaultWorkspacePath.trim()
         : null,
     defaultApprovalMode: normalizeApprovalMode(raw?.defaultApprovalMode),
+    executionBackend: normalizeExecutionBackend(raw?.executionBackend),
     maxAgentSteps: clampInteger(raw?.maxAgentSteps, 4, 60, defaultSettings.maxAgentSteps),
     maxCommandTimeoutSeconds: clampInteger(
       raw?.maxCommandTimeoutSeconds,
@@ -55,6 +71,21 @@ function parseSettings(raw: Record<string, unknown> | null | undefined): AgentJo
       5,
       defaultSettings.maxVerificationAttempts,
     ),
+    maxJobRuntimeMinutes: clampInteger(
+      raw?.maxJobRuntimeMinutes,
+      5,
+      8 * 60,
+      defaultSettings.maxJobRuntimeMinutes,
+    ),
+    allowNetworkAccess: raw?.allowNetworkAccess !== false,
+    browserVerificationEnabled: raw?.browserVerificationEnabled === true,
+    redactSecretsInArtifacts: raw?.redactSecretsInArtifacts !== false,
+    allowedWorkspaceRoots: Array.isArray(raw?.allowedWorkspaceRoots)
+      ? raw.allowedWorkspaceRoots
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [],
   };
 }
 

@@ -37,6 +37,7 @@ import {
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import {
   buildApprovalResponseMessages,
+  detectExecutionRequirements,
   normalizeWorkspacePath,
   runImplementationAgent,
   runVerificationAgent,
@@ -402,6 +403,7 @@ async function insertArtifact(params: {
   stepId: string | null;
   kind: AgentJobArtifactKind;
   label: string;
+  storageKey?: string | null;
   contentText?: string | null;
   metadataJson?: Record<string, unknown>;
   mimeType?: string | null;
@@ -412,7 +414,7 @@ async function insertArtifact(params: {
     stepId: params.stepId,
     artifactKind: params.kind,
     label: params.label,
-    storageKey: null,
+    storageKey: params.storageKey ?? null,
     contentText: params.contentText ?? null,
     mimeType: params.mimeType ?? null,
     metadataJson: params.metadataJson ?? {},
@@ -922,6 +924,219 @@ async function clearPendingRequirementsForStep(params: {
   ));
 }
 
+async function syncDetectedRequirements(params: {
+  dbClient: DbClient;
+  jobId: string;
+  stepId: string;
+  detected: Awaited<ReturnType<typeof detectExecutionRequirements>>;
+}) {
+  await params.dbClient.db.delete(agentJobRequirements).where(and(
+    eq(agentJobRequirements.jobId, params.jobId),
+    eq(agentJobRequirements.stepId, params.stepId),
+    inArray(agentJobRequirements.requirementKind, ["runtime", "package_manager", "service", "network", "port"]),
+    eq(agentJobRequirements.status, "pending"),
+  ));
+
+  for (const requirement of params.detected) {
+    await insertRequirement({
+      dbClient: params.dbClient,
+      jobId: params.jobId,
+      stepId: params.stepId,
+      kind: requirement.kind,
+      label: requirement.label,
+      detail: requirement.detail,
+      metadataJson: requirement.metadataJson,
+    });
+  }
+}
+
+async function storeVerificationEvidenceArtifacts(params: {
+  dbClient: DbClient;
+  jobId: string;
+  stepId: string;
+  stepSnapshots: Array<{
+    toolResults: Array<{
+      toolName: string;
+      output: unknown;
+    }>;
+  }>;
+}) {
+  let evidenceIndex = 0;
+
+  for (const step of params.stepSnapshots) {
+    for (const result of step.toolResults) {
+      if (
+        result.toolName !== "probe_http" &&
+        result.toolName !== "check_port" &&
+        result.toolName !== "browser_visit"
+      ) {
+        continue;
+      }
+
+      evidenceIndex += 1;
+      const outputRecord =
+        result.output && typeof result.output === "object"
+          ? (result.output as Record<string, unknown>)
+          : null;
+      const contentText =
+        typeof result.output === "string"
+          ? result.output
+          : JSON.stringify(result.output, null, 2);
+
+      await insertArtifact({
+        dbClient: params.dbClient,
+        jobId: params.jobId,
+        stepId: params.stepId,
+        kind: "verification",
+        label: `Verification evidence ${evidenceIndex}`,
+        contentText,
+        mimeType: "application/json",
+        metadataJson: {
+          toolName: result.toolName,
+        },
+      });
+
+      if (
+        result.toolName === "browser_visit" &&
+        outputRecord?.screenshot &&
+        typeof outputRecord.screenshot === "object"
+      ) {
+        const screenshot = outputRecord.screenshot as Record<string, unknown>;
+        const storageKey =
+          typeof screenshot.storageKey === "string" ? screenshot.storageKey : null;
+        const mimeType =
+          typeof screenshot.mimeType === "string" ? screenshot.mimeType : "image/png";
+
+        if (storageKey) {
+          await insertArtifact({
+            dbClient: params.dbClient,
+            jobId: params.jobId,
+            stepId: params.stepId,
+            kind: "verification",
+            label: "Browser screenshot",
+            storageKey,
+            contentText: null,
+            mimeType,
+            metadataJson: {
+              toolName: result.toolName,
+            },
+          });
+        }
+      }
+    }
+  }
+}
+
+function collectVerificationBlockers(params: {
+  commandLogs: Array<{
+    command: string;
+    exitCode: number;
+  }>;
+  stepSnapshots: Array<{
+    toolResults: Array<{
+      toolName: string;
+      output: unknown;
+    }>;
+  }>;
+}) {
+  const notes = params.commandLogs
+    .filter((entry) => entry.exitCode !== 0)
+    .map((entry) => `${entry.command} exited with ${entry.exitCode}`);
+
+  for (const step of params.stepSnapshots) {
+    for (const result of step.toolResults) {
+      if (!result.output || typeof result.output !== "object") {
+        continue;
+      }
+
+      const output = result.output as Record<string, unknown>;
+
+      if (result.toolName === "check_port" && output.open === false) {
+        const host = typeof output.host === "string" ? output.host : "127.0.0.1";
+        const port = typeof output.port === "number" ? output.port : "unknown";
+        notes.push(`Port check failed for ${host}:${port}`);
+      }
+
+      if (result.toolName === "probe_http") {
+        const status = typeof output.status === "number" ? output.status : null;
+        const ok = output.ok === true;
+        const url = typeof output.url === "string" ? output.url : "endpoint";
+        if (status !== null && (!ok || status >= 400)) {
+          notes.push(`HTTP probe failed for ${url} with status ${status}`);
+        }
+      }
+    }
+  }
+
+  return [...new Set(notes)];
+}
+
+async function syncVerificationRequirements(params: {
+  dbClient: DbClient;
+  jobId: string;
+  stepId: string;
+  stepSnapshots: Array<{
+    toolResults: Array<{
+      toolName: string;
+      output: unknown;
+    }>;
+  }>;
+}) {
+  await params.dbClient.db.delete(agentJobRequirements).where(and(
+    eq(agentJobRequirements.jobId, params.jobId),
+    eq(agentJobRequirements.stepId, params.stepId),
+    inArray(agentJobRequirements.requirementKind, ["network", "port", "service"]),
+    eq(agentJobRequirements.status, "pending"),
+  ));
+
+  for (const step of params.stepSnapshots) {
+    for (const result of step.toolResults) {
+      if (!result.output || typeof result.output !== "object") {
+        continue;
+      }
+
+      const output = result.output as Record<string, unknown>;
+
+      if (result.toolName === "check_port" && output.open === false) {
+        const host = typeof output.host === "string" ? output.host : "127.0.0.1";
+        const port = typeof output.port === "number" ? output.port : null;
+        await insertRequirement({
+          dbClient: params.dbClient,
+          jobId: params.jobId,
+          stepId: params.stepId,
+          kind: "port",
+          label: `Open ${host}:${port ?? "unknown"}`,
+          detail: "The verification pass could not connect to the expected local port.",
+          metadataJson: {
+            host,
+            port,
+            error: output.error,
+          },
+        });
+      }
+
+      if (result.toolName === "probe_http") {
+        const status = typeof output.status === "number" ? output.status : null;
+        const ok = output.ok === true;
+        if (status !== null && (!ok || status >= 400)) {
+          await insertRequirement({
+            dbClient: params.dbClient,
+            jobId: params.jobId,
+            stepId: params.stepId,
+            kind: "network",
+            label: `HTTP probe returned ${status}`,
+            detail: "The verification pass reached the endpoint, but the response was not healthy yet.",
+            metadataJson: {
+              url: output.url,
+              status,
+            },
+          });
+        }
+      }
+    }
+  }
+}
+
 async function recoverInterruptedStep(params: {
   dbClient: DbClient;
   jobId: string;
@@ -1048,6 +1263,48 @@ async function executeImplementationStep(params: {
   const resolvedApprovals = params.requirements.filter(
     (requirement) => requirement.stepId === params.implementStep.id && requirement.requirementKind === "approval" && requirement.status !== "pending",
   );
+
+  const detectedRequirements = await detectExecutionRequirements({
+    settings,
+    workspacePath: params.row.agent.workspacePath,
+  });
+  await syncDetectedRequirements({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.implementStep.id,
+    detected: detectedRequirements,
+  });
+
+  if (detectedRequirements.length > 0) {
+    await updateStepState({
+      dbClient: params.dbClient,
+      stepId: params.implementStep.id,
+      status: "waiting_for_runtime",
+      errorText: detectedRequirements.map((entry) => entry.label).join("; "),
+    });
+    await updateJobState({
+      dbClient: params.dbClient,
+      jobId: params.jobId,
+      status: "waiting_for_runtime",
+      blockerSummary: detectedRequirements[0]?.detail ?? "Missing runtime requirements.",
+      currentStepId: params.implementStep.id,
+      errorText: null,
+    });
+    await postAgentJobConversationUpdate({
+      dbClient: params.dbClient,
+      config: params.config,
+      conversationId: params.row.agent.conversationId ?? null,
+      jobId: params.jobId,
+      eventName: "agent.job.chat.runtime_requirements_detected",
+      importance: "important",
+      text: `I’m blocked on runtime requirements before implementation can continue: ${detectedRequirements.map((entry) => entry.label).join("; ")}. ${buildAgentJobLocationHint(params.jobId)}`,
+      metadataJson: {
+        stepId: params.implementStep.id,
+        requirements: detectedRequirements,
+      },
+    });
+    return;
+  }
 
   if (pendingApprovals.length > 0) {
     await updateJobState({
@@ -1339,6 +1596,48 @@ async function executeVerificationStep(params: {
     (requirement) => requirement.stepId === params.verifyStep.id && requirement.requirementKind === "approval" && requirement.status !== "pending",
   );
 
+  const detectedRequirements = await detectExecutionRequirements({
+    settings,
+    workspacePath: params.row.agent.workspacePath,
+  });
+  await syncDetectedRequirements({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.verifyStep.id,
+    detected: detectedRequirements,
+  });
+
+  if (detectedRequirements.length > 0) {
+    await updateStepState({
+      dbClient: params.dbClient,
+      stepId: params.verifyStep.id,
+      status: "waiting_for_runtime",
+      errorText: detectedRequirements.map((entry) => entry.label).join("; "),
+    });
+    await updateJobState({
+      dbClient: params.dbClient,
+      jobId: params.jobId,
+      status: "waiting_for_runtime",
+      blockerSummary: detectedRequirements[0]?.detail ?? "Missing runtime requirements.",
+      currentStepId: params.verifyStep.id,
+      errorText: null,
+    });
+    await postAgentJobConversationUpdate({
+      dbClient: params.dbClient,
+      config: params.config,
+      conversationId: params.row.agent.conversationId ?? null,
+      jobId: params.jobId,
+      eventName: "agent.job.chat.verification_requirements_detected",
+      importance: "important",
+      text: `I’m blocked on runtime requirements before verification can continue: ${detectedRequirements.map((entry) => entry.label).join("; ")}. ${buildAgentJobLocationHint(params.jobId)}`,
+      metadataJson: {
+        stepId: params.verifyStep.id,
+        requirements: detectedRequirements,
+      },
+    });
+    return;
+  }
+
   if (pendingApprovals.length > 0) {
     await updateJobState({
       dbClient: params.dbClient,
@@ -1417,6 +1716,18 @@ async function executeVerificationStep(params: {
     stepId: params.verifyStep.id,
     commandLogs: result.commandLogs,
   });
+  await storeVerificationEvidenceArtifacts({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.verifyStep.id,
+    stepSnapshots: result.stepSnapshots,
+  });
+  await syncVerificationRequirements({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.verifyStep.id,
+    stepSnapshots: result.stepSnapshots,
+  });
   await insertArtifact({
     dbClient: params.dbClient,
     jobId: params.jobId,
@@ -1491,11 +1802,13 @@ async function executeVerificationStep(params: {
     return;
   }
 
-  const failingCommands = result.commandLogs.filter((entry) => entry.exitCode !== 0);
   const attemptCount = getVerificationAttemptCount(params.steps) + 1;
+  const failureNotes = collectVerificationBlockers({
+    commandLogs: result.commandLogs,
+    stepSnapshots: result.stepSnapshots,
+  });
 
-  if (failingCommands.length > 0) {
-    const failureNotes = failingCommands.map((entry) => `${entry.command} exited with ${entry.exitCode}`);
+  if (failureNotes.length > 0) {
     const maxAttempts = settings.maxVerificationAttempts;
 
     if (attemptCount < maxAttempts) {
@@ -1801,6 +2114,7 @@ export async function createAgentJob(params: CreateAgentJobParams): Promise<Agen
   const approvalMode = normalizeApprovalMode(params.request.approvalMode ?? settings.defaultApprovalMode);
   const normalizedWorkspacePath = normalizeWorkspacePath(
     params.request.workspacePath?.trim() || settings.defaultWorkspacePath || process.cwd(),
+    settings.executionBackend,
   );
   const jobId = createMessageId();
   const scheduledFor = new Date();
@@ -2025,6 +2339,7 @@ export async function decideAgentJobRequirement(params: {
   jobId: string;
   requirementId: string;
   decision: AgentJobRequirementDecisionRequest;
+  notifyConversation?: boolean;
 }): Promise<AgentJobActionResponse | null> {
   const requirement = await params.dbClient.db.query.agentJobRequirements.findFirst({
     where: and(eq(agentJobRequirements.id, params.requirementId), eq(agentJobRequirements.jobId, params.jobId)),
@@ -2062,21 +2377,23 @@ export async function decideAgentJobRequirement(params: {
     await params.queue.enqueue(params.jobId);
   }
 
-  await postAgentJobConversationUpdate({
-    dbClient: params.dbClient,
-    config: params.config,
-    conversationId: row.agent.conversationId ?? null,
-    jobId: params.jobId,
-    eventName: "agent.job.chat.requirement_decided",
-    importance: params.decision.approved ? "normal" : "important",
-    text: params.decision.approved
-      ? `Approved: ${requirement.label}. I’m continuing the build job now.`
-      : `Denied: ${requirement.label}. The build job will stay blocked until that requirement is resolved.`,
-    metadataJson: {
-      requirementId: requirement.id,
-      approved: params.decision.approved,
-    },
-  });
+  if (params.notifyConversation !== false) {
+    await postAgentJobConversationUpdate({
+      dbClient: params.dbClient,
+      config: params.config,
+      conversationId: row.agent.conversationId ?? null,
+      jobId: params.jobId,
+      eventName: "agent.job.chat.requirement_decided",
+      importance: params.decision.approved ? "normal" : "important",
+      text: params.decision.approved
+        ? `Approved: ${requirement.label}. I’m continuing the build job now.`
+        : `Denied: ${requirement.label}. The build job will stay blocked until that requirement is resolved.`,
+      metadataJson: {
+        requirementId: requirement.id,
+        approved: params.decision.approved,
+      },
+    });
+  }
 
   const nextRow = await getAgentJobRow(params.dbClient, params.jobId);
   return nextRow ? { job: toAgentJobRecord(nextRow) } : null;
@@ -2089,11 +2406,22 @@ export async function processAgentJob(
   queue: AgentJobQueueAdapter,
 ) {
   let row = await getAgentJobRow(dbClient, jobId);
+  const settings = await loadAgentJobSettings();
   if (!row) {
     throw new Error(`Agent job ${jobId} not found.`);
   }
 
   if (row.job.status === "completed" || row.job.status === "cancelled" || row.job.status === "failed") {
+    return;
+  }
+
+  if (
+    row.job.startedAt &&
+    Date.now() - row.job.startedAt.getTime() >
+      settings.maxJobRuntimeMinutes * 60 * 1000
+  ) {
+    const errorText = `Job exceeded the configured runtime limit of ${settings.maxJobRuntimeMinutes} minutes.`;
+    await markAgentJobFailed(config, dbClient, jobId, errorText);
     return;
   }
 

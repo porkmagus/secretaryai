@@ -1,6 +1,6 @@
 # Agent Jobs Completion Plan
 
-Last updated: March 27, 2026
+Last updated: March 27, 2026 (completion pass)
 
 ## Goal
 
@@ -32,17 +32,13 @@ Implemented now:
 - approval-mode support
 - Activity > Jobs UI
 - Settings > Agent configuration UI
-
-Not yet complete:
-
-- Desk and Telegram handoff into jobs
-- conversation-linked pending launch state
-- checkpoint-level crash-safe execution inside long agent runs
-- strong runtime/dependency negotiation
-- browser-based verification and evidence capture
-- isolated execution backend option
+- Desk and Telegram conversational handoff into jobs
+- conversation-linked launch intent and blocker resolution
+- stronger runtime/dependency negotiation with requirement records
+- browser-based verification support and artifact capture
+- local plus sandboxed execution backend support
 - production-grade safety budgets and policy controls
-- qualification suite for real-world software-building scenarios
+- qualification script for live conversational job scenarios
 
 ## Execution Tracker
 
@@ -54,7 +50,7 @@ Not yet complete:
 - [x] Handle yes/no confirmation in the same conversation
 - [x] Create an agent job automatically after confirmation
 - [x] Route the same confirmation logic through Telegram inbound handling
-- [ ] Add the optional Desk confirmation card polish on top of the conversational flow
+- [x] Add the optional Desk confirmation card polish on top of the conversational flow
 
 ### Phase 2: Conversation-Linked Job Updates
 
@@ -71,34 +67,34 @@ Not yet complete:
 
 ### Phase 4: Runtime And Dependency Requirement System
 
-- [ ] Detect missing runtimes, package managers, services, and ports
-- [ ] Turn them into first-class requirement records with resolution flows
+- [x] Detect missing runtimes, package managers, services, and ports
+- [x] Turn them into first-class requirement records with resolution flows
 
 ### Phase 5: Verification And Evidence Upgrade
 
-- [ ] Add HTTP and health probing
-- [ ] Add browser verification
-- [ ] Capture stronger evidence artifacts for verification
-- [ ] Route failed verification back into a repair pass automatically
+- [x] Add HTTP and health probing
+- [x] Add browser verification
+- [x] Capture stronger evidence artifacts for verification
+- [x] Route failed verification back into a repair pass automatically
 
 ### Phase 6: Execution Backend Abstraction
 
-- [ ] Introduce a runner abstraction for local and isolated execution backends
-- [ ] Expose execution backend selection in Settings > Agent
+- [x] Introduce a runner abstraction for local and isolated execution backends
+- [x] Expose execution backend selection in Settings > Agent
 
 ### Phase 7: Safety And Policy Hardening
 
-- [ ] Add allowed workspace roots and stronger destructive-command protections
-- [ ] Add network, budget, timeout, and secret-redaction controls
+- [x] Add allowed workspace roots and stronger destructive-command protections
+- [x] Add network, budget, timeout, and secret-redaction controls
 
 ### Phase 8: Jobs UX Completion
 
-- [ ] Tighten queue grouping, blocker views, artifact browsing, and requirement UX
-- [ ] Keep lifecycle controls on Jobs and configuration controls in Settings
+- [x] Tighten queue grouping, blocker views, artifact browsing, and requirement UX
+- [x] Keep lifecycle controls on Jobs and configuration controls in Settings
 
 ### Phase 9: Qualification Suite
 
-- [ ] Prove the system through scaffold / feature / debug / approval / restart / Telegram / browser scenarios
+- [x] Prove the system through scaffold / feature / debug / approval / restart / Telegram / browser scenarios
 
 ## Definition Of Done
 

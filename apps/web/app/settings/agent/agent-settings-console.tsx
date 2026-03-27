@@ -1,24 +1,41 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { AgentJobApprovalMode, AgentJobSettingsResponse, UpdateAgentJobSettingsRequest } from "@secretary/core-runtime";
-import { NoticeBanner, SurfaceCard } from "../../lib/ui";
+import type {
+  AgentExecutionBackend,
+  AgentJobApprovalMode,
+  AgentJobSettingsResponse,
+  UpdateAgentJobSettingsRequest,
+} from "@secretary/core-runtime";
+import { NoticeBanner, SurfaceCard, ToggleField } from "../../lib/ui";
 
 type AgentSettingsDraft = {
   defaultWorkspacePath: string;
   defaultApprovalMode: AgentJobApprovalMode;
+  executionBackend: AgentExecutionBackend;
   maxAgentSteps: string;
   maxCommandTimeoutSeconds: string;
   maxVerificationAttempts: string;
+  maxJobRuntimeMinutes: string;
+  allowNetworkAccess: boolean;
+  browserVerificationEnabled: boolean;
+  redactSecretsInArtifacts: boolean;
+  allowedWorkspaceRoots: string;
 };
 
 function createDraft(response: AgentJobSettingsResponse): AgentSettingsDraft {
   return {
     defaultWorkspacePath: response.settings.defaultWorkspacePath ?? "",
     defaultApprovalMode: response.settings.defaultApprovalMode,
+    executionBackend: response.settings.executionBackend,
     maxAgentSteps: String(response.settings.maxAgentSteps),
     maxCommandTimeoutSeconds: String(response.settings.maxCommandTimeoutSeconds),
     maxVerificationAttempts: String(response.settings.maxVerificationAttempts),
+    maxJobRuntimeMinutes: String(response.settings.maxJobRuntimeMinutes),
+    allowNetworkAccess: response.settings.allowNetworkAccess,
+    browserVerificationEnabled: response.settings.browserVerificationEnabled,
+    redactSecretsInArtifacts: response.settings.redactSecretsInArtifacts,
+    allowedWorkspaceRoots: response.settings.allowedWorkspaceRoots.join("\n"),
   };
 }
 
@@ -64,9 +81,18 @@ export function AgentSettingsConsole() {
       const payload: UpdateAgentJobSettingsRequest = {
         defaultWorkspacePath: draft.defaultWorkspacePath.trim() || null,
         defaultApprovalMode: draft.defaultApprovalMode,
+        executionBackend: draft.executionBackend,
         maxAgentSteps: Number(draft.maxAgentSteps),
         maxCommandTimeoutSeconds: Number(draft.maxCommandTimeoutSeconds),
         maxVerificationAttempts: Number(draft.maxVerificationAttempts),
+        maxJobRuntimeMinutes: Number(draft.maxJobRuntimeMinutes),
+        allowNetworkAccess: draft.allowNetworkAccess,
+        browserVerificationEnabled: draft.browserVerificationEnabled,
+        redactSecretsInArtifacts: draft.redactSecretsInArtifacts,
+        allowedWorkspaceRoots: draft.allowedWorkspaceRoots
+          .split(/\r?\n/)
+          .map((entry) => entry.trim())
+          .filter(Boolean),
       };
       const response = await fetch("/api/agent-job-settings", {
         method: "PATCH",
@@ -103,7 +129,7 @@ export function AgentSettingsConsole() {
       >
         {draft ? (
           <div style={{ display: "grid", gap: 16 }}>
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>Default workspace path</span>
                 <input
@@ -125,9 +151,22 @@ export function AgentSettingsConsole() {
                   <option value="full_access">YOLO / Full access</option>
                 </select>
               </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>Execution backend</span>
+                <select
+                  value={draft.executionBackend}
+                  onChange={(event) => updateField("executionBackend", event.target.value as AgentExecutionBackend)}
+                  className="input-shell"
+                >
+                  <option value="host_native">Host native shell</option>
+                  <option value="wsl_bash">WSL bash</option>
+                  <option value="docker_sandbox">Docker sandbox</option>
+                </select>
+              </label>
             </div>
 
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>Max agent steps</span>
                 <input
@@ -157,6 +196,48 @@ export function AgentSettingsConsole() {
                   inputMode="numeric"
                 />
               </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>Max runtime (minutes)</span>
+                <input
+                  value={draft.maxJobRuntimeMinutes}
+                  onChange={(event) => updateField("maxJobRuntimeMinutes", event.target.value)}
+                  className="input-shell"
+                  inputMode="numeric"
+                />
+              </label>
+            </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Allowed workspace roots</span>
+              <textarea
+                value={draft.allowedWorkspaceRoots}
+                onChange={(event) => updateField("allowedWorkspaceRoots", event.target.value)}
+                className="textarea-shell"
+                rows={4}
+                placeholder="One allowed root per line. Leave blank to allow any reachable workspace."
+              />
+            </label>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              <ToggleField
+                checked={draft.allowNetworkAccess}
+                onChange={(checked) => updateField("allowNetworkAccess", checked)}
+                label="Allow network access"
+                hint="Controls installs, remote fetches, and network-heavy verification."
+              />
+              <ToggleField
+                checked={draft.browserVerificationEnabled}
+                onChange={(checked) => updateField("browserVerificationEnabled", checked)}
+                label="Enable browser verification"
+                hint="Allow browser-based verification passes when the stack supports them."
+              />
+              <ToggleField
+                checked={draft.redactSecretsInArtifacts}
+                onChange={(checked) => updateField("redactSecretsInArtifacts", checked)}
+                label="Redact secrets in artifacts"
+                hint="Mask obvious credentials from command logs and saved evidence."
+              />
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end" }}>

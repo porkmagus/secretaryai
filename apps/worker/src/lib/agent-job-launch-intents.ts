@@ -9,6 +9,7 @@ import {
 } from "@secretary/db";
 import {
   createMessageId,
+  type AgentExecutionBackend,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
@@ -188,8 +189,11 @@ async function createPendingLaunchIntent(params: {
   return id;
 }
 
-function getFallbackWorkspacePath(defaultWorkspacePath: string | null) {
-  return normalizeWorkspacePath(defaultWorkspacePath?.trim() || repoRoot);
+function getFallbackWorkspacePath(
+  defaultWorkspacePath: string | null,
+  executionBackend: AgentExecutionBackend,
+) {
+  return normalizeWorkspacePath(defaultWorkspacePath?.trim() || repoRoot, executionBackend);
 }
 
 export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobLaunchTurnParams) {
@@ -299,7 +303,10 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
     if (looksLikeAgentJobRequest(text)) {
       const settings = await loadAgentJobSettings();
       const title = deriveJobTitle(text);
-      const workspacePath = getFallbackWorkspacePath(settings.defaultWorkspacePath);
+      const workspacePath = getFallbackWorkspacePath(
+        settings.defaultWorkspacePath,
+        settings.executionBackend,
+      );
       await createPendingLaunchIntent({
         dbClient: params.dbClient,
         conversationId: preparedTurn.conversationId,
@@ -363,7 +370,10 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
 
   const settings = await loadAgentJobSettings();
   const title = deriveJobTitle(text);
-  const workspacePath = getFallbackWorkspacePath(settings.defaultWorkspacePath);
+  const workspacePath = getFallbackWorkspacePath(
+    settings.defaultWorkspacePath,
+    settings.executionBackend,
+  );
   const intentId = await createPendingLaunchIntent({
     dbClient: params.dbClient,
     conversationId: preparedTurn.conversationId,

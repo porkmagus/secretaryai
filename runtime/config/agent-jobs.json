@@ -1,7 +1,13 @@
 {
-  "defaultWorkspacePath": null,
+  "defaultWorkspacePath": "F:\\hamcult",
   "defaultApprovalMode": "builder",
+  "executionBackend": "host_native",
   "maxAgentSteps": 24,
   "maxCommandTimeoutSeconds": 120,
-  "maxVerificationAttempts": 2
+  "maxVerificationAttempts": 2,
+  "maxJobRuntimeMinutes": 45,
+  "allowNetworkAccess": true,
+  "browserVerificationEnabled": false,
+  "redactSecretsInArtifacts": true,
+  "allowedWorkspaceRoots": []
 }

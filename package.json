@@ -29,6 +29,7 @@
     "phase4:verify:voice": "node scripts/phase4/verify-voice-note.mjs",
     "phase5:verify": "node scripts/phase5/verify.mjs",
     "phase6:verify": "node scripts/phase6/verify.mjs",
+    "phase6:verify:agent-jobs": "node scripts/phase6/qualify-agent-jobs.mjs",
     "stt:setup": "node scripts/speech/setup-stt.mjs",
     "dev:stt": "node scripts/speech/run-stt.mjs",
     "tts:setup": "node scripts/speech/setup-tts.mjs",

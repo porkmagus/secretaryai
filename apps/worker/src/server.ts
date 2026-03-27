@@ -89,6 +89,8 @@ import {
   updateAgentJobSettings,
 } from "./lib/agent-jobs.js";
 import { maybeHandleAgentJobLaunchTurn } from "./lib/agent-job-launch-intents.js";
+import { maybeHandleAgentJobRequirementTurn } from "./lib/agent-job-requirement-turns.js";
+import { resolveManagedAgentJobArtifactPath } from "./lib/agent-job-artifact-storage.js";
 import {
   dispatchDueTelegramReminders,
   getTelegramIntegrationStatus,
@@ -777,6 +779,35 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load agent job.",
+      });
+    }
+  });
+
+  app.get<{
+    Querystring: {
+      storageKey?: string;
+      mimeType?: string;
+    };
+  }>("/runtime/agent-jobs/artifacts/file", async (request, reply) => {
+    try {
+      if (!request.query.storageKey) {
+        return reply.status(400).send({
+          error: "storageKey is required.",
+        });
+      }
+
+      const filePath = resolveManagedAgentJobArtifactPath(request.query.storageKey);
+      const fileBuffer = await readFile(filePath);
+      reply.header("Content-Type", request.query.mimeType ?? "application/octet-stream");
+      return reply.send(fileBuffer);
+    } catch (error) {
+      logger.error("runtime.agent_job.artifact_file_failed", {
+        error: error instanceof Error ? error.message : error,
+        storageKey: request.query.storageKey ?? null,
+      });
+
+      return reply.status(404).send({
+        error: "Agent job artifact is unavailable.",
       });
     }
   });
@@ -1619,8 +1650,20 @@ export async function buildServer() {
         request: body,
         traceId,
       });
-      const launchHandledTurn =
+      const requirementHandledTurn =
         toolHandledTurn
+          ? null
+          : await maybeHandleAgentJobRequirementTurn({
+              config,
+              dbClient: infrastructure.dbClient,
+              queue: infrastructure.agentJobQueue,
+              defaultPersonaId: config.defaultPersonaId,
+              defaultUserId: config.defaultUserId,
+              request: body,
+              traceId,
+            });
+      const launchHandledTurn =
+        toolHandledTurn || requirementHandledTurn
           ? null
           : await maybeHandleAgentJobLaunchTurn({
               config,
@@ -1633,6 +1676,7 @@ export async function buildServer() {
             });
       const persistedTurn =
         toolHandledTurn ??
+        requirementHandledTurn ??
         launchHandledTurn ??
         (await persistChatTurn({
           config,
@@ -1697,8 +1741,20 @@ export async function buildServer() {
           request: runtimeRequest,
           traceId,
         });
-        const launchHandledTurn =
+        const requirementHandledTurn =
           toolHandledTurn
+            ? null
+            : await maybeHandleAgentJobRequirementTurn({
+                config,
+                dbClient: infrastructure.dbClient,
+                queue: infrastructure.agentJobQueue,
+                defaultPersonaId: config.defaultPersonaId,
+                defaultUserId: config.defaultUserId,
+                request: runtimeRequest,
+                traceId,
+              });
+        const launchHandledTurn =
+          toolHandledTurn || requirementHandledTurn
             ? null
             : await maybeHandleAgentJobLaunchTurn({
                 config,
@@ -1709,7 +1765,8 @@ export async function buildServer() {
                 request: runtimeRequest,
                 traceId,
               });
-        const immediateHandledTurn = toolHandledTurn ?? launchHandledTurn;
+        const immediateHandledTurn =
+          toolHandledTurn ?? requirementHandledTurn ?? launchHandledTurn;
 
         if (immediateHandledTurn) {
           await finalizePersistedTurn({

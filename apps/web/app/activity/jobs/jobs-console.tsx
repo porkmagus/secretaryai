@@ -92,6 +92,54 @@ function JobStatusPill({ status }: { status: string }) {
   );
 }
 
+function ArtifactContent({ artifact }: { artifact: AgentJobArtifactRecord }) {
+  const fileHref =
+    artifact.storageKey
+      ? `/api/agent-jobs/artifacts/file?storageKey=${encodeURIComponent(artifact.storageKey)}${
+          artifact.mimeType ? `&mimeType=${encodeURIComponent(artifact.mimeType)}` : ""
+        }`
+      : null;
+
+  if (artifact.mimeType?.startsWith("image/") && fileHref) {
+    return (
+      <div style={{ display: "grid", gap: 8 }}>
+        <a href={fileHref} target="_blank" rel="noreferrer" className="button-secondary" style={{ justifySelf: "start" }}>
+          Open image artifact
+        </a>
+        <img
+          src={fileHref}
+          alt={artifact.label}
+          style={{
+            width: "100%",
+            maxHeight: 280,
+            objectFit: "cover",
+            borderRadius: 16,
+            border: "1px solid rgba(255,255,255,0.08)",
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (fileHref) {
+    return (
+      <a href={fileHref} target="_blank" rel="noreferrer" className="button-secondary" style={{ justifySelf: "start" }}>
+        Download artifact
+      </a>
+    );
+  }
+
+  if (!artifact.contentText) {
+    return null;
+  }
+
+  return (
+    <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.55, color: "var(--muted)" }}>
+      {artifact.contentText}
+    </pre>
+  );
+}
+
 export function JobsConsole() {
   const [jobs, setJobs] = useState<AgentJobRecord[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
@@ -215,6 +263,14 @@ export function JobsConsole() {
       active: jobs.filter((job) => ["queued", "planning", "running", "retrying"].includes(job.status)).length,
       waiting: jobs.filter((job) => ["waiting_for_approval", "waiting_for_runtime"].includes(job.status)).length,
       completed: jobs.filter((job) => job.status === "completed").length,
+    }),
+    [jobs],
+  );
+  const groupedJobs = useMemo(
+    () => ({
+      active: jobs.filter((job) => ["queued", "planning", "running", "retrying"].includes(job.status)),
+      waiting: jobs.filter((job) => ["waiting_for_approval", "waiting_for_runtime", "blocked"].includes(job.status)),
+      finished: jobs.filter((job) => ["completed", "failed", "cancelled"].includes(job.status)),
     }),
     [jobs],
   );
@@ -434,36 +490,49 @@ export function JobsConsole() {
               <p style={{ margin: 0, color: "var(--muted)" }}>No agent jobs yet.</p>
             ) : (
               <div className="compact-list">
-                {jobs.map((job) => (
-                  <button
-                    key={job.id}
-                    type="button"
-                    onClick={() => setSelectedJobId(job.id)}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      background: job.id === selectedJobId ? "rgba(240, 184, 116, 0.1)" : "transparent",
-                      border: job.id === selectedJobId
-                        ? "1px solid rgba(240, 184, 116, 0.35)"
-                        : "1px solid transparent",
-                      borderRadius: 16,
-                      padding: "12px 14px",
-                      display: "grid",
-                      gap: 8,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                      <strong style={{ fontSize: 14 }}>{job.title}</strong>
-                      <JobStatusPill status={job.status} />
+                {([
+                  ["Active", groupedJobs.active],
+                  ["Waiting", groupedJobs.waiting],
+                  ["Finished", groupedJobs.finished],
+                ] as const).map(([label, entries]) => (
+                  entries.length > 0 ? (
+                    <div key={label} style={{ display: "grid", gap: 8 }}>
+                      <p style={{ margin: 0, fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>
+                        {label}
+                      </p>
+                      {entries.map((job) => (
+                        <button
+                          key={job.id}
+                          type="button"
+                          onClick={() => setSelectedJobId(job.id)}
+                          style={{
+                            width: "100%",
+                            textAlign: "left",
+                            background: job.id === selectedJobId ? "rgba(240, 184, 116, 0.1)" : "transparent",
+                            border: job.id === selectedJobId
+                              ? "1px solid rgba(240, 184, 116, 0.35)"
+                              : "1px solid transparent",
+                            borderRadius: 16,
+                            padding: "12px 14px",
+                            display: "grid",
+                            gap: 8,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                            <strong style={{ fontSize: 14 }}>{job.title}</strong>
+                            <JobStatusPill status={job.status} />
+                          </div>
+                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                            {job.goal}
+                          </p>
+                          <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
+                            {job.workspacePath} · updated {formatTimestamp(job.updatedAt)}
+                          </p>
+                        </button>
+                      ))}
                     </div>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
-                      {job.goal}
-                    </p>
-                    <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
-                      {job.workspacePath} · updated {formatTimestamp(job.updatedAt)}
-                    </p>
-                  </button>
+                  ) : null
                 ))}
               </div>
             )}
@@ -487,6 +556,18 @@ export function JobsConsole() {
             <p style={{ margin: 0, color: "var(--muted)" }}>Loading job detail...</p>
           ) : detail ? (
             <div style={{ display: "grid", gap: 18 }}>
+              {detail.job.blockerSummary ? (
+                <NoticeBanner
+                  tone={
+                    detail.job.status === "waiting_for_runtime" || detail.job.status === "blocked"
+                      ? "warning"
+                      : "info"
+                  }
+                >
+                  {detail.job.blockerSummary}
+                </NoticeBanner>
+              ) : null}
+
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "start", flexWrap: "wrap" }}>
                 <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(3, minmax(0, 1fr))", flex: "1 1 520px" }}>
                   {[
@@ -558,11 +639,7 @@ export function JobsConsole() {
                             <p style={{ margin: 0, color: "var(--muted)", fontSize: 11 }}>
                               {formatTimestamp(artifact.createdAt)}
                             </p>
-                            {artifact.contentText ? (
-                              <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.55, color: "var(--muted)" }}>
-                                {artifact.contentText}
-                              </pre>
-                            ) : null}
+                            <ArtifactContent artifact={artifact} />
                           </div>
                         ))}
                       </div>
@@ -586,6 +663,11 @@ export function JobsConsole() {
                           <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
                             {requirement.detail ?? "No extra detail recorded."}
                           </p>
+                          {Object.keys(requirement.metadataJson ?? {}).length > 0 ? (
+                            <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 11, lineHeight: 1.5, color: "var(--muted)" }}>
+                              {JSON.stringify(requirement.metadataJson, null, 2)}
+                            </pre>
+                          ) : null}
                           {requirement.status === "pending" ? (
                             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                               <button
