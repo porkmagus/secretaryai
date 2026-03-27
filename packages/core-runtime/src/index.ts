@@ -235,6 +235,197 @@ export type ToolApprovalDecisionResponse = {
     | null;
 };
 
+export type AgentJobStatus =
+  | "queued"
+  | "planning"
+  | "running"
+  | "waiting_for_approval"
+  | "waiting_for_runtime"
+  | "blocked"
+  | "retrying"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AgentJobApprovalMode = "restrictive" | "builder" | "full_access";
+
+export type AgentJobStepKind =
+  | "plan"
+  | "analyze"
+  | "edit"
+  | "command"
+  | "install"
+  | "build"
+  | "test"
+  | "verify"
+  | "runtime_request"
+  | "approval"
+  | "finalize";
+
+export type AgentJobStepStatus =
+  | "pending"
+  | "ready"
+  | "running"
+  | "waiting_for_approval"
+  | "waiting_for_runtime"
+  | "blocked"
+  | "retrying"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AgentJobArtifactKind =
+  | "plan"
+  | "note"
+  | "command_log"
+  | "file_patch"
+  | "file_snapshot"
+  | "verification"
+  | "result_summary";
+
+export type AgentJobRequirementKind =
+  | "runtime"
+  | "package_manager"
+  | "service"
+  | "credential"
+  | "approval";
+
+export type AgentJobRequirementStatus =
+  | "pending"
+  | "satisfied"
+  | "rejected";
+
+export type AgentJobRecord = {
+  id: string;
+  jobType: "agent.build";
+  title: string;
+  goal: string;
+  workspacePath: string;
+  requestedByUserId: string;
+  conversationId: string | null;
+  status: AgentJobStatus;
+  approvalMode: AgentJobApprovalMode;
+  blockerSummary: string | null;
+  currentStepId: string | null;
+  resultSummary: string | null;
+  payloadJson: Record<string, unknown>;
+  resultJson: Record<string, unknown> | null;
+  scheduledFor: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  errorText: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentJobStepRecord = {
+  id: string;
+  jobId: string;
+  parentStepId: string | null;
+  stepKey: string;
+  title: string;
+  detail: string | null;
+  kind: AgentJobStepKind;
+  status: AgentJobStepStatus;
+  sequence: number;
+  dependsOnStepIds: string[];
+  toolKey: string | null;
+  inputJson: Record<string, unknown>;
+  outputJson: Record<string, unknown> | null;
+  summary: string | null;
+  errorText: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentJobArtifactRecord = {
+  id: string;
+  jobId: string;
+  stepId: string | null;
+  kind: AgentJobArtifactKind;
+  label: string;
+  storageKey: string | null;
+  contentText: string | null;
+  mimeType: string | null;
+  metadataJson: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentJobRequirementRecord = {
+  id: string;
+  jobId: string;
+  stepId: string | null;
+  kind: AgentJobRequirementKind;
+  label: string;
+  detail: string | null;
+  status: AgentJobRequirementStatus;
+  resolutionText: string | null;
+  metadataJson: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAgentJobRequest = {
+  title: string;
+  goal: string;
+  workspacePath: string;
+  conversationId?: string | null;
+  approvalMode?: AgentJobApprovalMode;
+  constraints?: string[];
+  deliverables?: string[];
+};
+
+export type UpdateAgentJobRequest = {
+  status?: AgentJobStatus;
+  blockerSummary?: string | null;
+  currentStepId?: string | null;
+  resultSummary?: string | null;
+  errorText?: string | null;
+};
+
+export type AgentJobListResponse = {
+  jobs: AgentJobRecord[];
+};
+
+export type AgentJobDetailResponse = {
+  job: AgentJobRecord;
+  steps: AgentJobStepRecord[];
+  artifacts: AgentJobArtifactRecord[];
+  requirements: AgentJobRequirementRecord[];
+};
+
+export type AgentJobRequirementDecisionRequest = {
+  approved: boolean;
+  reason?: string | null;
+};
+
+export type AgentJobActionResponse = {
+  job: AgentJobRecord;
+};
+
+export type AgentJobSettingsRecord = {
+  defaultWorkspacePath: string | null;
+  defaultApprovalMode: AgentJobApprovalMode;
+  maxAgentSteps: number;
+  maxCommandTimeoutSeconds: number;
+  maxVerificationAttempts: number;
+};
+
+export type AgentJobSettingsResponse = {
+  settings: AgentJobSettingsRecord;
+};
+
+export type UpdateAgentJobSettingsRequest = {
+  defaultWorkspacePath?: string | null;
+  defaultApprovalMode?: AgentJobApprovalMode;
+  maxAgentSteps?: number;
+  maxCommandTimeoutSeconds?: number;
+  maxVerificationAttempts?: number;
+};
+
 export type PersonaGender = "male" | "female";
 
 export type SecretaryMode =

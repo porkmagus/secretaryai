@@ -1,10 +1,15 @@
 import { createDbClient } from "@secretary/db";
 import type { AppConfig } from "@secretary/config";
 import { createMemoryQueue } from "./memory-queue.js";
+import { createAgentJobQueue } from "./agent-job-queue.js";
 import {
   markMemoryCandidateJobFailed,
   processMemoryCandidateJob,
 } from "./memory-engine.js";
+import {
+  markAgentJobFailed,
+  processAgentJob,
+} from "./agent-jobs.js";
 import { ensureSpeechStorageLayout } from "./speech-storage.js";
 import { ensureDefaultVoiceProfile } from "./speech-runtime.js";
 
@@ -33,15 +38,39 @@ export async function createInfrastructure(config: AppConfig) {
       }
     },
   });
+  const agentJobQueue = createAgentJobQueue(config.redisUrl, {
+    async processJob(payload) {
+      try {
+        await processAgentJob(config, dbClient, payload.jobId, agentJobQueue);
+      } catch (error) {
+        await markAgentJobFailed(
+          config,
+          dbClient,
+          payload.jobId,
+          error instanceof Error ? error.message : "Unknown agent worker error",
+        );
+
+        throw error;
+      }
+    },
+  });
 
   return {
     dbClient,
     memoryQueue,
+    agentJobQueue,
     async checkHealth() {
-      const [postgres, redis] = await Promise.allSettled([
+      const [postgres, memoryRedis, agentRedis] = await Promise.allSettled([
         dbClient.checkHealth(),
         memoryQueue.checkHealth(),
+        agentJobQueue.checkHealth(),
       ]);
+
+      const redisError = memoryRedis.status === "rejected"
+        ? memoryRedis.reason
+        : agentRedis.status === "rejected"
+          ? agentRedis.reason
+          : null;
 
       return {
         postgres:
@@ -51,15 +80,19 @@ export async function createInfrastructure(config: AppConfig) {
               ? postgres.reason.message
               : "error",
         redis:
-          redis.status === "fulfilled"
+          !redisError
             ? "ok"
-            : redis.reason instanceof Error
-              ? redis.reason.message
+            : redisError instanceof Error
+              ? redisError.message
               : "error",
       };
     },
     async close() {
-      await Promise.allSettled([dbClient.close(), memoryQueue.close()]);
+      await Promise.allSettled([
+        dbClient.close(),
+        memoryQueue.close(),
+        agentJobQueue.close(),
+      ]);
     },
   };
 }

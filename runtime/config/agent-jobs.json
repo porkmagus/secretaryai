@@ -1,0 +1,7 @@
+{
+  "defaultWorkspacePath": null,
+  "defaultApprovalMode": "builder",
+  "maxAgentSteps": 24,
+  "maxCommandTimeoutSeconds": 120,
+  "maxVerificationAttempts": 2
+}

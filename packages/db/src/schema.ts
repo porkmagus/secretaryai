@@ -213,6 +213,101 @@ export const jobs = pgTable("jobs", {
   ...timestamps,
 });
 
+export const agentJobs = pgTable("agent_jobs", {
+  jobId: text("job_id")
+    .primaryKey()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  requestedByUserId: text("requested_by_user_id")
+    .notNull()
+    .references(() => users.id),
+  conversationId: text("conversation_id").references(() => conversations.id, {
+    onDelete: "set null",
+  }),
+  title: text("title").notNull(),
+  goal: text("goal").notNull(),
+  workspacePath: text("workspace_path").notNull(),
+  approvalMode: text("approval_mode").notNull().default("builder"),
+  blockerSummary: text("blocker_summary"),
+  currentStepId: text("current_step_id"),
+  resultSummary: text("result_summary"),
+});
+
+export const agentJobLaunchIntents = pgTable("agent_job_launch_intents", {
+  id: text("id").primaryKey(),
+  conversationId: text("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  requestedByUserId: text("requested_by_user_id")
+    .notNull()
+    .references(() => users.id),
+  sourceMessageId: text("source_message_id"),
+  status: text("status").notNull(),
+  title: text("title").notNull(),
+  goal: text("goal").notNull(),
+  workspacePath: text("workspace_path").notNull(),
+  approvalMode: text("approval_mode").notNull().default("builder"),
+  payloadJson: jsonb("payload_json").$type<Record<string, unknown>>().notNull().default({}),
+  resolutionText: text("resolution_text"),
+  ...timestamps,
+});
+
+export const agentJobSteps = pgTable("agent_job_steps", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  parentStepId: text("parent_step_id"),
+  stepKey: text("step_key").notNull(),
+  title: text("title").notNull(),
+  detail: text("detail"),
+  stepKind: text("step_kind").notNull(),
+  status: text("status").notNull(),
+  sequence: integer("sequence").notNull().default(0),
+  dependsOnStepIds: jsonb("depends_on_step_ids").$type<string[]>().notNull().default([]),
+  toolKey: text("tool_key"),
+  inputJson: jsonb("input_json").$type<Record<string, unknown>>().notNull().default({}),
+  outputJson: jsonb("output_json").$type<Record<string, unknown> | null>(),
+  summary: text("summary"),
+  errorText: text("error_text"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+export const agentJobArtifacts = pgTable("agent_job_artifacts", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  stepId: text("step_id").references(() => agentJobSteps.id, {
+    onDelete: "set null",
+  }),
+  artifactKind: text("artifact_kind").notNull(),
+  label: text("label").notNull(),
+  storageKey: text("storage_key"),
+  contentText: text("content_text"),
+  mimeType: text("mime_type"),
+  metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>().notNull().default({}),
+  ...timestamps,
+});
+
+export const agentJobRequirements = pgTable("agent_job_requirements", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  stepId: text("step_id").references(() => agentJobSteps.id, {
+    onDelete: "set null",
+  }),
+  requirementKind: text("requirement_kind").notNull(),
+  label: text("label").notNull(),
+  detail: text("detail"),
+  status: text("status").notNull(),
+  resolutionText: text("resolution_text"),
+  metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>().notNull().default({}),
+  ...timestamps,
+});
+
 export const activityTraces = pgTable("activity_traces", {
   id: text("id").primaryKey(),
   traceType: text("trace_type").notNull(),
@@ -263,8 +358,18 @@ export const phaseFiveTables = [
   "tool_executions",
 ] as const;
 
+export const phaseSixTables = [
+  ...phaseFiveTables,
+  "agent_jobs",
+  "agent_job_launch_intents",
+  "agent_job_steps",
+  "agent_job_artifacts",
+  "agent_job_requirements",
+] as const;
+
 export type PhaseOneTable = (typeof phaseOneTables)[number];
 export type PhaseTwoTable = (typeof phaseTwoTables)[number];
 export type PhaseThreeTable = (typeof phaseThreeTables)[number];
 export type PhaseFourTable = (typeof phaseFourTables)[number];
 export type PhaseFiveTable = (typeof phaseFiveTables)[number];
+export type PhaseSixTable = (typeof phaseSixTables)[number];

@@ -10,6 +10,7 @@ export default function ActivityLayout({ children }: { children: ReactNode }) {
         { href: "/activity", label: "Timeline" },
         { href: "/activity/memory", label: "Memory" },
         { href: "/activity/tasks", label: "Tasks" },
+        { href: "/activity/jobs", label: "Jobs" },
       ]}
     >
       {children}

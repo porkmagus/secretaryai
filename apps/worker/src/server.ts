@@ -13,6 +13,12 @@ import {
   type DeskChatMessageMetadata,
   type ConversationListResponse,
   type ActivityTraceResponse,
+  type AgentJobActionResponse,
+  type AgentJobDetailResponse,
+  type AgentJobListResponse,
+  type AgentJobRequirementDecisionRequest,
+  type AgentJobSettingsResponse,
+  type CreateAgentJobRequest,
   type ConversationHistoryResponse,
   type HeartbeatIntegrationStatusResponse,
   type HeartbeatRunResponse,
@@ -35,6 +41,7 @@ import {
   type TelegramTestMessageRequest,
   type TelegramPresenceUpdateRequest,
   type TelegramPresenceUpdateResponse,
+  type UpdateAgentJobSettingsRequest,
   type UpdateHeartbeatIntegrationRequest,
   type UpdateToolRequest,
   type UpdatePersonaSettingsRequest,
@@ -71,6 +78,17 @@ import {
   listTasksForUser,
   updateMemory,
 } from "./lib/memory-engine.js";
+import {
+  cancelAgentJob,
+  createAgentJob,
+  decideAgentJobRequirement,
+  getAgentJobDetail,
+  getAgentJobSettings,
+  listAgentJobs,
+  resumeAgentJob,
+  updateAgentJobSettings,
+} from "./lib/agent-jobs.js";
+import { maybeHandleAgentJobLaunchTurn } from "./lib/agent-job-launch-intents.js";
 import {
   dispatchDueTelegramReminders,
   getTelegramIntegrationStatus,
@@ -688,6 +706,207 @@ export async function buildServer() {
 
       return reply.status(500).send({
         error: "Unable to load tasks.",
+      });
+    }
+  });
+
+  app.get("/runtime/agent-jobs", async (_, reply) => {
+    try {
+      const response: AgentJobListResponse = await listAgentJobs(
+        infrastructure.dbClient,
+      );
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_jobs.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load agent jobs.",
+      });
+    }
+  });
+
+  app.post<{ Body: CreateAgentJobRequest }>("/runtime/agent-jobs", async (request, reply) => {
+    try {
+      const job = await createAgentJob({
+        config,
+        dbClient: infrastructure.dbClient,
+        queue: infrastructure.agentJobQueue,
+        request: request.body,
+      });
+
+      return reply.status(201).send({
+        job,
+      });
+    } catch (error) {
+      logger.error("runtime.agent_job.create_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to create agent job.",
+      });
+    }
+  });
+
+  app.get<{
+    Params: {
+      jobId: string;
+    };
+  }>("/runtime/agent-jobs/:jobId", async (request, reply) => {
+    try {
+      const response: AgentJobDetailResponse | null = await getAgentJobDetail(
+        infrastructure.dbClient,
+        request.params.jobId,
+      );
+
+      if (!response) {
+        return reply.status(404).send({
+          error: "Agent job not found.",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_job.failed", {
+        error: error instanceof Error ? error.message : error,
+        jobId: request.params.jobId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load agent job.",
+      });
+    }
+  });
+
+  app.post<{
+    Params: {
+      jobId: string;
+    };
+  }>("/runtime/agent-jobs/:jobId/resume", async (request, reply) => {
+    try {
+      const response: AgentJobActionResponse | null = await resumeAgentJob({
+        config,
+        dbClient: infrastructure.dbClient,
+        queue: infrastructure.agentJobQueue,
+        jobId: request.params.jobId,
+      });
+
+      if (!response) {
+        return reply.status(404).send({
+          error: "Agent job not found.",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_job.resume_failed", {
+        error: error instanceof Error ? error.message : error,
+        jobId: request.params.jobId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to resume agent job.",
+      });
+    }
+  });
+
+  app.post<{
+    Params: {
+      jobId: string;
+    };
+  }>("/runtime/agent-jobs/:jobId/cancel", async (request, reply) => {
+    try {
+      const response: AgentJobActionResponse | null = await cancelAgentJob({
+        config,
+        dbClient: infrastructure.dbClient,
+        jobId: request.params.jobId,
+      });
+
+      if (!response) {
+        return reply.status(404).send({
+          error: "Agent job not found.",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_job.cancel_failed", {
+        error: error instanceof Error ? error.message : error,
+        jobId: request.params.jobId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to cancel agent job.",
+      });
+    }
+  });
+
+  app.post<{
+    Params: {
+      jobId: string;
+      requirementId: string;
+    };
+    Body: AgentJobRequirementDecisionRequest;
+  }>("/runtime/agent-jobs/:jobId/requirements/:requirementId/decision", async (request, reply) => {
+    try {
+      const response: AgentJobActionResponse | null = await decideAgentJobRequirement({
+        config,
+        dbClient: infrastructure.dbClient,
+        queue: infrastructure.agentJobQueue,
+        jobId: request.params.jobId,
+        requirementId: request.params.requirementId,
+        decision: request.body,
+      });
+
+      if (!response) {
+        return reply.status(404).send({
+          error: "Agent job requirement not found.",
+        });
+      }
+
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_job.requirement_failed", {
+        error: error instanceof Error ? error.message : error,
+        jobId: request.params.jobId,
+        requirementId: request.params.requirementId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update agent job requirement.",
+      });
+    }
+  });
+
+  app.get("/runtime/agent-job-settings", async (_, reply) => {
+    try {
+      const response: AgentJobSettingsResponse = await getAgentJobSettings();
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_job_settings.failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to load agent job settings.",
+      });
+    }
+  });
+
+  app.patch<{ Body: UpdateAgentJobSettingsRequest }>("/runtime/agent-job-settings", async (request, reply) => {
+    try {
+      const response: AgentJobSettingsResponse = await updateAgentJobSettings(request.body);
+      return response;
+    } catch (error) {
+      logger.error("runtime.agent_job_settings.update_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to update agent job settings.",
       });
     }
   });
@@ -1400,8 +1619,21 @@ export async function buildServer() {
         request: body,
         traceId,
       });
+      const launchHandledTurn =
+        toolHandledTurn
+          ? null
+          : await maybeHandleAgentJobLaunchTurn({
+              config,
+              dbClient: infrastructure.dbClient,
+              queue: infrastructure.agentJobQueue,
+              defaultPersonaId: config.defaultPersonaId,
+              defaultUserId: config.defaultUserId,
+              request: body,
+              traceId,
+            });
       const persistedTurn =
         toolHandledTurn ??
+        launchHandledTurn ??
         (await persistChatTurn({
           config,
           dbClient: infrastructure.dbClient,
@@ -1465,11 +1697,24 @@ export async function buildServer() {
           request: runtimeRequest,
           traceId,
         });
+        const launchHandledTurn =
+          toolHandledTurn
+            ? null
+            : await maybeHandleAgentJobLaunchTurn({
+                config,
+                dbClient: infrastructure.dbClient,
+                queue: infrastructure.agentJobQueue,
+                defaultPersonaId: config.defaultPersonaId,
+                defaultUserId: config.defaultUserId,
+                request: runtimeRequest,
+                traceId,
+              });
+        const immediateHandledTurn = toolHandledTurn ?? launchHandledTurn;
 
-        if (toolHandledTurn) {
+        if (immediateHandledTurn) {
           await finalizePersistedTurn({
             body: runtimeRequest,
-            persistedTurn: toolHandledTurn,
+            persistedTurn: immediateHandledTurn,
             traceId,
           });
 
@@ -1478,22 +1723,22 @@ export async function buildServer() {
               writer.write({
                 type: "data-runtime-context",
                 data: buildDeskChatMetadata({
-                  response: toolHandledTurn.response,
+                  response: immediateHandledTurn.response,
                   mode: "tool",
                 }),
               });
               writer.write({
                 type: "text-start",
-                id: toolHandledTurn.response.messageId,
+                id: immediateHandledTurn.response.messageId,
               });
               writer.write({
                 type: "text-delta",
-                id: toolHandledTurn.response.messageId,
-                delta: toolHandledTurn.response.outputText,
+                id: immediateHandledTurn.response.messageId,
+                delta: immediateHandledTurn.response.outputText,
               });
               writer.write({
                 type: "text-end",
-                id: toolHandledTurn.response.messageId,
+                id: immediateHandledTurn.response.messageId,
               });
             },
             generateId: createMessageId,

@@ -1,5 +1,10 @@
 export { createDbClient, type DbClient } from "./client.js";
 export {
+  agentJobArtifacts,
+  agentJobLaunchIntents,
+  agentJobRequirements,
+  agentJobSteps,
+  agentJobs,
   activityTraces,
   conversations,
   integrations,
@@ -11,6 +16,7 @@ export {
   phaseOneTables,
   phaseFourTables,
   phaseFiveTables,
+  phaseSixTables,
   phaseThreeTables,
   phaseTwoTables,
   speechArtifacts,
@@ -22,6 +28,7 @@ export {
   type PhaseOneTable,
   type PhaseFourTable,
   type PhaseFiveTable,
+  type PhaseSixTable,
   type PhaseThreeTable,
   type PhaseTwoTable,
 } from "./schema.js";

@@ -5,9 +5,10 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
   return (
     <SectionTabs
       title="Settings"
-      description="General runtime controls plus the secretary profile, tools, channels, and voice."
+      description="General runtime controls plus secretary, agent, tool, channel, and voice configuration."
       tabs={[
         { href: "/settings", label: "General" },
+        { href: "/settings/agent", label: "Agent" },
         { href: "/settings/secretary", label: "Secretary" },
         { href: "/settings/tools", label: "Tools" },
         { href: "/settings/channels", label: "Channels" },

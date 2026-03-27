@@ -24,6 +24,7 @@ import {
   type TelegramTestMessageRequest,
   type TelegramTestMessageResponse,
   type TelegramPresenceUpdateRequest,
+  type RuntimeChatRequest,
   type UpdateTelegramIntegrationRequest,
 } from "@secretary/core-runtime";
 import type { Infrastructure } from "./infrastructure.js";
@@ -34,6 +35,7 @@ import {
   markMemoryJobEnqueueFailed,
   persistChatTurn,
 } from "./chat-persistence.js";
+import { maybeHandleAgentJobLaunchTurn } from "./agent-job-launch-intents.js";
 import {
   createSpeechArtifact,
   recordSpeechTrace,
@@ -254,8 +256,10 @@ export async function maybeDeliverTelegramAssistantMessage(params: {
   messageId: string | null;
   text: string;
   importance: "important" | "normal";
-  source: "heartbeat" | "web";
+  source: "heartbeat" | "web" | "job";
   traceId: string;
+  forceChatId?: string | null;
+  ignoreDeliveryPolicy?: boolean;
 }) {
   const record = await ensureTelegramIntegrationRecord(params.dbClient, params.config);
   if (!record.enabled || !params.config.telegram.botToken) {
@@ -266,7 +270,10 @@ export async function maybeDeliverTelegramAssistantMessage(params: {
   }
 
   const stored = parseTelegramIntegrationConfig(record.configJson);
-  const chatId = stored.defaultChatId ?? params.config.telegram.defaultChatId;
+  const chatId =
+    params.forceChatId ??
+    stored.defaultChatId ??
+    params.config.telegram.defaultChatId;
 
   if (!chatId) {
     return {
@@ -279,10 +286,10 @@ export async function maybeDeliverTelegramAssistantMessage(params: {
     deliveryMode: stored.deliveryMode,
     idleTimeoutMinutes: stored.idleTimeoutMinutes,
     importance: params.importance,
-    webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
-  });
+      webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
+    });
 
-  if (!shouldDeliver) {
+  if (!params.ignoreDeliveryPolicy && !shouldDeliver) {
     return {
       delivered: false,
       reason: "policy_suppressed",
@@ -1049,36 +1056,50 @@ export async function handleTelegramWebhookUpdate(params: {
     };
   }
 
-  const persistedTurn = await persistChatTurn({
+  const runtimeRequest: RuntimeChatRequest = {
+    channel: "telegram",
+    userId: params.config.defaultUserId,
+    message: {
+      text: requestText,
+      attachments: audioAttachment
+        ? [
+            {
+              kind: "audio" as const,
+              mimeType: audioAttachment.mimeType,
+              storageKey: audioAttachment.storageKey,
+            },
+          ]
+        : undefined,
+    },
+    metadata: {
+      requestId: traceId,
+      sourceMessageId: normalized.messageId,
+      telegramChatId: normalized.chatId,
+      telegramChatLabel: normalized.chatLabel,
+      telegramUserDisplayName: normalized.userDisplayName,
+    },
+  };
+
+  const launchHandledTurn = await maybeHandleAgentJobLaunchTurn({
     config: params.config,
     dbClient: params.infrastructure.dbClient,
+    queue: params.infrastructure.agentJobQueue,
     defaultPersonaId: params.config.defaultPersonaId,
     defaultUserId: params.config.defaultUserId,
-    request: {
-      channel: "telegram",
-      userId: params.config.defaultUserId,
-      message: {
-        text: requestText,
-        attachments: audioAttachment
-          ? [
-              {
-                kind: "audio",
-                mimeType: audioAttachment.mimeType,
-                storageKey: audioAttachment.storageKey,
-              },
-            ]
-          : undefined,
-      },
-      metadata: {
-        requestId: traceId,
-        sourceMessageId: normalized.messageId,
-        telegramChatId: normalized.chatId,
-        telegramChatLabel: normalized.chatLabel,
-        telegramUserDisplayName: normalized.userDisplayName,
-      },
-    },
+    request: runtimeRequest,
     traceId,
   });
+
+  const persistedTurn =
+    launchHandledTurn ??
+    (await persistChatTurn({
+      config: params.config,
+      dbClient: params.infrastructure.dbClient,
+      defaultPersonaId: params.config.defaultPersonaId,
+      defaultUserId: params.config.defaultUserId,
+      request: runtimeRequest,
+      traceId,
+    }));
 
   if (normalized.voice && audioAttachment) {
     const latestArtifact = await params.infrastructure.dbClient.db.query.speechArtifacts.findFirst({
