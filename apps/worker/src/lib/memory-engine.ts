@@ -10,8 +10,11 @@ import {
 import {
   createMessageId,
   type ActivityTraceResponse,
+  type InferenceProviderId,
   type MemoryCandidateJobPayload,
+
   type MemoryListResponse,
+
   type MemoryRecord,
   type MemoryType,
   type RuntimeMemoryContextItem,
@@ -26,6 +29,9 @@ import {
   normalizeTaskTitle,
   titleCase,
 } from "./task-runtime.js";
+import { generateText } from "ai";
+import { resolveInferenceLanguageModel, type InferenceRuntimeConfig } from "./ai-sdk-registry.js";
+
 
 type MemoryCandidate = {
   memoryType: MemoryType;
@@ -430,19 +436,83 @@ function extractTaskCandidate(text: string): TaskCandidate | null {
   };
 }
 
-function extractMemoryCandidates(text: string) {
+async function extractAIAugmentedMemories(params: {
+  text: string;
+  inference: InferenceRuntimeConfig;
+}): Promise<MemoryCandidate[]> {
+  try {
+    const modelResult = resolveInferenceLanguageModel(params.inference);
+    if (!modelResult) {
+      return [];
+    }
+
+    const { text: jsonResponse } = await generateText({
+      model: modelResult.model,
+
+      system: `You are an expert memory extraction engine for a private secretary AI. 
+Extract any meaningful facts, preferences, or contextual nuances from the user message that regex-based extraction might miss.
+Focus on:
+- Emotional states or moods ("I'm feeling burnt out").
+- Informal preferences ("I hate long meetings").
+- Social context ("My boss is Sarah").
+- Implicit schedules or events ("I'll be out next Tuesday").
+
+Return ONLY a JSON array of objects with this schema:
+{
+  "memoryType": "episodic" | "semantic" | "operational",
+  "title": string (short, descriptive),
+  "summary": string (1 sentence),
+  "tags": string[],
+  "importanceScore": number (1-100),
+  "confidenceScore": number (1-100)
+}
+If nothing meaningful is found, return [].`,
+      prompt: params.text,
+    });
+
+    const cleaned = jsonResponse.trim().replace(/^```json/, "").replace(/```$/, "");
+    const parsed = JSON.parse(cleaned);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map((item) => ({
+      ...item,
+      contentText: params.text,
+      canonicalKey: `${item.memoryType}:ai:${item.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    }));
+  } catch (err) {
+    console.error("AI Memory Extraction Failed:", err);
+    return [];
+  }
+}
+
+async function extractMemoryCandidates(params: {
+  text: string;
+  inference?: InferenceRuntimeConfig;
+}) {
   const specificCandidates = [
-    ...extractExplicitMemory(text),
-    ...extractRelationshipMemory(text),
-    ...extractPersonalFactMemory(text),
-    ...extractLifeEventMemory(text),
-    ...extractPreferenceMemory(text),
-    ...extractProjectMemory(text),
-    ...extractScheduleMemory(text),
-    ...extractLocationMemory(text),
-    ...extractToolSoftwareMemory(text),
-    ...extractOperationalMemory(text),
+    ...extractExplicitMemory(params.text),
+    ...extractRelationshipMemory(params.text),
+    ...extractPersonalFactMemory(params.text),
+    ...extractLifeEventMemory(params.text),
+    ...extractPreferenceMemory(params.text),
+    ...extractProjectMemory(params.text),
+    ...extractScheduleMemory(params.text),
+    ...extractLocationMemory(params.text),
+    ...extractToolSoftwareMemory(params.text),
+    ...extractOperationalMemory(params.text),
   ];
+
+  if (params.inference) {
+    const aiCandidates = await extractAIAugmentedMemories({
+      text: params.text,
+      inference: params.inference,
+    });
+    specificCandidates.push(...aiCandidates);
+  }
+
 
   // Deduplicate by canonicalKey, keeping highest importanceScore per key
   const byKey = new Map<string, MemoryCandidate>();
@@ -825,7 +895,20 @@ export async function processMemoryCandidateJob(params: {
     },
   });
 
-  const candidates = extractMemoryCandidates(payload.text);
+  const jobPayload = payload as any; // Bypass stale type check if core-runtime build is lagging
+  const candidates = await extractMemoryCandidates({
+    text: jobPayload.text,
+    inference: jobPayload.inference ? {
+      ...jobPayload.inference,
+      enabled: true,
+      providerId: jobPayload.inference.selectedProviderId as InferenceProviderId,
+      reasoningEffort: jobPayload.inference.reasoningEffort ?? "low",
+      maxOutputTokens: jobPayload.inference.maxOutputTokens ? parseInt(jobPayload.inference.maxOutputTokens, 10) : null,
+    } : undefined,
+  });
+
+
+
   const createdMemoryIds: string[] = [];
   const createdTaskIds: string[] = [];
 

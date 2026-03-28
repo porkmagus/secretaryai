@@ -97,7 +97,16 @@ export type MemoryCandidateJobPayload = {
   source: "web" | "telegram";
   text: string;
   telegramChatId?: string | null;
+  inference?: {
+    selectedProviderId: string;
+    baseUrl: string;
+    model: string;
+    apiKey: string;
+    maxOutputTokens?: string | null;
+    reasoningEffort?: "minimal" | "low" | "medium" | "high" | null;
+  } | null;
 };
+
 
 export type SpeechArtifactRecord = {
   id: string;

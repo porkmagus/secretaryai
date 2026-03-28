@@ -1,5 +1,4 @@
-import { access, readFile } from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type ModelMessage } from "ai";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
@@ -53,6 +52,18 @@ import {
   postAgentJobConversationUpdate,
 } from "./agent-job-conversation-updates.js";
 import { getInferenceRuntimeConfig } from "./inference-settings.js";
+import { pathExists, normalizeApprovalMode, logError } from "./utils.js";
+
+import {
+  type JobRow,
+  toAgentJobRecord,
+  toStepRecord,
+  toArtifactRecord,
+  toRequirementRecord,
+} from "./agent-job-transformers.js";
+
+
+
 
 type CreateAgentJobParams = {
   config: AppConfig;
@@ -72,27 +83,6 @@ type StepPlan = {
   summary?: string | null;
 };
 
-type JobRow = {
-  job: typeof jobs.$inferSelect;
-  agent: typeof agentJobs.$inferSelect;
-};
-
-async function pathExists(path: string) {
-  try {
-    await access(path, fsConstants.F_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function normalizeApprovalMode(value: CreateAgentJobRequest["approvalMode"]): AgentJobApprovalMode {
-  if (value === "restrictive" || value === "full_access") {
-    return value;
-  }
-
-  return "builder";
-}
 
 async function ensureDefaultUser(dbClient: DbClient, config: AppConfig) {
   const existing = await dbClient.db.query.users.findFirst({
@@ -110,86 +100,6 @@ async function ensureDefaultUser(dbClient: DbClient, config: AppConfig) {
   });
 }
 
-function toAgentJobRecord(row: JobRow): AgentJobRecord {
-  return {
-    id: row.job.id,
-    jobType: "agent.build",
-    title: row.agent.title,
-    goal: row.agent.goal,
-    workspacePath: row.agent.workspacePath,
-    requestedByUserId: row.agent.requestedByUserId,
-    conversationId: row.agent.conversationId ?? null,
-    status: row.job.status as AgentJobStatus,
-    approvalMode: row.agent.approvalMode as AgentJobApprovalMode,
-    blockerSummary: row.agent.blockerSummary ?? null,
-    currentStepId: row.agent.currentStepId ?? null,
-    resultSummary: row.agent.resultSummary ?? null,
-    payloadJson: row.job.payloadJson,
-    resultJson: row.job.resultJson ?? null,
-    scheduledFor: row.job.scheduledFor.toISOString(),
-    startedAt: row.job.startedAt?.toISOString() ?? null,
-    finishedAt: row.job.finishedAt?.toISOString() ?? null,
-    errorText: row.job.errorText ?? null,
-    createdAt: row.job.createdAt.toISOString(),
-    updatedAt: row.job.updatedAt.toISOString(),
-  };
-}
-
-function toStepRecord(row: typeof agentJobSteps.$inferSelect): AgentJobStepRecord {
-  return {
-    id: row.id,
-    jobId: row.jobId,
-    parentStepId: row.parentStepId ?? null,
-    stepKey: row.stepKey,
-    title: row.title,
-    detail: row.detail ?? null,
-    kind: row.stepKind as AgentJobStepKind,
-    status: row.status as AgentJobStepStatus,
-    sequence: row.sequence,
-    dependsOnStepIds: row.dependsOnStepIds,
-    toolKey: row.toolKey ?? null,
-    inputJson: row.inputJson,
-    outputJson: row.outputJson ?? null,
-    summary: row.summary ?? null,
-    errorText: row.errorText ?? null,
-    startedAt: row.startedAt?.toISOString() ?? null,
-    finishedAt: row.finishedAt?.toISOString() ?? null,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-function toArtifactRecord(row: typeof agentJobArtifacts.$inferSelect): AgentJobArtifactRecord {
-  return {
-    id: row.id,
-    jobId: row.jobId,
-    stepId: row.stepId ?? null,
-    kind: row.artifactKind as AgentJobArtifactKind,
-    label: row.label,
-    storageKey: row.storageKey ?? null,
-    contentText: row.contentText ?? null,
-    mimeType: row.mimeType ?? null,
-    metadataJson: row.metadataJson,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
-
-function toRequirementRecord(row: typeof agentJobRequirements.$inferSelect): AgentJobRequirementRecord {
-  return {
-    id: row.id,
-    jobId: row.jobId,
-    stepId: row.stepId ?? null,
-    kind: row.requirementKind as AgentJobRequirementKind,
-    label: row.label,
-    detail: row.detail ?? null,
-    status: row.status as AgentJobRequirementStatus,
-    resolutionText: row.resolutionText ?? null,
-    metadataJson: row.metadataJson,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
 
 function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
   const deliverables = request.deliverables?.filter(Boolean) ?? [];
@@ -293,7 +203,13 @@ async function inspectWorkspace(workspacePath: string) {
       ]
         .filter((value): value is string => Boolean(value))
         .join("\n");
-    } catch {
+    } catch (error) {
+      logError({
+        service: "worker",
+        event: "agent.job.package_json_parse_failed",
+        error,
+        metadataJson: { workspacePath },
+      });
       packageSummary = "package.json exists but could not be parsed.";
       packageMetadata = {
         hasPackageJson: true,

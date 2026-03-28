@@ -72,6 +72,8 @@ import { loadAgentJobSettings } from "./agent-job-settings.js";
 import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage.js";
 import { cancelAgentJob } from "./agent-jobs.js";
 import { resolveManagedSpeechStoragePath } from "./speech-storage.js";
+import { pathExists, logError } from "./utils.js";
+
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 
@@ -269,14 +271,6 @@ async function getConversationEngineStatus(config: AppConfig) {
   };
 }
 
-async function pathExists(path: string) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 async function deleteFileIfPresent(path: string) {
   try {
@@ -366,7 +360,13 @@ async function findStaleSpeechArtifacts(dbClient: DbClient) {
       if (!(await pathExists(path))) {
         staleRows.push({ id: record.id, storageKey: record.storageKey });
       }
-    } catch {
+    } catch (error) {
+      logError({
+        service: "worker",
+        event: "admin.maintenance.speech_artifact_staleness_check_failed",
+        error,
+        metadataJson: { storageKey: record.storageKey },
+      });
       staleRows.push({ id: record.id, storageKey: record.storageKey });
     }
   }
@@ -391,7 +391,13 @@ async function findStaleVoiceProfileSamples(dbClient: DbClient) {
       if (!(await pathExists(path))) {
         staleRows.push({ id: record.id, sampleStorageKey: record.sampleStorageKey });
       }
-    } catch {
+    } catch (error) {
+      logError({
+        service: "worker",
+        event: "admin.maintenance.voice_profile_sample_staleness_check_failed",
+        error,
+        metadataJson: { sampleStorageKey: record.sampleStorageKey },
+      });
       staleRows.push({ id: record.id, sampleStorageKey: record.sampleStorageKey });
     }
   }
@@ -418,7 +424,13 @@ async function removeArtifactFilesByJobIds(dbClient: DbClient, jobIds: string[])
     try {
       await unlink(resolveManagedAgentJobArtifactPath(artifact.storageKey));
       deletedFiles += 1;
-    } catch {
+    } catch (error) {
+      logError({
+        service: "worker",
+        event: "admin.maintenance.artifact_file_deletion_failed",
+        error,
+        metadataJson: { storageKey: artifact.storageKey },
+      });
       continue;
     }
   }
@@ -455,9 +467,15 @@ async function removePathIfPresent(path: string) {
       maxRetries: 2,
     });
     return true;
-  } catch {
-    return false;
-  }
+    } catch (error) {
+      logError({
+        service: "worker",
+        event: "admin.maintenance.path_removal_failed",
+        error,
+        metadataJson: { path },
+      });
+      return false;
+    }
 }
 
 async function flushQueueRetainedState(
@@ -735,13 +753,8 @@ export async function runAdminMaintenanceAction(params: {
     };
   } else if (params.action === "flush_agent_queue") {
     const queue = params.infrastructure.agentJobQueue.queue;
-    await queue.drain(true);
-    await queue.clean(0, 1000, "wait");
-    await queue.clean(0, 1000, "delayed");
-    await queue.clean(0, 1000, "prioritized");
-    await queue.clean(0, 1000, "completed");
-    await queue.clean(0, 1000, "failed");
-    await queue.clean(0, 1000, "paused");
+    await flushQueueRetainedState(queue);
+
 
     const queueCounts = await queue.getJobCounts(
       "wait",

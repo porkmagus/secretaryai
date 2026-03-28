@@ -8,6 +8,8 @@ import type {
   AgentJobSettingsResponse,
   UpdateAgentJobSettingsRequest,
 } from "@secretary/core-runtime";
+import { normalizeApprovalMode, normalizeExecutionBackend } from "./utils.js";
+
 
 const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
 const settingsFilePath = resolve(repoRoot, "runtime/config/agent-jobs.json");
@@ -34,21 +36,6 @@ function clampInteger(value: unknown, minimum: number, maximum: number, fallback
   return Math.max(minimum, Math.min(maximum, Math.round(value)));
 }
 
-function normalizeApprovalMode(value: unknown): AgentJobApprovalMode {
-  if (value === "restrictive" || value === "full_access") {
-    return value;
-  }
-
-  return "builder";
-}
-
-function normalizeExecutionBackend(value: unknown): AgentExecutionBackend {
-  if (value === "wsl_bash" || value === "docker_sandbox") {
-    return value;
-  }
-
-  return "host_native";
-}
 
 function parseSettings(raw: Record<string, unknown> | null | undefined): AgentJobSettingsRecord {
   return {

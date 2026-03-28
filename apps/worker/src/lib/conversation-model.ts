@@ -98,7 +98,32 @@ function formatSecretarySettings(context: RuntimeTurnContext) {
   return `Secretary presentation and habits:\n${lines.map((line) => `- ${line}`).join("\n")}`;
 }
 
+function getToneJitter(context: RuntimeTurnContext) {
+  const styles = [
+    "slightly more curious than usual",
+    "especially attentive to detail",
+    "warm and supportive",
+    "efficient and concise",
+    "relaxed and informal",
+    "professional yet approachable",
+    "proactive and forward-thinking",
+  ];
+
+  // Use the sum of message IDs and conversationId characters to pick a stable-ish jitter for this Turn
+  const seedStr = `${context.conversationId}-${context.recentMessages.length}`;
+
+  let hash = 0;
+  for (let i = 0; i < seedStr.length; i++) {
+    hash = (hash << 5) - hash + seedStr.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % styles.length;
+  
+  return styles[index];
+}
+
 function buildConversationInstructions(context: RuntimeTurnContext) {
+
   const secretaryName = context.persona?.name?.trim();
   const soul = context.persona?.soul?.trim() || "";
   const personaProfile = context.persona?.personaProfile?.trim() || "";
@@ -165,7 +190,9 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
     soul,
     personaProfile,
     formatSecretarySettings(context),
+    `Current tone adjustment (for variety): ${getToneJitter(context)}`,
     formatList("Behavior rules", behaviorRules),
+
     memories.length > 0 ? formatList("Relevant memories", memories) : "",
     shouldSurfaceTasks ? formatList("Open tasks", tasks) : "",
     upcomingReminder,
