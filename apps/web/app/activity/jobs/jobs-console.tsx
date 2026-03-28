@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition, useCallback } from "react";
 import type {
   AgentJobActionResponse,
   AgentJobDetailResponse,
@@ -167,7 +167,7 @@ export function JobsConsole() {
   const [form, setForm] = useState<JobFormState>(defaultForm);
   const [showAllFinished, setShowAllFinished] = useState(false);
 
-  async function loadJobs(preferredJobId?: string | null, options?: { silent?: boolean }) {
+  const loadJobs = useCallback(async (preferredJobId?: string | null, options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setIsLoadingList(true);
     }
@@ -191,9 +191,9 @@ export function JobsConsole() {
         setIsLoadingList(false);
       }
     }
-  }
+  }, []);
 
-  async function loadDetail(jobId: string, options?: { silent?: boolean }) {
+  const loadDetail = useCallback(async (jobId: string, options?: { silent?: boolean }) => {
     if (!options?.silent) {
       setIsLoadingDetail(true);
     }
@@ -210,7 +210,7 @@ export function JobsConsole() {
         setIsLoadingDetail(false);
       }
     }
-  }
+  }, []);
 
   useEffect(() => {
     void loadJobs();
@@ -274,9 +274,9 @@ export function JobsConsole() {
     [groupedJobs.active, groupedJobs.waiting],
   );
 
-  function updateForm<K extends keyof JobFormState>(key: K, value: JobFormState[K]) {
+  const updateForm = useCallback(<K extends keyof JobFormState>(key: K, value: JobFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
-  }
+  }, []);
 
   const visibleFinishedJobs = useMemo(() => {
     if (showAllFinished) {
@@ -309,7 +309,7 @@ export function JobsConsole() {
     return groupedJobs.finished[0]?.id ?? null;
   }, [groupedJobs.finished, selectedJobId]);
 
-  function createJob() {
+  const createJob = useCallback(() => {
     startCreateTransition(async () => {
       try {
         const requestBody: CreateAgentJobRequest = {
@@ -341,9 +341,9 @@ export function JobsConsole() {
         setError(createError instanceof Error ? createError.message : "Unable to create agent job.");
       }
     });
-  }
+  }, [form, loadJobs, loadDetail]);
 
-  async function runJobAction(jobId: string, action: "resume" | "cancel") {
+  const runJobAction = useCallback(async (jobId: string, action: "resume" | "cancel") => {
     setActionBusyKey(`${action}:${jobId}`);
 
     try {
@@ -358,9 +358,9 @@ export function JobsConsole() {
     } finally {
       setActionBusyKey(null);
     }
-  }
+  }, [loadJobs, loadDetail]);
 
-  async function decideRequirement(jobId: string, requirementId: string, approved: boolean) {
+  const decideRequirement = useCallback(async (jobId: string, requirementId: string, approved: boolean) => {
     setActionBusyKey(`${approved ? "approve" : "deny"}:${requirementId}`);
 
     try {
@@ -383,7 +383,7 @@ export function JobsConsole() {
     } finally {
       setActionBusyKey(null);
     }
-  }
+  }, [loadJobs, loadDetail]);
 
   return (
     <AppPage width="1380px">

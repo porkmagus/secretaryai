@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import type { MemoryRecord, MemoryType, TaskRecord } from "@secretary/core-runtime";
 import { AppPage, LoadingSurface, NoticeBanner, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
@@ -47,7 +47,7 @@ export function MemoryBrowser() {
   useEffect(() => {
     let cancelled = false;
 
-    async function load() {
+    const timeout = setTimeout(async () => {
       setIsLoading(true);
       setError(null);
 
@@ -125,12 +125,11 @@ export function MemoryBrowser() {
           setIsLoading(false);
         }
       }
-    }
-
-    void load();
+    }, search.trim() ? 300 : 0);
 
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
     };
   }, [includeSuppressed, search, typeFilter]);
 
@@ -157,7 +156,7 @@ export function MemoryBrowser() {
   const selectedDraft = selectedMemory ? drafts[selectedMemory.id] : null;
   const visibleTasks = tasks.slice(0, 6);
 
-  async function saveMemory(memoryId: string) {
+  const saveMemory = useCallback(async (memoryId: string) => {
     const draft = drafts[memoryId];
 
     if (!draft) {
@@ -213,7 +212,7 @@ export function MemoryBrowser() {
     } finally {
       setSavingId(null);
     }
-  }
+  }, [drafts]);
 
   return (
     <AppPage>

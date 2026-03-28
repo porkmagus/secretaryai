@@ -2,7 +2,7 @@
 
 import { DefaultChatTransport } from "ai";
 import { useChat } from "@ai-sdk/react";
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { UIMessage } from "ai";
 import type {
   ConversationHistoryResponse,
@@ -579,7 +579,7 @@ export function DeskShell() {
   );
   const primaryPendingApproval = pendingApprovals[0] ?? null;
 
-  function stopMessagePlayback() {
+  const stopMessagePlayback = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -592,9 +592,9 @@ export function DeskShell() {
     }
 
     setSpeakingMessageId(null);
-  }
+  }, []);
 
-  async function playAssistantMessage(message: DeskChatMessage) {
+  const playAssistantMessage = useCallback(async (message: DeskChatMessage) => {
     const text = extractText(message);
 
     if (!text) {
@@ -652,9 +652,9 @@ export function DeskShell() {
           : "Desk voice playback is unavailable right now.",
       );
     }
-  }
+  }, [speakingMessageId, stopMessagePlayback]);
 
-  async function loadConversations() {
+  const loadConversations = useCallback(async () => {
     try {
       const data = await fetchJson<ConversationListResponse>("/api/conversations", {
         cache: "no-store",
@@ -664,9 +664,9 @@ export function DeskShell() {
     } catch {
       setSidebarError("Recent conversations are unavailable.");
     }
-  }
+  }, []);
 
-  async function loadSecretaryProfile() {
+  const loadSecretaryProfile = useCallback(async () => {
     try {
       const data = await fetchJson<PersonaSettingsResponse>("/api/persona", {
         cache: "no-store",
@@ -678,7 +678,7 @@ export function DeskShell() {
     } catch {
       // Keep the local default if the worker is unavailable.
     }
-  }
+  }, []);
 
   async function reportDeskPresence() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
@@ -707,7 +707,7 @@ export function DeskShell() {
     }
   }
 
-  async function loadPendingApprovals(nextConversationId: string) {
+  const loadPendingApprovals = useCallback(async (nextConversationId: string) => {
     try {
       const data = await fetchJson<ToolExecutionListResponse>(
         `/api/tool-executions?conversationId=${encodeURIComponent(nextConversationId)}&approvalState=pending`,
@@ -719,7 +719,7 @@ export function DeskShell() {
     } catch {
       setPendingApprovals([]);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void loadConversations();
@@ -846,15 +846,15 @@ export function DeskShell() {
     resetConversationContext();
   }
 
-  async function openConversation(nextConversationId: string) {
+  const openConversation = useCallback(async (nextConversationId: string) => {
     stopMessagePlayback();
     setConversationId(nextConversationId);
     setPendingApprovals([]);
     hasLoadedHistory.current = null;
     resetConversationContext();
-  }
+  }, [stopMessagePlayback, resetConversationContext]);
 
-  async function decideApproval(executionId: string, approve: boolean) {
+  const decideApproval = useCallback(async (executionId: string, approve: boolean) => {
     setApprovalBusyId(executionId);
 
     try {
@@ -891,13 +891,13 @@ export function DeskShell() {
     } finally {
       setApprovalBusyId(null);
     }
-  }
+  }, [autoSpeakReplies, loadPendingApprovals, loadConversations, playAssistantMessage]);
 
-  function handleReplyMetadata(metadata: DeskChatMessageMetadata) {
+  const handleReplyMetadata = useCallback((metadata: DeskChatMessageMetadata) => {
     setConversationId(metadata.conversationId);
-  }
+  }, []);
 
-  function handleReplyReady(message: DeskChatMessage) {
+  const handleReplyReady = useCallback((message: DeskChatMessage) => {
     const metadata = extractMetadata(message);
 
     if (metadata?.conversationId) {
@@ -909,7 +909,7 @@ export function DeskShell() {
     }
 
     void loadConversations();
-  }
+  }, [autoSpeakReplies, loadPendingApprovals, loadConversations, playAssistantMessage]);
 
   return (
     <AppPage width="100%" className="app-page--desk">

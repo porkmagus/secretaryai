@@ -13,6 +13,7 @@ export function usePolling({
 }) {
   const callbackRef = useRef(callback);
   const runningRef = useRef(false);
+  const lastRanRef = useRef(0);
 
   useEffect(() => {
     callbackRef.current = callback;
@@ -23,12 +24,16 @@ export function usePolling({
       return;
     }
 
+    let interval: number;
+
     async function runPoll() {
-      if (runningRef.current || document.visibilityState === "hidden") {
+      const now = Date.now();
+      if (runningRef.current || document.visibilityState === "hidden" || now - lastRanRef.current < intervalMs / 2) {
         return;
       }
 
       runningRef.current = true;
+      lastRanRef.current = now;
       try {
         await callbackRef.current();
       } finally {
@@ -36,7 +41,7 @@ export function usePolling({
       }
     }
 
-    const interval = window.setInterval(() => {
+    interval = window.setInterval(() => {
       void runPoll();
     }, intervalMs);
 
