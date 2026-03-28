@@ -1,5 +1,5 @@
 ---
-description: "High-intelligence, agent-autonomous workflow for swarm-based bug hunting and technical debt resolution."
+description: High-intelligence-agent-autonomous-workflow-for-swarm-based-bug-hunting-and-technical-debt-resolution
 ---
 
 # Master Workflow: Agentic Swarm Bug-Hunting & Tech-Debt Eradication

@@ -1,5 +1,5 @@
 ---
-description: Master Workflow: Optimize Agent Memory & Autonomy (Distilled)
+description: Optimize-Agent-Memory-Autonomy
 ---
 
 # Agent Workflow: Optimize Agent Memory & Autonomy
