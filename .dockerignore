@@ -27,6 +27,7 @@ runtime/exports
 runtime/agent-jobs/artifacts
 runtime/persona/avatars
 runtime/venvs
+runtime/config/dev-orchestrator.json
 *.log
 .env
 .env.deploy

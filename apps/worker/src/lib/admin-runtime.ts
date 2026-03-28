@@ -1,4 +1,4 @@
-import { access, unlink } from "node:fs/promises";
+import { access, rm, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { asc, eq, inArray } from "drizzle-orm";
@@ -23,12 +23,21 @@ import {
 import {
   agentJobArtifacts,
   agentJobLaunchIntents,
+  agentJobRequirements,
+  agentJobSteps,
   agentJobs,
-  integrations,
-  personas,
-  jobs,
   activityTraces,
+  conversations,
+  integrations,
+  jobs,
+  memoryEntries,
+  memoryLinks,
+  messages,
+  personas,
+  phaseSixTables,
   speechArtifacts,
+  tasks,
+  toolExecutions,
   tools,
   users,
   voiceProfiles,
@@ -48,6 +57,7 @@ import {
 } from "./persona-soul.js";
 import {
   activateVoiceProfile,
+  ensureDefaultVoiceProfile,
   ensureGenderVoiceProfile,
   getVoiceProfileById,
   isBuiltInGenderVoiceProfileName,
@@ -268,6 +278,15 @@ async function pathExists(path: string) {
   }
 }
 
+async function deleteFileIfPresent(path: string) {
+  try {
+    await unlink(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type AgentJobWorkspaceRow = {
   jobId: string;
   status: string;
@@ -425,6 +444,137 @@ async function deleteAgentJobsByIds(dbClient: DbClient, jobIds: string[]) {
     deletedJobs: jobIds.length,
     deletedTraces: jobIds.length,
     deletedArtifactFiles,
+  };
+}
+
+async function removePathIfPresent(path: string) {
+  try {
+    await rm(path, {
+      recursive: true,
+      force: true,
+      maxRetries: 2,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function flushQueueRetainedState(
+  queue: Infrastructure["agentJobQueue"]["queue"] | Infrastructure["memoryQueue"]["queue"],
+) {
+  await queue.drain(true);
+  await queue.clean(0, 1000, "wait");
+  await queue.clean(0, 1000, "delayed");
+  await queue.clean(0, 1000, "prioritized");
+  await queue.clean(0, 1000, "completed");
+  await queue.clean(0, 1000, "failed");
+  await queue.clean(0, 1000, "paused");
+}
+
+async function flushAllWorkerQueues(infrastructure: Infrastructure) {
+  await Promise.all([
+    flushQueueRetainedState(infrastructure.agentJobQueue.queue),
+    flushQueueRetainedState(infrastructure.memoryQueue.queue),
+  ]);
+}
+
+async function truncateSecretaryTables(dbClient: DbClient) {
+  const tableNames = [...phaseSixTables].reverse();
+  await dbClient.pool.query(
+    `TRUNCATE TABLE ${tableNames.map((name) => `"${name}"`).join(", ")} RESTART IDENTITY CASCADE`,
+  );
+}
+
+async function resetSecretaryFileBackings() {
+  await Promise.all([
+    saveSecretarySoul(defaultSecretarySoul),
+    saveSecretaryPersonaProfile(defaultSecretaryPersonaProfile),
+  ]);
+
+  const deleted = await Promise.all([
+    deleteFileIfPresent(resolve(repoRoot, "runtime/config/agent-jobs.json")),
+    deleteFileIfPresent(resolve(repoRoot, "runtime/config/inference-provider.json")),
+    deleteFileIfPresent(resolve(repoRoot, "runtime/secrets/inference-provider.json")),
+  ]);
+
+  return {
+    deletedSettingsFiles: deleted.filter(Boolean).length,
+  };
+}
+
+async function purgeSecretaryRuntimeDirectories(params: {
+  includeGeneratedState: boolean;
+}) {
+  const targets = [
+    resolve(repoRoot, "runtime/persona/avatars"),
+    resolve(repoRoot, "runtime/speech/inbound"),
+    resolve(repoRoot, "runtime/speech/transcripts"),
+    resolve(repoRoot, "runtime/speech/tts"),
+    resolve(repoRoot, "runtime/speech/profiles"),
+    resolve(repoRoot, "runtime/agent-jobs/artifacts"),
+  ];
+
+  if (params.includeGeneratedState) {
+    targets.push(
+      resolve(repoRoot, "runtime/generated"),
+      resolve(repoRoot, "runtime/downloads"),
+      resolve(repoRoot, "runtime/exports"),
+      resolve(repoRoot, "runtime/dev-logs"),
+      resolve(repoRoot, "runtime/live-telegram-test"),
+      resolve(repoRoot, "runtime/live-tts-test"),
+      resolve(repoRoot, "runtime/perm-repro-user"),
+    );
+  }
+
+  const removed = await Promise.all(targets.map((target) => removePathIfPresent(target)));
+
+  return {
+    runtimePathsCleared: removed.filter(Boolean).length,
+  };
+}
+
+async function reseedFreshSecretaryState(params: {
+  config: AppConfig;
+  dbClient: DbClient;
+}) {
+  await ensureDefaultPersonaRecord(params.dbClient, params.config);
+  await Promise.all([
+    listTools(params.dbClient),
+    ensureDefaultVoiceProfile(params.dbClient),
+  ]);
+}
+
+async function resetSecretaryState(params: {
+  config: AppConfig;
+  infrastructure: Infrastructure;
+  includeGeneratedState: boolean;
+}) {
+  const dbClient = params.infrastructure.dbClient;
+  const activeJobCounts = await dbClient.pool.query<{ count: number }>(
+    `select count(*)::int as count
+     from jobs
+     inner join agent_jobs on agent_jobs.job_id = jobs.id
+     where jobs.status in ('queued', 'planning', 'running', 'retrying', 'waiting_for_approval', 'waiting_for_runtime', 'blocked')`,
+  );
+
+  await flushAllWorkerQueues(params.infrastructure);
+  await truncateSecretaryTables(dbClient);
+  const fileReset = await resetSecretaryFileBackings();
+  const runtimeReset = await purgeSecretaryRuntimeDirectories({
+    includeGeneratedState: params.includeGeneratedState,
+  });
+  await reseedFreshSecretaryState({
+    config: params.config,
+    dbClient,
+  });
+
+  return {
+    activeJobsCancelled: activeJobCounts.rows[0]?.count ?? 0,
+    tablesReset: phaseSixTables.length,
+    ...fileReset,
+    ...runtimeReset,
+    generatedStateCleared: params.includeGeneratedState,
   };
 }
 
@@ -618,6 +768,22 @@ export async function runAdminMaintenanceAction(params: {
     details = {
       checked: true,
     };
+  } else if (params.action === "reset_secretary_onboarding") {
+    details = await resetSecretaryState({
+      config: params.config,
+      infrastructure: params.infrastructure,
+      includeGeneratedState: false,
+    });
+    summary =
+      "Reset the secretary to a first-run onboarding state and cleared memory, conversations, jobs, integrations, and voice state.";
+  } else if (params.action === "wipe_runtime_state") {
+    details = await resetSecretaryState({
+      config: params.config,
+      infrastructure: params.infrastructure,
+      includeGeneratedState: true,
+    });
+    summary =
+      "Wiped local runtime state, cleared all secretary settings and memory, and restored fresh-install defaults.";
   }
 
   return {

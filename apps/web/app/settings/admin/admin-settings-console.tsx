@@ -45,6 +45,20 @@ const actions: Array<{
     tone: "soft",
   },
   {
+    action: "reset_secretary_onboarding",
+    title: "Reset agent onboarding",
+    description:
+      "Clear memory, conversations, jobs, tools, integrations, voice state, and agent settings, then restore the fresh first-run secretary defaults.",
+    tone: "dark",
+  },
+  {
+    action: "wipe_runtime_state",
+    title: "Wipe local runtime state",
+    description:
+      "Do the onboarding reset and also remove generated exports, downloads, logs, and other local runtime residue so the app starts fresh again.",
+    tone: "dark",
+  },
+  {
     action: "run_health_sweep",
     title: "Run health sweep",
     description: "Recheck worker, queue, storage, and service health without changing any state.",

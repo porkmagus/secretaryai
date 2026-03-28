@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { OutboundChannelKey } from "@secretary/core-runtime";
-import { AppPage, SurfaceCard } from "../lib/ui";
+import { ActionRow, AppPage, NoticeBanner, SurfaceCard } from "../lib/ui";
 import { OutboundChannelSettings } from "./outbound-channel-settings";
 import { TelegramSettings } from "./telegram-settings";
 
@@ -55,7 +55,43 @@ const channelTabs: ChannelTab[] = [
 
 export function ChannelsConsole() {
   const [activeChannel, setActiveChannel] = useState<ChannelKey>("telegram");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isDispatching, setIsDispatching] = useState(false);
   const selected = channelTabs.find((tab) => tab.key === activeChannel) ?? channelTabs[0];
+
+  async function dispatchDueReminders() {
+    setIsDispatching(true);
+    setNotice(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/integrations/reminders/deliver", {
+        method: "POST",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Unable to dispatch due reminders.");
+      }
+
+      setNotice(
+        payload.delivered > 0
+          ? `Delivered ${payload.delivered} reminder${payload.delivered === 1 ? "" : "s"} across the active channels.`
+          : payload.scanned > 0
+            ? "I checked the due reminders, but none were delivered yet."
+            : "There are no due reminders waiting to go out right now.",
+      );
+    } catch (dispatchError) {
+      setError(
+        dispatchError instanceof Error
+          ? dispatchError.message
+          : "Unable to dispatch due reminders.",
+      );
+    } finally {
+      setIsDispatching(false);
+    }
+  }
 
   return (
     <AppPage>
@@ -65,11 +101,13 @@ export function ChannelsConsole() {
         description={
           <p>
             Choose where the secretary should reach you. Telegram remains the fully conversational
-            channel, and the other high-value channels now have real outbound setup, readiness,
-            and test-send flows here instead of one long setup sheet.
+            channel, and the other high-value channels now handle reminders plus important job and
+            heartbeat updates once they are enabled.
           </p>
         }
       >
+        {notice ? <NoticeBanner tone="success">{notice}</NoticeBanner> : null}
+        {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
         <div
           style={{
             display: "flex",
@@ -92,6 +130,20 @@ export function ChannelsConsole() {
             );
           })}
         </div>
+        <ActionRow align="between">
+          <p style={{ margin: 0, color: "var(--muted)", maxWidth: 720 }}>
+            Use this when you want the secretary to immediately push any due reminders through the
+            enabled delivery channels instead of waiting for the next reminder sweep.
+          </p>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={() => void dispatchDueReminders()}
+            disabled={isDispatching}
+          >
+            {isDispatching ? "Dispatching..." : "Dispatch due reminders"}
+          </button>
+        </ActionRow>
       </SurfaceCard>
 
       {selected.key === "telegram" ? (

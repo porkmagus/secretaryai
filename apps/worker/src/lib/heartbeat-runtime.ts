@@ -3,7 +3,10 @@ import type { AppConfig } from "@secretary/config";
 import { activityTraces, conversations, integrations, type DbClient } from "@secretary/db";
 import type { Infrastructure } from "./infrastructure.js";
 import { eq } from "drizzle-orm";
-import { maybeDeliverTelegramAssistantMessage } from "./telegram-integration.js";
+import {
+  deliverImportantUpdateToEnabledChannels,
+  deliverRuntimeMessage,
+} from "./channel-delivery.js";
 import { enqueueTurnMemoryFollowup, processRuntimeTurn } from "./turn-orchestrator.js";
 
 const heartbeatIntegrationId = "heartbeat";
@@ -319,9 +322,10 @@ export async function runHeartbeat(params: {
     });
 
     try {
-      await maybeDeliverTelegramAssistantMessage({
+      await deliverRuntimeMessage({
         dbClient: params.infrastructure.dbClient,
         config: params.config,
+        channelType: "telegram",
         conversationId: persistedTurn.response.conversationId,
         messageId: persistedTurn.response.messageId,
         text: persistedTurn.response.outputText,
@@ -331,6 +335,21 @@ export async function runHeartbeat(params: {
       });
     } catch {
       // Heartbeat delivery should not fail the run if Telegram mirroring is unavailable.
+    }
+
+    try {
+      await deliverImportantUpdateToEnabledChannels({
+        dbClient: params.infrastructure.dbClient,
+        config: params.config,
+        conversationId: persistedTurn.response.conversationId,
+        messageId: persistedTurn.response.messageId,
+        text: persistedTurn.response.outputText,
+        subject: "Secretary heartbeat update",
+        source: "heartbeat",
+        traceId: createMessageId(),
+      });
+    } catch {
+      // Heartbeat should remain resilient even when external outbound channels are unavailable.
     }
 
     return {

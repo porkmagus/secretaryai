@@ -28,6 +28,17 @@ test("buildTaskDraft assigns telegram delivery when the request came from telegr
   assert.equal(draft.deliveryTargetRef, "12345");
 });
 
+test("buildTaskDraft extracts explicit delivery preferences from the request text", () => {
+  const draft = buildTaskDraft({
+    text: "text me to review the launch checklist tomorrow at 9am",
+    now: new Date("2026-03-27T16:00:00.000Z"),
+  });
+
+  assert.equal(draft.title, "Review The Launch Checklist");
+  assert.equal(draft.deliveryChannelType, "sms");
+  assert.equal(draft.deliveryTargetRef, null);
+});
+
 test("parseReminderTime supports relative timings", () => {
   const now = new Date("2026-03-27T09:00:00.000Z");
   const inHours = parseReminderTime("in 2 hours", now);

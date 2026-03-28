@@ -100,6 +100,7 @@ import {
   updateAgentJobSettings,
 } from "./lib/agent-jobs.js";
 import { resolveManagedAgentJobArtifactPath } from "./lib/agent-job-artifact-storage.js";
+import { dispatchDueTaskReminders } from "./lib/channel-delivery.js";
 import {
   dispatchDueTelegramReminders,
   getTelegramIntegrationStatus,
@@ -1592,6 +1593,26 @@ export async function buildServer() {
           error instanceof Error
             ? error.message
             : "Unable to deliver Telegram reminders.",
+      });
+    }
+  });
+
+  app.post("/runtime/integrations/reminders/deliver", async (_, reply) => {
+    try {
+      return await dispatchDueTaskReminders({
+        dbClient: infrastructure.dbClient,
+        config,
+      });
+    } catch (error) {
+      logger.error("runtime.integrations.reminders_failed", {
+        error: error instanceof Error ? error.message : error,
+      });
+
+      return reply.status(500).send({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to deliver due reminders.",
       });
     }
   });

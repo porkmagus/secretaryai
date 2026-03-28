@@ -8,7 +8,10 @@ import {
 import { createMessageId } from "@secretary/core-runtime";
 import { eq } from "drizzle-orm";
 import { attachExternalMessageIdToMessage } from "./chat-persistence.js";
-import { maybeDeliverTelegramAssistantMessage } from "./telegram-integration.js";
+import {
+  deliverImportantUpdateToEnabledChannels,
+  deliverRuntimeMessage,
+} from "./channel-delivery.js";
 
 type PostAgentJobConversationUpdateParams = {
   dbClient: DbClient;
@@ -88,28 +91,46 @@ export async function postAgentJobConversationUpdate(
     params.config.telegram.botToken
   ) {
     try {
-      const delivery = await maybeDeliverTelegramAssistantMessage({
+      const delivery = await deliverRuntimeMessage({
         dbClient: params.dbClient,
         config: params.config,
+        channelType: "telegram",
         conversationId: conversation.id,
         messageId,
         text: params.text,
         importance: params.importance ?? "normal",
         source: "job",
         traceId: createMessageId(),
-        forceChatId: conversation.channelRef,
+        recipient: conversation.channelRef,
         ignoreDeliveryPolicy: true,
       });
 
-      if (delivery.delivered && delivery.sentMessageIds[0]) {
+      if (delivery.delivered && delivery.externalRef) {
         await attachExternalMessageIdToMessage(
           params.dbClient,
           messageId,
-          delivery.sentMessageIds[0],
+          delivery.externalRef,
         );
       }
     } catch {
       // Keep lifecycle updates durable even when an external chat channel is unavailable.
+    }
+  }
+
+  if ((params.importance ?? "normal") === "important") {
+    try {
+      await deliverImportantUpdateToEnabledChannels({
+        dbClient: params.dbClient,
+        config: params.config,
+        conversationId: conversation.id,
+        messageId,
+        text: params.text,
+        subject: `Build job update: ${params.jobId}`,
+        source: "job",
+        traceId: createMessageId(),
+      });
+    } catch {
+      // Important job updates should still remain durable in the conversation even if external delivery fails.
     }
   }
 

@@ -32,6 +32,7 @@ import {
   attachExternalMessageIdToMessage,
   findConversationIdByChannelRef,
 } from "./chat-persistence.js";
+import { dispatchDueTaskReminders } from "./channel-delivery.js";
 import {
   createSpeechArtifact,
   recordSpeechTrace,
@@ -772,126 +773,11 @@ export async function dispatchDueTelegramReminders(params: {
   dbClient: DbClient;
   config: AppConfig;
 }) {
-  const record = await ensureTelegramIntegrationRecord(params.dbClient, params.config);
-  const stored = parseTelegramIntegrationConfig(record.configJson);
-
-  if (!record.enabled) {
-    return {
-      scanned: 0,
-      delivered: 0,
-      failed: 0,
-      taskIds: [],
-      errors: [],
-    } satisfies TelegramReminderDispatchResponse;
-  }
-
-  const client = getTelegramClient(params.config);
-  const dueTasks = await params.dbClient.db.query.tasks.findMany({
-    where: and(
-      eq(tasks.deliveryChannelType, "telegram"),
-      not(isNull(tasks.reminderAt)),
-      lte(tasks.reminderAt, new Date()),
-      isNull(tasks.deliveredAt),
-      or(eq(tasks.status, "open"), eq(tasks.status, "in_progress")),
-    ),
-    orderBy: [asc(tasks.reminderAt), desc(tasks.createdAt)],
-    limit: 25,
+  return dispatchDueTaskReminders({
+    dbClient: params.dbClient,
+    config: params.config,
+    channelFilter: "telegram",
   });
-
-  const taskIds: string[] = [];
-  const errors: string[] = [];
-  let delivered = 0;
-  let failed = 0;
-
-  for (const task of dueTasks) {
-    const chatId =
-      task.deliveryTargetRef ??
-      stored.defaultChatId ??
-      params.config.telegram.defaultChatId;
-
-    if (!chatId) {
-      failed += 1;
-      errors.push(`Task ${task.id} has no Telegram chat configured.`);
-      await params.dbClient.db
-        .update(tasks)
-        .set({
-          lastDeliveryError: "No Telegram chat configured.",
-          updatedAt: new Date(),
-        })
-        .where(eq(tasks.id, task.id));
-      continue;
-    }
-
-    try {
-      const reminderText = [
-        `Reminder: ${task.title}`,
-        task.detail,
-        task.reminderAt
-          ? `Scheduled for ${task.reminderAt.toISOString()}.`
-          : null,
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-      const sentMessageIds = await client.sendMessageChunks(chatId, reminderText);
-
-      await params.dbClient.db
-        .update(tasks)
-        .set({
-          deliveredAt: new Date(),
-          lastDeliveryError: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(tasks.id, task.id));
-
-      await recordTelegramTrace({
-        dbClient: params.dbClient,
-        conversationId: task.conversationId ?? null,
-        eventName: "telegram.reminder.sent",
-        payload: {
-          chatId,
-          sentMessageIds,
-          taskId: task.id,
-          title: task.title,
-        },
-      });
-
-      delivered += 1;
-      taskIds.push(task.id);
-    } catch (error) {
-      const errorText = error instanceof Error ? error.message : String(error);
-
-      await params.dbClient.db
-        .update(tasks)
-        .set({
-          lastDeliveryError: errorText,
-          updatedAt: new Date(),
-        })
-        .where(eq(tasks.id, task.id));
-
-      await recordTelegramTrace({
-        dbClient: params.dbClient,
-        conversationId: task.conversationId ?? null,
-        eventName: "telegram.reminder.failed",
-        payload: {
-          chatId,
-          errorText,
-          taskId: task.id,
-          title: task.title,
-        },
-      });
-
-      failed += 1;
-      errors.push(`Task ${task.id}: ${errorText}`);
-    }
-  }
-
-  return {
-    scanned: dueTasks.length,
-    delivered,
-    failed,
-    taskIds,
-    errors,
-  } satisfies TelegramReminderDispatchResponse;
 }
 
 export async function handleTelegramWebhookUpdate(params: {

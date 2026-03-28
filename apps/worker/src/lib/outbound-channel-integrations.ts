@@ -287,23 +287,16 @@ export async function sendDiscordTestMessage(params: {
   config: AppConfig;
   request: DiscordTestMessageRequest;
 }) {
-  const webhookUrl = params.config.channels.discord.webhookUrl;
-  if (!webhookUrl) {
-    throw new Error("DISCORD_WEBHOOK_URL is not configured.");
-  }
-
   const status = await getDiscordIntegrationStatus(params.dbClient, params.config);
   const deliveredTo = status.integration.targetLabel ?? "Configured Discord webhook";
   const text =
     params.request.text?.trim() ||
     "Secretary Discord test message: the outbound channel is connected and ready.";
 
-  await handleSendResult({
+  await sendConfiguredDiscordMessage({
+    config: params.config,
     dbClient: params.dbClient,
-    channelKey: "discord",
-    result: (async () => {
-      await postJson(webhookUrl, { content: text });
-    })(),
+    text,
   });
 
   return {
@@ -366,23 +359,16 @@ export async function sendSlackTestMessage(params: {
   config: AppConfig;
   request: SlackTestMessageRequest;
 }) {
-  const webhookUrl = params.config.channels.slack.webhookUrl;
-  if (!webhookUrl) {
-    throw new Error("SLACK_WEBHOOK_URL is not configured.");
-  }
-
   const status = await getSlackIntegrationStatus(params.dbClient, params.config);
   const deliveredTo = status.integration.targetLabel ?? "Configured Slack webhook";
   const text =
     params.request.text?.trim() ||
     "Secretary Slack test message: the outbound channel is connected and ready.";
 
-  await handleSendResult({
+  await sendConfiguredSlackMessage({
+    config: params.config,
     dbClient: params.dbClient,
-    channelKey: "slack",
-    result: (async () => {
-      await postJson(webhookUrl, { text });
-    })(),
+    text,
   });
 
   return {
@@ -518,6 +504,44 @@ export async function sendConfiguredEmail(params: {
   };
 }
 
+export async function sendConfiguredDiscordMessage(params: {
+  config: AppConfig;
+  dbClient: DbClient;
+  text: string;
+}) {
+  const webhookUrl = params.config.channels.discord.webhookUrl;
+  if (!webhookUrl) {
+    throw new Error("DISCORD_WEBHOOK_URL is not configured.");
+  }
+
+  await handleSendResult({
+    dbClient: params.dbClient,
+    channelKey: "discord",
+    result: (async () => {
+      await postJson(webhookUrl, { content: params.text });
+    })(),
+  });
+}
+
+export async function sendConfiguredSlackMessage(params: {
+  config: AppConfig;
+  dbClient: DbClient;
+  text: string;
+}) {
+  const webhookUrl = params.config.channels.slack.webhookUrl;
+  if (!webhookUrl) {
+    throw new Error("SLACK_WEBHOOK_URL is not configured.");
+  }
+
+  await handleSendResult({
+    dbClient: params.dbClient,
+    channelKey: "slack",
+    result: (async () => {
+      await postJson(webhookUrl, { text: params.text });
+    })(),
+  });
+}
+
 export async function getSmsIntegrationStatus(
   dbClient: DbClient,
   config: AppConfig,
@@ -584,14 +608,6 @@ export async function sendSmsTestMessage(params: {
   config: AppConfig;
   request: SmsTestMessageRequest;
 }) {
-  const accountSid = params.config.channels.sms.accountSid;
-  const authToken = params.config.channels.sms.authToken;
-  const fromNumber = params.config.channels.sms.fromNumber;
-
-  if (!accountSid || !authToken || !fromNumber) {
-    throw new Error("TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER are required.");
-  }
-
   const record = await ensureIntegrationRecord(params.dbClient, "sms", {
     defaultRecipient: null,
     senderLabel: null,
@@ -606,6 +622,35 @@ export async function sendSmsTestMessage(params: {
     throw new Error("No SMS recipient is configured for test delivery.");
   }
 
+  const result = await sendConfiguredSmsMessage({
+    config: params.config,
+    dbClient: params.dbClient,
+    recipient,
+    text:
+      params.request.text?.trim() ||
+      "Secretary SMS test: the outbound SMS channel is connected and ready.",
+  });
+  return { ok: true, recipient, sid: result.sid } satisfies SmsTestMessageResponse;
+}
+
+export async function sendConfiguredSmsMessage(params: {
+  config: AppConfig;
+  dbClient: DbClient;
+  recipient: string | null;
+  text: string;
+}) {
+  const accountSid = params.config.channels.sms.accountSid;
+  const authToken = params.config.channels.sms.authToken;
+  const fromNumber = params.config.channels.sms.fromNumber;
+
+  if (!accountSid || !authToken || !fromNumber) {
+    throw new Error("TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER are required.");
+  }
+
+  if (!params.recipient) {
+    throw new Error("No SMS recipient is configured for delivery.");
+  }
+
   let sid: string | null = null;
   await handleSendResult({
     dbClient: params.dbClient,
@@ -614,11 +659,9 @@ export async function sendSmsTestMessage(params: {
       const response = await postForm(
         `${params.config.channels.sms.apiBaseUrl.replace(/\/$/, "")}/2010-04-01/Accounts/${accountSid}/Messages.json`,
         new URLSearchParams({
-          Body:
-            params.request.text?.trim() ||
-            "Secretary SMS test: the outbound SMS channel is connected and ready.",
+          Body: params.text,
           From: fromNumber,
-          To: recipient,
+          To: params.recipient ?? "",
         }),
         {
           headers: {
@@ -632,8 +675,7 @@ export async function sendSmsTestMessage(params: {
   });
 
   return {
-    ok: true,
-    recipient,
+    recipient: params.recipient,
     sid,
-  } satisfies SmsTestMessageResponse;
+  };
 }

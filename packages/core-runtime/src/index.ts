@@ -433,7 +433,9 @@ export type AdminMaintenanceAction =
   | "clear_finished_agent_jobs"
   | "cancel_active_agent_jobs"
   | "flush_agent_queue"
-  | "run_health_sweep";
+  | "run_health_sweep"
+  | "reset_secretary_onboarding"
+  | "wipe_runtime_state";
 
 export type UpdateAgentJobSettingsRequest = {
   defaultWorkspacePath?: string | null;

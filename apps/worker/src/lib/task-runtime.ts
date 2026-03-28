@@ -9,6 +9,55 @@ export type TaskDraft = {
   deliveryTargetRef: string | null;
 };
 
+function parseDeliveryPreference(params: {
+  text: string;
+  telegramChatId?: string | null;
+}) {
+  const patterns: Array<{
+    regex: RegExp;
+    channelType: TaskDraft["deliveryChannelType"];
+    targetRef?: string | null;
+  }> = [
+    {
+      regex: /\b(?:text|sms)\s+me\b/i,
+      channelType: "sms",
+    },
+    {
+      regex: /\bemail\s+me\b/i,
+      channelType: "email",
+    },
+    {
+      regex: /\b(?:send|message|notify)\s+me\s+(?:on|via)\s+discord\b/i,
+      channelType: "discord",
+    },
+    {
+      regex: /\b(?:send|message|notify)\s+me\s+(?:on|via)\s+slack\b/i,
+      channelType: "slack",
+    },
+    {
+      regex: /\b(?:send|message|notify)\s+me\s+(?:on|via)\s+telegram\b/i,
+      channelType: "telegram",
+      targetRef: params.telegramChatId ?? null,
+    },
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.regex.test(params.text)) {
+      return {
+        cleanedText: cleanText(params.text.replace(pattern.regex, "").replace(/^\s*to\s+/i, "")),
+        deliveryChannelType: pattern.channelType,
+        deliveryTargetRef: pattern.targetRef ?? null,
+      };
+    }
+  }
+
+  return {
+    cleanedText: params.text,
+    deliveryChannelType: null,
+    deliveryTargetRef: null,
+  };
+}
+
 export function cleanText(text: string) {
   return text.replace(/\s+/g, " ").trim();
 }
@@ -113,7 +162,11 @@ export function buildTaskDraft(params: {
 }) {
   const rawTaskText = cleanText(params.text).replace(/[.?!]+$/g, "");
   const reminderAt = parseReminderTime(rawTaskText, params.now);
-  const taskText = stripReminderTiming(rawTaskText) || rawTaskText;
+  const deliveryPreference = parseDeliveryPreference({
+    text: stripReminderTiming(rawTaskText) || rawTaskText,
+    telegramChatId: params.telegramChatId,
+  });
+  const taskText = deliveryPreference.cleanedText || rawTaskText;
 
   return {
     title: titleCase(taskText).slice(0, 120),
@@ -121,9 +174,11 @@ export function buildTaskDraft(params: {
     dueAt: reminderAt,
     reminderAt,
     deliveryChannelType:
-      params.channel === "telegram" && params.telegramChatId ? "telegram" : null,
+      deliveryPreference.deliveryChannelType ??
+      (params.channel === "telegram" && params.telegramChatId ? "telegram" : null),
     deliveryTargetRef:
-      params.channel === "telegram" && params.telegramChatId ? params.telegramChatId : null,
+      deliveryPreference.deliveryTargetRef ??
+      (params.channel === "telegram" && params.telegramChatId ? params.telegramChatId : null),
   } satisfies TaskDraft;
 }
 

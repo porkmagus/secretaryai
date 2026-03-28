@@ -1,5 +1,5 @@
 {
-  "defaultWorkspacePath": "F:\\hamcult",
+  "defaultWorkspacePath": null,
   "defaultApprovalMode": "builder",
   "executionBackend": "host_native",
   "maxAgentSteps": 24,

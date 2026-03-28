@@ -34,6 +34,7 @@ runtime/exports/*
 runtime/agent-jobs/artifacts/*
 runtime/persona/avatars/*
 runtime/venvs/*
+runtime/config/dev-orchestrator.json
 !runtime/postgres/.gitkeep
 !runtime/redis/.gitkeep
 !runtime/README.md

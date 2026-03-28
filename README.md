@@ -34,28 +34,36 @@ Daily use after that:
 2. Open [http://localhost:3000](http://localhost:3000)
 3. When you are done, double-click [`stop-secretary-dev.cmd`](./stop-secretary-dev.cmd)
 
+Command-line equivalents:
+
+- `secretary.cmd install`
+- `secretary.cmd start`
+- `secretary.cmd status`
+- `secretary.cmd stop`
+
 What those scripts do:
 
 - `first-run-setup.cmd`
+  - delegates to `secretary.cmd install`
   - creates `.env` from `.env.example` if needed
-  - runs `npm install`
-  - prepares storage
+  - checks dependencies and installs what it can
+  - installs npm dependencies when needed
   - starts Postgres / Redis / SearXNG
   - runs DB migrations
+  - builds the worker when needed
   - prepares local STT and TTS once
 
 - `start-secretary-dev.cmd`
-  - prepares storage
-  - starts Postgres / Redis / SearXNG
-  - runs DB migrations
-  - opens 4 terminal windows for:
-    - web
-    - worker
-    - STT
-    - TTS
+  - delegates to `secretary.cmd start`
+  - refreshes the local stack
+  - starts web, worker, STT, and TTS as background services
+  - waits for ports to become ready
+  - writes logs into `runtime/dev-logs`
 
 - `stop-secretary-dev.cmd`
-  - closes those 4 dev terminal windows
+  - delegates to `secretary.cmd stop`
+  - stops managed background processes
+  - cleans stale listeners on the known ports
   - shuts the local stack down
 
 ### Manual Start
