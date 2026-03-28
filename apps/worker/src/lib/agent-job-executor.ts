@@ -626,9 +626,32 @@ function makeAgentInstructions(request: JobRequestShape) {
   return lines.filter((line): line is string => Boolean(line)).join("\n");
 }
 
+function makeDraftingPrompt(params: {
+  request: JobRequestShape;
+  inspectionSummary: string;
+}) {
+  const lines = [
+    `Job title: ${params.request.title}`,
+    `Goal: ${params.request.goal}`,
+    `Workspace: ${params.request.workspacePath}`,
+    "",
+    "Workspace inspection:",
+    params.inspectionSummary,
+    "",
+    "Drafting expectations:",
+    "- Explore the codebase using read and search tools only.",
+    "- Do not write code or apply fixes yet.",
+    "- Identify the files that need changes and the exact logic to implement the goal.",
+    "- Finish by summarizing your explicit, step-by-step plan for the next agent.",
+  ];
+
+  return lines.join("\n");
+}
+
 function makeImplementationPrompt(params: {
   request: JobRequestShape;
   inspectionSummary: string;
+  draftSummary: string;
   priorVerifierNotes: string[];
 }) {
   const lines = [
@@ -638,6 +661,9 @@ function makeImplementationPrompt(params: {
     "",
     "Workspace inspection:",
     params.inspectionSummary,
+    "",
+    "Execution plan to follow:",
+    params.draftSummary || "No detailed plan was drafted. Explore before editing.",
   ];
 
   if (params.priorVerifierNotes.length > 0) {
@@ -1320,6 +1346,30 @@ async function runAgentLoop(params: {
   }
 }
 
+export async function runDraftingAgent(params: {
+  inference: InferenceRuntimeConfig;
+  settings: AgentJobSettingsRecord;
+  request: JobRequestShape;
+  workspacePath: string;
+  approvalMode: AgentJobApprovalMode;
+  inspectionSummary: string;
+  messages?: SerializedAgentMessage[];
+}) {
+  return runAgentLoop({
+    inference: params.inference,
+    settings: params.settings,
+    request: params.request,
+    workspacePath: params.workspacePath,
+    approvalMode: params.approvalMode,
+    prompt: makeDraftingPrompt({
+      request: params.request,
+      inspectionSummary: params.inspectionSummary,
+    }),
+    messages: params.messages,
+    activeTools: ["list_directory", "search_files", "read_file", "run_command"],
+  });
+}
+
 export async function runImplementationAgent(params: {
   inference: InferenceRuntimeConfig;
   settings: AgentJobSettingsRecord;
@@ -1327,6 +1377,7 @@ export async function runImplementationAgent(params: {
   workspacePath: string;
   approvalMode: AgentJobApprovalMode;
   inspectionSummary: string;
+  draftSummary: string;
   priorVerifierNotes: string[];
   messages?: SerializedAgentMessage[];
   activeTools?: AgentToolName[];
@@ -1340,6 +1391,7 @@ export async function runImplementationAgent(params: {
     prompt: makeImplementationPrompt({
       request: params.request,
       inspectionSummary: params.inspectionSummary,
+      draftSummary: params.draftSummary,
       priorVerifierNotes: params.priorVerifierNotes,
     }),
     messages: params.messages,

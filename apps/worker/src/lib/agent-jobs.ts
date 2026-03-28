@@ -39,6 +39,7 @@ import {
   buildApprovalResponseMessages,
   detectExecutionRequirements,
   normalizeWorkspacePath,
+  runDraftingAgent,
   runImplementationAgent,
   runVerificationAgent,
 } from "./agent-job-executor.js";
@@ -209,6 +210,16 @@ function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
       summary: "Map the workspace before making changes.",
     },
     {
+      stepKey: "draft_plan",
+      title: "Draft an execution plan",
+      detail: "Explore the codebase using search tools to build a comprehensive plan before editing files.",
+      kind: "plan",
+      status: "pending",
+      dependsOnStepIds: ["inspect_workspace"],
+      toolKey: "agent_planner",
+      summary: "Gather context and construct sequence.",
+    },
+    {
       stepKey: "implement_scope",
       title: "Implement the requested scope",
       detail:
@@ -217,7 +228,7 @@ function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
           : `Implement the requested outcome: ${request.goal}.`,
       kind: "edit",
       status: "pending",
-      dependsOnStepIds: ["inspect_workspace"],
+      dependsOnStepIds: ["draft_plan"],
       toolKey: "agent_executor",
       summary: "Make the required code and content changes.",
     },
@@ -483,6 +494,12 @@ function getPackageMetadata(steps: Array<typeof agentJobSteps.$inferSelect>) {
   const inspectStep = steps.find((step) => step.stepKey === "inspect_workspace");
   const metadata = inspectStep?.outputJson?.packageMetadata;
   return metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>) : {};
+}
+
+function getDraftSummary(steps: Array<typeof agentJobSteps.$inferSelect>) {
+  const draftStep = steps.find((step) => step.stepKey === "draft_plan");
+  const summary = draftStep?.outputJson?.finalText;
+  return typeof summary === "string" ? summary : "No detailed plan was drafted.";
 }
 
 function getImplementationSummary(steps: Array<typeof agentJobSteps.$inferSelect>) {
@@ -1194,6 +1211,133 @@ async function recoverInterruptedStep(params: {
   return refreshedStep ?? params.currentStep;
 }
 
+async function executeDraftingStep(params: {
+  config: AppConfig;
+  dbClient: DbClient;
+  queue: AgentJobQueueAdapter;
+  row: JobRow;
+  jobId: string;
+  draftStep: typeof agentJobSteps.$inferSelect;
+  steps: Array<typeof agentJobSteps.$inferSelect>;
+}) {
+  const settings = await loadAgentJobSettings();
+  const inference = await getInferenceRuntimeConfig();
+  const request = getRequestFromRow(params.row);
+
+  if (!inference.enabled) {
+    await updateStepState({
+      dbClient: params.dbClient,
+      stepId: params.draftStep.id,
+      status: "blocked",
+      errorText: "Inference provider is not configured.",
+    });
+    return;
+  }
+
+  await updateStepState({
+    dbClient: params.dbClient,
+    stepId: params.draftStep.id,
+    status: "running",
+    startedAt: params.draftStep.startedAt ?? new Date(),
+    errorText: null,
+  });
+  await updateJobState({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    status: "running",
+    blockerSummary: null,
+    currentStepId: params.draftStep.id,
+    errorText: null,
+  });
+  await insertCheckpointArtifact({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.draftStep.id,
+    label: "Drafting started",
+    contentText: `Drafting started for "${request.title}" in ${params.row.agent.workspacePath}.`,
+    metadataJson: {
+      phase: "draft_plan",
+    },
+  });
+
+  const storedMessages = parseStoredMessages(params.draftStep.outputJson?.agentMessages);
+
+  const result = await runDraftingAgent({
+    inference,
+    settings,
+    request: {
+      title: request.title,
+      goal: request.goal,
+      workspacePath: params.row.agent.workspacePath,
+      constraints: request.constraints ?? [],
+      deliverables: request.deliverables ?? [],
+    },
+    workspacePath: params.row.agent.workspacePath,
+    approvalMode: params.row.agent.approvalMode as AgentJobApprovalMode,
+    inspectionSummary: getInspectionSummary(params.steps),
+    messages: storedMessages.length > 0 ? storedMessages : undefined,
+  });
+
+  const implementStep = params.steps.find((step) => step.stepKey === "implement_scope") ?? null;
+  if (implementStep) {
+    await updateStepState({
+      dbClient: params.dbClient,
+      stepId: implementStep.id,
+      status: "ready",
+      errorText: null,
+    });
+  }
+
+  await updateStepState({
+    dbClient: params.dbClient,
+    stepId: params.draftStep.id,
+    status: "completed",
+    finishedAt: new Date(),
+    outputJson: {
+      agentMessages: result.messages,
+      stepSnapshots: result.stepSnapshots,
+      finalText: result.finalText,
+      usage: result.usage,
+    },
+    summary: result.finalText || "Drafting complete.",
+    errorText: null,
+  });
+  await updateJobState({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    status: "running",
+    blockerSummary: null,
+    currentStepId: implementStep?.id ?? null,
+  });
+  await insertCheckpointArtifact({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.draftStep.id,
+    label: "Drafting completed",
+    contentText: result.finalText || "Draft pass handed off to implementation.",
+    metadataJson: {
+      nextStepId: implementStep?.id ?? null,
+    },
+  });
+
+  await postAgentJobConversationUpdate({
+    dbClient: params.dbClient,
+    config: params.config,
+    conversationId: params.row.agent.conversationId ?? null,
+    jobId: params.jobId,
+    eventName: "agent.job.chat.drafting_completed",
+    importance: "normal",
+    text: "I finished drafting the execution plan and I’m beginning the implementation pass.",
+    metadataJson: {
+      stepId: params.draftStep.id,
+    },
+  });
+
+  if (implementStep) {
+    await params.queue.enqueue(params.jobId);
+  }
+}
+
 async function executeImplementationStep(params: {
   config: AppConfig;
   dbClient: DbClient;
@@ -1371,6 +1515,7 @@ async function executeImplementationStep(params: {
     workspacePath: params.row.agent.workspacePath,
     approvalMode: params.row.agent.approvalMode as AgentJobApprovalMode,
     inspectionSummary: getInspectionSummary(params.steps),
+    draftSummary: getDraftSummary(params.steps),
     priorVerifierNotes: verifyNotes,
     messages,
   });
@@ -2490,6 +2635,19 @@ export async function processAgentJob(
           row,
           jobId,
           inspectStep: refreshedCurrentStep,
+          steps,
+        });
+      }
+      return;
+    case "draft_plan":
+      if (refreshedCurrentStep.status === "ready" || refreshedCurrentStep.status === "retrying" || refreshedCurrentStep.status === "running") {
+        await executeDraftingStep({
+          config,
+          dbClient,
+          queue,
+          row,
+          jobId,
+          draftStep: refreshedCurrentStep,
           steps,
         });
       }

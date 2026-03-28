@@ -77,6 +77,8 @@ type ToolIntent = {
     | "document_create"
     | "download_url"
     | "memory_write"
+    | "memory_read"
+    | "note_to_self"
     | "telegram_send"
     | "shell_command"
     | "browser_open"
@@ -174,6 +176,18 @@ const builtInTools: BuiltInTool[] = [
     key: "email_send",
     name: "Send Email",
     description: "Send a real outbound email through the configured email channel.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "memory_read",
+    name: "Read Memory",
+    description: "Search and retrieve relevant memory entries to answer a question about what the secretary knows.",
+    approvalMode: "always_allow",
+  },
+  {
+    key: "note_to_self",
+    name: "Note to Self",
+    description: "Proactively save a personal detail, name, preference, or context note as a memory entry without an explicit user command.",
     approvalMode: "ask_first",
   },
 ];
@@ -738,11 +752,49 @@ function parseShellIntent(text: string) {
   };
 }
 
+function parseMemoryReadIntent(text: string) {
+  if (
+    !/\b(?:do you remember|what do you know about|what do you have on|recall|look up in memory|search (?:your )?memory for)\b/i.test(text)
+  ) {
+    return null;
+  }
+
+  const queryMatch =
+    text.match(/\b(?:do you remember|recall|what do you know about|what do you have on|search (?:your )?memory for)\s+(.+)/i);
+  const query = queryMatch?.[1]?.trim().replace(/[.?!]+$/, "") ?? text;
+
+  return {
+    requestJson: { query },
+    summary: `Search memory for "${query}"`,
+    toolKey: "memory_read" as const,
+  };
+}
+
+function parseNoteToSelfIntent(text: string) {
+  const match =
+    text.match(/\b(?:make a note(?:\s+that)?|jot(?:\s+down)?|note\s+for\s+(?:yourself|me)|keep(?:\s+a)?\s+note)\s*[:\s]+(.+)$/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const contentText = match[1].trim().replace(/[.]+$/, "");
+  return {
+    requestJson: {
+      contentText,
+      title: contentText.slice(0, 60),
+      memoryType: "semantic",
+    },
+    summary: `Note to self: ${contentText.slice(0, 60)}`,
+    toolKey: "note_to_self" as const,
+  };
+}
+
 function detectToolIntent(text: string): ToolIntent | null {
   return (
     parseTaskListIntent(text) ??
     parseReminderIntent(text) ??
     parseTaskUpdateIntent(text) ??
+    parseMemoryReadIntent(text) ??
     parseSearchIntent(text) ??
     parseBrowserOpenIntent(text) ??
     parseEmailSendIntent(text) ??
@@ -750,6 +802,7 @@ function detectToolIntent(text: string): ToolIntent | null {
     parseFileIntent(text) ??
     parseDocumentCreateIntent(text) ??
     parseDownloadIntent(text) ??
+    parseNoteToSelfIntent(text) ??
     parseMemoryWriteIntent(text) ??
     parseTelegramSendIntent(text) ??
     parseCalendarCreateIntent(text) ??
@@ -1253,10 +1306,19 @@ function allowedShellCommand(command: string) {
   const allowedPatterns = [
     /^git status$/i,
     /^git diff --stat$/i,
-    /^npm run (build|typecheck)$/i,
+    /^git log --oneline(?:\s+-\d+)?$/i,
+    /^git branch(?:\s+--list)?$/i,
+    /^git remote -v$/i,
+    /^npm run (build|typecheck|lint|test)$/i,
+    /^npm ls(?:\s+--depth=\d+)?$/i,
+    /^node --version$/i,
     /^Get-ChildItem(?:\s|$)/i,
     /^Get-Content(?:\s|$)/i,
     /^dir(?:\s|$)/i,
+    /^ls(?:\s+-[a-zA-Z]+)?(?:\s+[^;|&<>]+)?$/i,
+    /^cat\s+[^;|&<>]+$/i,
+    /^pwd$/i,
+    /^echo\s+[^;|&<>]+$/i,
   ];
 
   return allowedPatterns.some((pattern) => pattern.test(normalized));
@@ -1899,6 +1961,51 @@ async function executeToolRequest(params: {
       return executeEmailDraft(params.requestJson);
     case "email_send":
       return executeEmailSend(params.config, params.dbClient, params.requestJson);
+    case "memory_read": {
+      const query = String(params.requestJson.query ?? "");
+      if (!query) {
+        throw new Error("Memory search query is required.");
+      }
+      const results = await retrieveRelevantMemories(params.dbClient, query);
+      const lines = results.map((m) => {
+        const body = m.summary || m.contentText || "";
+        return m.title ? `[${m.title}] ${body}` : body;
+      });
+      return {
+        responseJson: { query, count: results.length, results },
+        text:
+          lines.length > 0
+            ? `Here's what I found in memory about "${query}": ${lines.join(" | ")}`
+            : `I searched my memory for "${query}" but didn't find anything specific.`,
+      };
+    }
+    case "note_to_self": {
+      const contentText = String(params.requestJson.contentText ?? "").trim();
+      if (!contentText) {
+        throw new Error("Note content is required.");
+      }
+      const title = String(params.requestJson.title ?? contentText.slice(0, 60)).trim();
+      const memoryId = createMessageId();
+      await params.dbClient.db.insert(memoryEntries).values({
+        id: memoryId,
+        memoryType: "semantic",
+        title,
+        summary: contentText.slice(0, 140),
+        contentText,
+        contentJson: { source: "note_to_self" },
+        tags: ["note", "proactive"],
+        sourceKind: "tool",
+        sourceRef: "note_to_self",
+        importanceScore: 68,
+        confidenceScore: 85,
+        pinned: false,
+        suppressed: false,
+      });
+      return {
+        responseJson: { memoryId, title },
+        text: `I made a note: "${title}".`,
+      };
+    }
     default:
       throw new Error(`Unsupported tool key ${params.toolKey}.`);
   }

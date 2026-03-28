@@ -107,7 +107,7 @@ function dedupeTaskRecords<T extends { title: string }>(records: T[]) {
 
 function extractPreferenceMemory(text: string): MemoryCandidate[] {
   const preferenceMatch = text.match(
-    /\b(?:i\s+)?(?:prefer|like|love|hate|dislike|want)\s+(.+)/i,
+    /\b(?:i\s+)?(?:prefer|like|love|hate|dislike|want|enjoy|can't stand|can't bear|am into|am not into)\s+(.+)/i,
   );
 
   if (!preferenceMatch) {
@@ -121,7 +121,7 @@ function extractPreferenceMemory(text: string): MemoryCandidate[] {
     return [];
   }
 
-  const positive = !/\b(hate|dislike)\b/i.test(text);
+  const positive = !/\b(hate|dislike|can't stand|can't bear|am not into)\b/i.test(text);
 
   return [
     {
@@ -132,7 +132,7 @@ function extractPreferenceMemory(text: string): MemoryCandidate[] {
         : `User dislike noted: ${preferenceText}`,
       contentText: text,
       tags: unique(["preference", ...preferenceTokens.slice(0, 4)]),
-      canonicalKey: `semantic:preference:${preferenceText.toLowerCase()}`,
+      canonicalKey: `semantic:preference:${preferenceText.toLowerCase().slice(0, 120)}`,
       importanceScore: /\bremember\b/i.test(text) ? 92 : 70,
       confidenceScore: 80,
     },
@@ -141,23 +141,29 @@ function extractPreferenceMemory(text: string): MemoryCandidate[] {
 
 function extractProjectMemory(text: string): MemoryCandidate[] {
   const projectMatch = text.match(
-    /\b(?:we(?:'re| are)?|i(?:'m| am)?)\s+(?:building|working on|shipping|finishing)\s+(.+)/i,
+    /\b(?:we(?:'re| are)?|i(?:'m| am)?)\s+(?:building|working on|shipping|finishing|developing|launching|releasing|designing)\s+(.+)/i,
   );
+  const goalMatch = !projectMatch
+    ? text.match(
+        /\b(?:i want to|i'm trying to|i plan to|i'm planning to|my goal is to|we need to)\s+(?:launch|ship|build|create|finish|deploy|release)\s+(.+)/i,
+      )
+    : null;
+  const match = projectMatch ?? goalMatch;
 
-  if (!projectMatch) {
+  if (!match) {
     return [];
   }
 
-  const projectText = cleanText(projectMatch[1]).replace(/[.?!]+$/g, "");
+  const projectText = cleanText(match[1]).replace(/[.?!]+$/g, "");
 
   return [
     {
       memoryType: "project",
       title: `Project: ${titleCase(projectText).slice(0, 52)}`,
-      summary: `Active workstream: ${projectText}`,
+      summary: goalMatch ? `User goal: ${projectText}` : `Active workstream: ${projectText}`,
       contentText: text,
       tags: unique(["project", ...tokenize(projectText).slice(0, 4)]),
-      canonicalKey: `project:${projectText.toLowerCase()}`,
+      canonicalKey: `project:${projectText.toLowerCase().slice(0, 120)}`,
       importanceScore: /\bremember\b/i.test(text) ? 88 : 66,
       confidenceScore: 74,
     },
@@ -165,7 +171,7 @@ function extractProjectMemory(text: string): MemoryCandidate[] {
 }
 
 function extractOperationalMemory(text: string): MemoryCandidate[] {
-  if (!/\b(repo|docker|postgres|redis|worker|desk|phase)\b/i.test(text)) {
+  if (!/\b(repo|docker|postgres|redis|worker|desk|phase|codebase|database|server|api|endpoint|config|deploy|pipeline|workflow)\b/i.test(text)) {
     return [];
   }
 
@@ -176,16 +182,211 @@ function extractOperationalMemory(text: string): MemoryCandidate[] {
       summary: cleanText(text).slice(0, 140),
       contentText: text,
       tags: unique(["operational", ...tokenize(text).slice(0, 5)]),
-      canonicalKey: `operational:${cleanText(text).toLowerCase()}`,
+      canonicalKey: `operational:${cleanText(text).toLowerCase().slice(0, 120)}`,
       importanceScore: /\bremember\b/i.test(text) ? 84 : 55,
       confidenceScore: 68,
     },
   ];
 }
 
+function extractPersonalFactMemory(text: string): MemoryCandidate[] {
+  // "My X is Y" / "The X is Y" patterns — personal attributes
+  const factMatch = text.match(
+    /\b(?:my|the)\s+([a-z][a-z ]{1,24})\s+is\s+([^.!?]{4,60})/i,
+  );
+  if (!factMatch) {
+    return [];
+  }
+
+  const attribute = cleanText(factMatch[1]).toLowerCase();
+  const value = cleanText(factMatch[2]).replace(/[.?!]+$/g, "");
+
+  // Reject noise attributes
+  const skipAttributes = new Set(["question", "answer", "guess", "point", "thing", "issue", "result", "problem", "plan", "reason", "idea"]);
+  if (skipAttributes.has(attribute) || attribute.length < 2) {
+    return [];
+  }
+
+  return [
+    {
+      memoryType: "semantic",
+      title: `Personal fact: ${titleCase(attribute)} is ${titleCase(value).slice(0, 40)}`,
+      summary: `User's ${attribute}: ${value}`,
+      contentText: text,
+      tags: unique(["personal", attribute, ...tokenize(value).slice(0, 3)]),
+      canonicalKey: `semantic:personal:${attribute}:${value.toLowerCase().slice(0, 80)}`,
+      importanceScore: /\bremember\b/i.test(text) ? 90 : 72,
+      confidenceScore: 82,
+    },
+  ];
+}
+
+function extractRelationshipMemory(text: string): MemoryCandidate[] {
+  // "X is my Y" or "my Y X" or "my Y is named X"
+  const patternA = text.match(
+    /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+is\s+my\s+([a-z][a-z ]{2,24})/,
+  );
+  const patternB = text.match(
+    /\bmy\s+([a-z][a-z ]{2,24})(?:'s name)?\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/,
+  );
+  const patternC = text.match(
+    /\bmy\s+([a-z][a-z ]{2,24})\s+([A-Z][a-z]+)(?:\s+[A-Z][a-z]+)?\b/,
+  );
+
+  const match = patternA ?? patternB ?? patternC;
+  if (!match) {
+    return [];
+  }
+
+  let personName: string;
+  let role: string;
+
+  if (patternA) {
+    personName = patternA[1];
+    role = patternA[2];
+  } else if (patternB) {
+    role = patternB[1];
+    personName = patternB[2];
+  } else if (patternC) {
+    role = patternC[1];
+    personName = patternC[2];
+  } else {
+    return [];
+  }
+
+  const roleNormalized = role.toLowerCase().trim();
+  const validRoles = new Set(["wife", "husband", "partner", "girlfriend", "boyfriend", "son", "daughter", "sister", "brother", "mother", "father", "mom", "dad", "friend", "boss", "colleague", "manager", "coworker", "assistant", "mentor", "client", "cousin", "uncle", "aunt"]);
+
+  if (!validRoles.has(roleNormalized) && !roleNormalized.includes("project manager") && !roleNormalized.includes("team")) {
+    return [];
+  }
+
+  return [
+    {
+      memoryType: "relationship",
+      title: `Relationship: ${personName} (${roleNormalized})`,
+      summary: `${personName} is the user's ${roleNormalized}`,
+      contentText: text,
+      tags: unique(["relationship", roleNormalized, personName.toLowerCase()]),
+      canonicalKey: `relationship:${roleNormalized}:${personName.toLowerCase()}`,
+      importanceScore: 85,
+      confidenceScore: 84,
+    },
+  ];
+}
+
+function extractScheduleMemory(text: string): MemoryCandidate[] {
+  const scheduleMatch = text.match(
+    /\b(?:every|each)\s+([a-z]+(?:\s+and\s+[a-z]+)?(?:\s+at\s+[\d:]+ ?(?:am|pm)?)?)\b/i,
+  ) ?? text.match(
+    /\b(?:the\s+)?(?:standup|meeting|sync|call|check.?in|session|class|workout|run)\s+is\s+(?:every|on|at)\s+(.+)/i,
+  ) ?? text.match(
+    /\b(?:i\s+)?(?:usually|always|normally|typically)\s+([a-z][^.!?]{6,60})/i,
+  );
+
+  if (!scheduleMatch) {
+    return [];
+  }
+
+  const scheduleText = cleanText(scheduleMatch[1] ?? scheduleMatch[0]).replace(/[.?!]+$/g, "");
+  if (tokenize(scheduleText).length < 1) {
+    return [];
+  }
+
+  return [
+    {
+      memoryType: "episodic",
+      title: `Schedule: ${titleCase(scheduleText).slice(0, 52)}`,
+      summary: `Recurring event or habit: ${scheduleText}`,
+      contentText: text,
+      tags: unique(["schedule", "recurring", ...tokenize(scheduleText).slice(0, 4)]),
+      canonicalKey: `episodic:schedule:${scheduleText.toLowerCase().slice(0, 100)}`,
+      importanceScore: 72,
+      confidenceScore: 70,
+    },
+  ];
+}
+
+function extractToolSoftwareMemory(text: string): MemoryCandidate[] {
+  const toolMatch = text.match(
+    /\b(?:i\s+)?(?:use|work(?:s)?\s+(?:in|with)|run(?:s)?|write(?:s)?\s+(?:in|with)|code(?:s)?\s+(?:in|with)|develop(?:s)?\s+(?:in|with))\s+([A-Za-z][a-zA-Z0-9 .+#-]{1,30})/i,
+  );
+  if (!toolMatch) {
+    return [];
+  }
+
+  const toolText = cleanText(toolMatch[1]).replace(/[.?!,]+$/g, "");
+  // Filter out noise
+  const noiseWords = new Set(["it", "that", "this", "them", "these", "those", "him", "her", "me", "you"]);
+  if (noiseWords.has(toolText.toLowerCase()) || toolText.length < 2) {
+    return [];
+  }
+
+  return [
+    {
+      memoryType: "operational",
+      title: `Tool: ${titleCase(toolText)}`,
+      summary: `User works with: ${toolText}`,
+      contentText: text,
+      tags: unique(["tool", "software", ...tokenize(toolText).slice(0, 3)]),
+      canonicalKey: `operational:tool:${toolText.toLowerCase()}`,
+      importanceScore: 65,
+      confidenceScore: 76,
+    },
+  ];
+}
+
+function extractLocationMemory(text: string): MemoryCandidate[] {
+  const locationMatch = text.match(
+    /\b(?:i(?:'m| am)?\s+(?:based|located|living|working)\s+(?:in|out of)|i\s+live\s+in|i\s+work\s+(?:from|in|out of)|my\s+(?:office|home|timezone)\s+is)\s+([A-Za-z][^.!?]{2,40})/i,
+  );
+  if (!locationMatch) {
+    return [];
+  }
+
+  const locationText = cleanText(locationMatch[1]).replace(/[.?!]+$/g, "");
+
+  return [
+    {
+      memoryType: "semantic",
+      title: `Location: ${titleCase(locationText).slice(0, 48)}`,
+      summary: `User location/timezone: ${locationText}`,
+      contentText: text,
+      tags: unique(["location", "timezone", ...tokenize(locationText).slice(0, 3)]),
+      canonicalKey: `semantic:location:${locationText.toLowerCase().slice(0, 80)}`,
+      importanceScore: 74,
+      confidenceScore: 80,
+    },
+  ];
+}
+
+function extractLifeEventMemory(text: string): MemoryCandidate[] {
+  const eventMatch = text.match(
+    /\b(?:we(?:'re| are)?|i(?:'m| am)?)\s+(?:moving|getting married|engaged|having a baby|expecting|graduating|starting a new job|retiring|relocating|traveling to)\b(.{0,60})/i,
+  );
+  if (!eventMatch) {
+    return [];
+  }
+
+  const eventContext = cleanText(`${eventMatch[0]} ${eventMatch[1] ?? ""}`).replace(/[.?!]+$/g, "");
+
+  return [
+    {
+      memoryType: "episodic",
+      title: `Life event: ${titleCase(eventContext).slice(0, 52)}`,
+      summary: `Life event mention: ${eventContext}`,
+      contentText: text,
+      tags: unique(["life_event", ...tokenize(eventContext).slice(0, 4)]),
+      canonicalKey: `episodic:life_event:${eventContext.toLowerCase().slice(0, 120)}`,
+      importanceScore: 88,
+      confidenceScore: 78,
+    },
+  ];
+}
+
 function extractExplicitMemory(text: string): MemoryCandidate[] {
   if (
-    !/\b(remember (?:that|this)|please remember|note this|save this|don't forget|do not forget)\b/i.test(
+    !/\b(remember (?:that|this)|please remember|note this|save this|don't forget|do not forget|keep in mind|make a note)\b/i.test(
       text,
     )
   ) {
@@ -201,7 +402,7 @@ function extractExplicitMemory(text: string): MemoryCandidate[] {
       summary: normalized.slice(0, 140),
       contentText: text,
       tags: unique(["remember", ...tokenize(normalized).slice(0, 5)]),
-      canonicalKey: `episodic:${normalized.toLowerCase()}`,
+      canonicalKey: `episodic:explicit:${normalized.toLowerCase().slice(0, 120)}`,
       importanceScore: 95,
       confidenceScore: 88,
     },
@@ -231,16 +432,28 @@ function extractTaskCandidate(text: string): TaskCandidate | null {
 
 function extractMemoryCandidates(text: string) {
   const specificCandidates = [
+    ...extractExplicitMemory(text),
+    ...extractRelationshipMemory(text),
+    ...extractPersonalFactMemory(text),
+    ...extractLifeEventMemory(text),
     ...extractPreferenceMemory(text),
     ...extractProjectMemory(text),
+    ...extractScheduleMemory(text),
+    ...extractLocationMemory(text),
+    ...extractToolSoftwareMemory(text),
     ...extractOperationalMemory(text),
   ];
-  const fallbackCandidates =
-    specificCandidates.length === 0 ? extractExplicitMemory(text) : [];
 
-  return unique([...specificCandidates, ...fallbackCandidates].map((candidate) => JSON.stringify(candidate))).map((value) =>
-    JSON.parse(value) as MemoryCandidate,
-  );
+  // Deduplicate by canonicalKey, keeping highest importanceScore per key
+  const byKey = new Map<string, MemoryCandidate>();
+  for (const candidate of specificCandidates) {
+    const existing = byKey.get(candidate.canonicalKey);
+    if (!existing || candidate.importanceScore > existing.importanceScore) {
+      byKey.set(candidate.canonicalKey, candidate);
+    }
+  }
+
+  return [...byKey.values()];
 }
 
 function toMemoryRecord(
@@ -457,6 +670,14 @@ export async function retrieveRelevantMemories(
   });
 
   const queryTokens = tokenize(queryText);
+  const now = Date.now();
+
+  // Detect query context signals for type-specific boosting
+  const queryHasPersonSignal = /\b(who|name|wife|husband|partner|son|daughter|sister|brother|mom|dad|friend|boss|colleague)\b/i.test(queryText);
+  const queryHasScheduleSignal = /\b(when|time|schedule|meeting|standup|every|weekly|monday|tuesday|wednesday|thursday|friday|daily|routine)\b/i.test(queryText);
+  const queryHasToolSignal = /\b(use|using|editor|tool|language|framework|stack|coding|development)\b/i.test(queryText);
+  const queryHasLocationSignal = /\b(where|timezone|location|city|office|remote)\b/i.test(queryText);
+
   const scored = records
     .map((record) => {
       const candidateTokens = unique(
@@ -481,11 +702,35 @@ export async function retrieveRelevantMemories(
       );
       const overlap = overlapTokens.length;
       const overlapRatio = queryTokens.length > 0 ? overlap / queryTokens.length : 0;
+
+      // Recency decay: memories accessed recently score *lower* to prevent repetition
+      const lastAccessedMs = record.lastAccessedAt ? record.lastAccessedAt.getTime() : 0;
+      const hoursSinceAccess = lastAccessedMs > 0 ? (now - lastAccessedMs) / (1000 * 60 * 60) : 999;
+      const recencyDecayPenalty = hoursSinceAccess < 0.5 ? -20 : hoursSinceAccess < 2 ? -10 : 0;
+
+      // Age boost: newer memories score slightly higher (fresher = more likely relevant)
+      const createdMs = record.createdAt.getTime();
+      const daysSinceCreation = (now - createdMs) / (1000 * 60 * 60 * 24);
+      const ageBoost = daysSinceCreation < 1 ? 12 : daysSinceCreation < 7 ? 6 : 0;
+
+      // Type-context boost: surface memory types matching the query intent
+      const typeBoost =
+        (queryHasPersonSignal && record.memoryType === "relationship" ? 25 : 0) +
+        (queryHasScheduleSignal && record.memoryType === "episodic" ? 20 : 0) +
+        (queryHasToolSignal && record.memoryType === "operational" ? 18 : 0) +
+        (queryHasLocationSignal && (record.tags ?? []).includes("location") ? 20 : 0) +
+        (record.memoryType === "project" && queryTokens.includes("project") ? 15 : 0);
+
+      // Pinned memories require at least 1 token overlap (no blind injection)
+      const pinnedBoost = record.pinned && overlap >= 1 ? 100 : 0;
+
       const score =
-        (record.pinned ? 120 : 0) +
-        record.importanceScore +
-        overlap * 22 +
-        (record.memoryType === "project" && queryTokens.includes("project") ? 20 : 0);
+        pinnedBoost +
+        record.importanceScore * 0.7 +
+        overlap * 28 +
+        ageBoost +
+        typeBoost +
+        recencyDecayPenalty;
 
       return {
         record,
@@ -505,16 +750,22 @@ export async function retrieveRelevantMemories(
         recordTokens.length < 2 &&
         !record.pinned;
 
-      return !lowSignalMemory && (
-      record.pinned ||
-      (queryTokens.length > 0 &&
+      // Pinned memories: require token overlap now to prevent blind injection
+      if (record.pinned) {
+        return !lowSignalMemory && overlap >= 1;
+      }
+
+      return (
+        !lowSignalMemory &&
+        queryTokens.length > 0 &&
         ((queryTokens.length <= 2 && overlap >= 1) ||
           overlap >= 2 ||
-          overlapRatio >= 0.6) &&
-        score >= 60));
+          overlapRatio >= 0.5) &&
+        score >= 45
+      );
     })
     .sort((left, right) => right.score - left.score)
-    .slice(0, 5);
+    .slice(0, 6);
 
   const selectedIds = scored.map(({ record }) => record.id);
 
