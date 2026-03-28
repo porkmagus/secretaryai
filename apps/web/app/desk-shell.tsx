@@ -277,18 +277,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         : props.activeConversationId
           ? "This conversation stays linked to its history, approvals, and follow-through as you work."
           : `Start anywhere. ${secretarySentenceReference} will turn this into a working thread as context builds.`;
-  const stageStats = [
-    {
-      label: "Thread state",
-      value: props.activeConversationId ? "linked and saved" : "fresh and local",
-      detail: props.activeConversationId ? "This reply stream is attached to a saved conversation." : "A conversation will be created as soon as the exchange begins.",
-    },
-    {
-      label: "Reply state",
-      value: status === "streaming" ? "reply in motion" : status === "submitted" ? "sending" : "ready",
-      detail: status === "streaming" ? `${secretarySentenceReference} is actively composing.` : "The live chat path is available right now.",
-    },
-  ];
+
   const activeNotice =
     props.pendingApproval
       ? {
@@ -324,17 +313,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </span>
         </div>
       </header>
-      <StatGrid>
-        {stageStats.map((entry) => (
-          <StatCard
-            key={entry.label}
-            label={entry.label}
-            value={entry.value}
-            detail={entry.detail}
-            tone="soft"
-          />
-        ))}
-      </StatGrid>
+
       <div className="desk-message-stream" ref={streamRef}>
         {messages.map((message) => {
           const text = extractText(message);
