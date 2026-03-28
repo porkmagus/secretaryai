@@ -7,7 +7,7 @@ import type {
   AgentJobSettingsResponse,
   UpdateAgentJobSettingsRequest,
 } from "@secretary/core-runtime";
-import { NoticeBanner, SurfaceCard, ToggleField } from "../../lib/ui";
+import { LoadingSurface, NoticeBanner, SurfaceCard, ToggleField } from "../../lib/ui";
 
 type AgentSettingsDraft = {
   defaultWorkspacePath: string;
@@ -117,6 +117,24 @@ export function AgentSettingsConsole() {
     }
   }
 
+  if (!draft) {
+    return (
+      <div style={{ display: "grid", gap: 18 }}>
+        <LoadingSurface
+          title="Preparing agent defaults"
+          description={
+            <p>
+              Loading workspace, execution, safety, and verification defaults so the agent settings
+              surface opens with everything in one place.
+            </p>
+          }
+          blocks={3}
+        />
+        {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
@@ -127,8 +145,7 @@ export function AgentSettingsConsole() {
         title="Agent defaults"
         description={<p>These are system-level defaults for autonomous build jobs. Job pages only start, pause, resume, and review work.</p>}
       >
-        {draft ? (
-          <div style={{ display: "grid", gap: 16 }}>
+        <div style={{ display: "grid", gap: 16 }}>
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>Default workspace path</span>
@@ -245,10 +262,7 @@ export function AgentSettingsConsole() {
                 {isSaving ? "Saving..." : "Save agent defaults"}
               </button>
             </div>
-          </div>
-        ) : (
-          <p style={{ margin: 0, color: "var(--muted)" }}>Loading agent defaults...</p>
-        )}
+        </div>
       </SurfaceCard>
     </div>
   );

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { OutboundChannelKey } from "@secretary/core-runtime";
-import { ActionRow, AppPage, NoticeBanner, SurfaceCard } from "../lib/ui";
+import { fetchJson } from "../lib/fetch-json";
+import { ActionRow, AppPage, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 import { OutboundChannelSettings } from "./outbound-channel-settings";
 import { TelegramSettings } from "./telegram-settings";
 
@@ -13,6 +14,7 @@ type ChannelTab = {
   label: string;
   description: string;
   bestFor: string;
+  role: string;
 };
 
 const channelTabs: ChannelTab[] = [
@@ -22,6 +24,7 @@ const channelTabs: ChannelTab[] = [
     description:
       "Best for direct personal messaging, voice notes, and keeping the secretary available on your phone without needing the Desk open.",
     bestFor: "Personal mobile messaging, reminders, and voice-note workflows.",
+    role: "Primary conversational channel",
   },
   {
     key: "discord",
@@ -29,6 +32,7 @@ const channelTabs: ChannelTab[] = [
     description:
       "Useful when the secretary needs to live inside a private server, a personal workspace, or a small team environment with persistent threaded discussion.",
     bestFor: "Private servers, community-style rooms, and collaborative async work.",
+    role: "Persistent server updates",
   },
   {
     key: "slack",
@@ -36,6 +40,7 @@ const channelTabs: ChannelTab[] = [
     description:
       "A high-value work channel for professional use, handoffs, and team follow-through where the secretary needs to feel native inside an office workflow.",
     bestFor: "Work teams, structured follow-up, and professional notification routing.",
+    role: "Professional team updates",
   },
   {
     key: "email",
@@ -43,6 +48,7 @@ const channelTabs: ChannelTab[] = [
     description:
       "Email makes the secretary materially more useful because it turns drafts, summaries, and follow-through into something that can actually leave the system.",
     bestFor: "Drafting, sending follow-ups, summaries, and external communication.",
+    role: "External communication and reviewable delivery",
   },
   {
     key: "sms",
@@ -50,6 +56,7 @@ const channelTabs: ChannelTab[] = [
     description:
       "SMS is less rich, but it matters for urgent reminders and reliable last-mile nudges when a message has to reach you immediately.",
     bestFor: "Urgent reminders, short alerts, and last-mile reach when chat apps are ignored.",
+    role: "Urgent last-mile alerts",
   },
 ];
 
@@ -66,14 +73,12 @@ export function ChannelsConsole() {
     setError(null);
 
     try {
-      const response = await fetch("/api/integrations/reminders/deliver", {
+      const payload = await fetchJson<{
+        delivered: number;
+        scanned: number;
+      }>("/api/integrations/reminders/deliver", {
         method: "POST",
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to dispatch due reminders.");
-      }
 
       setNotice(
         payload.delivered > 0
@@ -108,14 +113,7 @@ export function ChannelsConsole() {
       >
         {notice ? <NoticeBanner tone="success">{notice}</NoticeBanner> : null}
         {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
-        >
+        <div className="channel-tabs">
           {channelTabs.map((channel) => {
             const active = channel.key === activeChannel;
             return (
@@ -123,27 +121,43 @@ export function ChannelsConsole() {
                 key={channel.key}
                 type="button"
                 onClick={() => setActiveChannel(channel.key)}
-                className={active ? "button-primary" : "button-secondary"}
+                className={active ? "channel-tabs__tab is-active" : "channel-tabs__tab"}
               >
                 {channel.label}
               </button>
             );
           })}
         </div>
-        <ActionRow align="between">
-          <p style={{ margin: 0, color: "var(--muted)", maxWidth: 720 }}>
-            Use this when you want the secretary to immediately push any due reminders through the
-            enabled delivery channels instead of waiting for the next reminder sweep.
-          </p>
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={() => void dispatchDueReminders()}
-            disabled={isDispatching}
-          >
-            {isDispatching ? "Dispatching..." : "Dispatch due reminders"}
-          </button>
-        </ActionRow>
+        <div className="channel-hero-grid">
+          <div className="stack-sm">
+            <p className="channel-hero-kicker">{selected.label} active lane</p>
+            <p className="channel-hero-description">{selected.description}</p>
+          </div>
+          <ActionRow align="between">
+            <p className="channel-hero-note">
+              Use this when you want the secretary to immediately push any due reminders through
+              the enabled delivery channels instead of waiting for the next reminder sweep.
+            </p>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => void dispatchDueReminders()}
+              disabled={isDispatching}
+            >
+              {isDispatching ? "Dispatching..." : "Dispatch due reminders"}
+            </button>
+          </ActionRow>
+        </div>
+        <StatGrid>
+          <StatCard label="Role" value={selected.role} detail="How this channel fits the secretary workflow" tone="soft" />
+          <StatCard label="Best for" value={selected.bestFor} detail="Use this as the channel’s default strength" tone="soft" />
+          <StatCard
+            label="Secretary use"
+            value={selected.key === "telegram" ? "Conversation + reminders" : "Reminders + important updates"}
+            detail="You can widen this later once the channel is fully integrated"
+            tone="soft"
+          />
+        </StatGrid>
       </SurfaceCard>
 
       {selected.key === "telegram" ? (

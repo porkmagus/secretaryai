@@ -9,7 +9,8 @@ import type {
   SlackTestMessageResponse,
   SmsTestMessageResponse,
 } from "@secretary/core-runtime";
-import { ActionRow, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import { fetchJson } from "../lib/fetch-json";
+import { ActionRow, EmptyState, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard, ToggleField } from "../lib/ui";
 
 type OutboundChannelDescriptor = {
   key: OutboundChannelKey;
@@ -76,16 +77,10 @@ export function OutboundChannelSettings({
     setError(null);
 
     try {
-      const response = await fetch(`/api/integrations/${descriptor.key}`, {
+      const payload = await fetchJson<OutboundChannelStatusResponse>(`/api/integrations/${descriptor.key}`, {
         cache: "no-store",
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Unable to load ${descriptor.label} settings.`);
-      }
-
-      const integration = (payload as OutboundChannelStatusResponse).integration;
+      const integration = payload.integration;
       setStatus(integration);
       setDraft({
         enabled: integration.enabled,
@@ -125,20 +120,14 @@ export function OutboundChannelSettings({
             };
 
     try {
-      const response = await fetch(`/api/integrations/${descriptor.key}`, {
+      const payload = await fetchJson<OutboundChannelStatusResponse>(`/api/integrations/${descriptor.key}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Unable to save ${descriptor.label} settings.`);
-      }
-
-      const integration = (payload as OutboundChannelStatusResponse).integration;
+      const integration = payload.integration;
       setStatus(integration);
       setNotice(`${descriptor.label} settings saved.`);
     } catch (saveError) {
@@ -170,18 +159,18 @@ export function OutboundChannelSettings({
             };
 
     try {
-      const response = await fetch(`/api/integrations/${descriptor.key}/test-message`, {
+      const payload = await fetchJson<
+        DiscordTestMessageResponse |
+        EmailTestMessageResponse |
+        SlackTestMessageResponse |
+        SmsTestMessageResponse
+      >(`/api/integrations/${descriptor.key}/test-message`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Unable to send ${descriptor.label} test message.`);
-      }
 
       if (descriptor.key === "email") {
         const result = payload as EmailTestMessageResponse;
@@ -232,59 +221,47 @@ export function OutboundChannelSettings({
 
   return (
     <>
+      {isLoading && !status ? (
+        <LoadingSurface
+          title={`Preparing ${descriptor.label}`}
+          description={
+            <p>
+              Checking credentials, routing, sender identity, and recent readiness so this channel
+              opens in one clear control surface.
+            </p>
+          }
+          blocks={3}
+        />
+      ) : null}
+
       <SurfaceCard
         tone="dark"
         title={descriptor.label}
         description={<p>{descriptor.description}</p>}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div className="persona-summary-strip">
-            {[
-              ["Health", status?.healthStatus ?? (isLoading ? "loading" : "unknown")],
-              ["Provider", status?.providerLabel ?? "Waiting for worker"],
-              ["Target", status?.targetLabel ?? status?.defaultRecipient ?? "not set"],
-              ["Sender", status?.senderIdentity ?? "n/a"],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="persona-summary-item">
-                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
-                  {label}
-                </span>
-                <span className="summary-chip-value" style={{ fontSize: 12 }}>
-                  {value}
-                </span>
-              </div>
-            ))}
+        <ActionRow align="between">
+          <div
+            className="pill"
+            style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
+          >
+            {descriptor.label}: {isLoading ? "loading" : tone.label}
           </div>
-
-          <div className="persona-action-cluster">
-            <div
-              className="pill"
-              style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
-            >
-              {descriptor.label}: {isLoading ? "loading" : tone.label}
-            </div>
-            <button type="button" onClick={() => void refresh()} className="button-secondary">
-              {isLoading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-        </div>
+          <button type="button" onClick={() => void refresh()} className="button-secondary">
+            {isLoading ? "Refreshing..." : "Refresh"}
+          </button>
+        </ActionRow>
 
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
           {error ??
             notice ??
             (isLoading ? `Loading ${descriptor.label} channel...` : status?.healthSummary ?? `${descriptor.label} channel ready.`)}
         </p>
-        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.5 }}>
-          Best for: {descriptor.bestFor}
-        </p>
+        <StatGrid>
+          <StatCard label="Health" value={status?.healthStatus ?? (isLoading ? "loading" : "unknown")} detail={status?.healthSummary ?? "Waiting for worker status"} tone="soft" />
+          <StatCard label="Provider" value={status?.providerLabel ?? "Waiting for worker"} detail="Credentials stay in your local environment" tone="soft" />
+          <StatCard label="Target" value={status?.targetLabel ?? status?.defaultRecipient ?? "not set"} detail={descriptor.bestFor} tone="soft" />
+          <StatCard label="Sender" value={status?.senderIdentity ?? "n/a"} detail="Identity used when this channel sends on your behalf" tone="soft" />
+        </StatGrid>
       </SurfaceCard>
 
       {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}

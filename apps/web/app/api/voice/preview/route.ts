@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server";
 import type { VoicePreviewRequest } from "@secretary/core-runtime";
+import { workerUrl } from "../../_lib/worker-proxy";
+import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
   const body = (await request.json()) as VoicePreviewRequest;
 
   try {
-    const response = await fetch(`${workerBaseUrl}/runtime/voice/preview`, {
+    const response = await fetch(workerUrl("/runtime/voice/preview"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { MemoryRecord, MemoryType, TaskRecord } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
+import { AppPage, LoadingSurface, NoticeBanner, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type MemoryApiResponse = {
@@ -217,6 +217,19 @@ export function MemoryBrowser() {
 
   return (
     <AppPage>
+      {isLoading && memories.length === 0 ? (
+        <LoadingSurface
+          title="Preparing memory and context"
+          description={
+            <p>
+              Pulling the current memory corpus, tags, and reminder hooks into one browser so the
+              context view opens with useful structure instead of raw loading text.
+            </p>
+          }
+          blocks={3}
+        />
+      ) : null}
+
       <PageHero
         eyebrow="Memory Console"
         title="Memory and context"

@@ -14,7 +14,8 @@ import type {
   ToolExecutionListResponse,
   ToolExecutionRecord,
 } from "@secretary/core-runtime";
-import { AppPage, EmptyState, ToggleField } from "./lib/ui";
+import { AppPage, EmptyState, StatCard, StatGrid, ToggleField } from "./lib/ui";
+import { fetchJson } from "./lib/fetch-json";
 import { snippet } from "./lib/presenters";
 import { SecretaryPortraitField } from "./lib/secretary-portrait-field";
 
@@ -273,9 +274,21 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
   const stageDescription =
     status === "streaming"
       ? `${secretaryReference} is working through the reply now.`
-      : props.activeConversationId
-        ? "This conversation stays linked to its history, approvals, and follow-through as you work."
-        : `Start anywhere. ${secretaryReference} will turn this into a working thread as context builds.`;
+        : props.activeConversationId
+          ? "This conversation stays linked to its history, approvals, and follow-through as you work."
+          : `Start anywhere. ${secretarySentenceReference} will turn this into a working thread as context builds.`;
+  const stageStats = [
+    {
+      label: "Thread state",
+      value: props.activeConversationId ? "linked and saved" : "fresh and local",
+      detail: props.activeConversationId ? "This reply stream is attached to a saved conversation." : "A conversation will be created as soon as the exchange begins.",
+    },
+    {
+      label: "Reply state",
+      value: status === "streaming" ? "reply in motion" : status === "submitted" ? "sending" : "ready",
+      detail: status === "streaming" ? `${secretarySentenceReference} is actively composing.` : "The live chat path is available right now.",
+    },
+  ];
   const activeNotice =
     props.pendingApproval
       ? {
@@ -311,6 +324,17 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </span>
         </div>
       </header>
+      <StatGrid>
+        {stageStats.map((entry) => (
+          <StatCard
+            key={entry.label}
+            label={entry.label}
+            value={entry.value}
+            detail={entry.detail}
+            tone="soft"
+          />
+        ))}
+      </StatGrid>
       <div className="desk-message-stream" ref={streamRef}>
         {messages.map((message) => {
           const text = extractText(message);
@@ -632,15 +656,9 @@ export function DeskShell() {
 
   async function loadConversations() {
     try {
-      const response = await fetch("/api/conversations", {
+      const data = await fetchJson<ConversationListResponse>("/api/conversations", {
         cache: "no-store",
       });
-
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      const data = (await response.json()) as ConversationListResponse;
       setConversations(data.conversations);
       setSidebarError(null);
     } catch {
@@ -650,15 +668,9 @@ export function DeskShell() {
 
   async function loadSecretaryProfile() {
     try {
-      const response = await fetch("/api/persona", {
+      const data = await fetchJson<PersonaSettingsResponse>("/api/persona", {
         cache: "no-store",
       });
-
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      const data = (await response.json()) as PersonaSettingsResponse;
       setSecretaryProfile({
         name: data.persona.name || "SetAgentName",
         avatar: data.persona.avatar,
@@ -697,18 +709,12 @@ export function DeskShell() {
 
   async function loadPendingApprovals(nextConversationId: string) {
     try {
-      const response = await fetch(
+      const data = await fetchJson<ToolExecutionListResponse>(
         `/api/tool-executions?conversationId=${encodeURIComponent(nextConversationId)}&approvalState=pending`,
         {
           cache: "no-store",
-        },
+        }
       );
-
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      const data = (await response.json()) as ToolExecutionListResponse;
       setPendingApprovals(data.executions);
     } catch {
       setPendingApprovals([]);
@@ -790,15 +796,9 @@ export function DeskShell() {
       setIsRefreshing(true);
 
       try {
-        const response = await fetch(`/api/conversations/${conversationId}`, {
+        const data = await fetchJson<ConversationHistoryResponse>(`/api/conversations/${conversationId}`, {
           cache: "no-store",
         });
-
-        if (!response.ok) {
-          throw new Error("Request failed");
-        }
-
-        const data = (await response.json()) as ConversationHistoryResponse;
 
         if (cancelled) {
           return;
@@ -858,18 +858,12 @@ export function DeskShell() {
     setApprovalBusyId(executionId);
 
     try {
-      const response = await fetch(
+      const data = await fetchJson<ToolApprovalDecisionResponse>(
         `/api/tool-executions/${executionId}/${approve ? "approve" : "deny"}`,
         {
           method: "POST",
-        },
+        }
       );
-
-      if (!response.ok) {
-        throw new Error("Request failed");
-      }
-
-      const data = (await response.json()) as ToolApprovalDecisionResponse;
 
       if (data.assistantMessage && autoSpeakReplies) {
         void playAssistantMessage({
@@ -997,6 +991,20 @@ export function DeskShell() {
             <p className="desk-panel-copy">
               {sidebarError ?? "Pick back up where you left off, or begin a fresh exchange."}
             </p>
+            <StatGrid>
+              <StatCard
+                label="Saved threads"
+                value={String(conversations.length)}
+                detail="Recent correspondence available to reopen here"
+                tone="soft"
+              />
+              <StatCard
+                label="Current focus"
+                value={selectedConversation ? "open thread" : "new desk"}
+                detail={selectedConversation ? (selectedConversation.title ?? "Untitled conversation") : "Nothing selected from history yet"}
+                tone="soft"
+              />
+            </StatGrid>
             <div className="desk-list">
               {conversations.length === 0 ? (
                 <EmptyState

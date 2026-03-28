@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { proxyWorkerJson } from "../../_lib/worker-proxy";
 
-const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
 const supportedChannels = new Set(["discord", "slack", "email", "sms"]);
 
 function resolveChannel(channel: string) {
@@ -22,23 +22,7 @@ export async function GET(
     return NextResponse.json({ error: "Unknown channel." }, { status: 404 });
   }
 
-  try {
-    const response = await fetch(`${workerBaseUrl}/runtime/integrations/${channel}`, {
-      cache: "no-store",
-    });
-    const payload = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(payload, { status: response.status });
-    }
-
-    return NextResponse.json(payload);
-  } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
-  }
+  return proxyWorkerJson(`/runtime/integrations/${channel}`);
 }
 
 export async function PATCH(
@@ -54,26 +38,8 @@ export async function PATCH(
 
   const body = await request.json();
 
-  try {
-    const response = await fetch(`${workerBaseUrl}/runtime/integrations/${channel}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      cache: "no-store",
-    });
-    const payload = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(payload, { status: response.status });
-    }
-
-    return NextResponse.json(payload);
-  } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
-  }
+  return proxyWorkerJson(`/runtime/integrations/${channel}`, {
+    method: "PATCH",
+    body,
+  });
 }

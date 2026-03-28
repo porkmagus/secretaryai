@@ -6,7 +6,7 @@ import type {
   HeartbeatRunResponse,
   SystemHealthResponse,
 } from "@secretary/core-runtime";
-import { AppPage, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
+import { AppPage, LoadingSurface, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
 
 function statusTone(status: string) {
   switch (status) {
@@ -151,6 +151,23 @@ export function HealthConsole() {
     } finally {
       setIsRunningHeartbeat(false);
     }
+  }
+
+  if (!data && !heartbeat) {
+    return (
+      <AppPage>
+        <LoadingSurface
+          title="Preparing the health dashboard"
+          description={
+            <p>
+              Checking local services, heartbeat settings, and runtime readiness so the health page
+              opens with a complete operator view.
+            </p>
+          }
+          blocks={3}
+        />
+      </AppPage>
+    );
   }
 
   return (

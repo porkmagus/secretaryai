@@ -1,16 +1,7 @@
 {
-  "enabled": true,
-  "selectedProviderId": "ollama_cloud",
-  "reasoningEffort": "medium",
-  "providers": {
-    "ollama_local": {
-      "baseUrl": "http://127.0.0.1:11434",
-      "model": "qwen3:8b"
-    },
-    "ollama_cloud": {
-      "baseUrl": "https://ollama.com/v1",
-      "model": "nemotron-3-super",
-      "maxOutputTokens": 2000
-    }
-  }
+  "enabled": false,
+  "activeTarget": "provider",
+  "selectedProviderId": null,
+  "reasoningEffort": "low",
+  "providers": {}
 }

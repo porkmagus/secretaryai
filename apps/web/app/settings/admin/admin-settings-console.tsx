@@ -6,7 +6,8 @@ import type {
   AdminMaintenanceActionResponse,
   AdminMaintenanceOverviewResponse,
 } from "@secretary/core-runtime";
-import { EmptyState, NoticeBanner, SurfaceCard } from "../../lib/ui";
+import { fetchJson } from "../../lib/fetch-json";
+import { LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../../lib/ui";
 
 const actions: Array<{
   action: AdminMaintenanceAction;
@@ -46,9 +47,9 @@ const actions: Array<{
   },
   {
     action: "reset_secretary_onboarding",
-    title: "Reset agent onboarding",
+    title: "Reset secretary to first-run state",
     description:
-      "Clear memory, conversations, jobs, tools, integrations, voice state, and agent settings, then restore the fresh first-run secretary defaults.",
+      "Clear memory, conversations, jobs, tools, integrations, voice state, and agent settings, then restore the built-in first-run secretary defaults.",
     tone: "dark",
   },
   {
@@ -79,14 +80,8 @@ export function AdminSettingsConsole() {
 
   async function loadOverview() {
     try {
-      const response = await fetch("/api/admin/maintenance", { cache: "no-store" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to load admin maintenance status.");
-      }
-
-      setOverview(payload as AdminMaintenanceOverviewResponse);
+      const payload = await fetchJson<AdminMaintenanceOverviewResponse>("/api/admin/maintenance", { cache: "no-store" });
+      setOverview(payload);
       setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load admin maintenance status.");
@@ -102,20 +97,13 @@ export function AdminSettingsConsole() {
     setStatus(null);
 
     try {
-      const response = await fetch("/api/admin/maintenance", {
+      const result = await fetchJson<AdminMaintenanceActionResponse>("/api/admin/maintenance", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ action }),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to run maintenance action.");
-      }
-
-      const result = payload as AdminMaintenanceActionResponse;
       setLatestResult(result);
       setOverview(result.overview);
       setError(null);
@@ -125,6 +113,24 @@ export function AdminSettingsConsole() {
     } finally {
       setBusyAction(null);
     }
+  }
+
+  if (!overview && !error) {
+    return (
+      <div style={{ display: "grid", gap: 18 }}>
+        {status ? <NoticeBanner tone="success">{status}</NoticeBanner> : null}
+        <LoadingSurface
+          title="Preparing maintenance controls"
+          description={
+            <p>
+              Gathering queue state, service health, and cleanup counts so the admin surface opens
+              with the latest operator picture already in place.
+            </p>
+          }
+          blocks={3}
+        />
+      </div>
+    );
   }
 
   return (
@@ -143,23 +149,16 @@ export function AdminSettingsConsole() {
       >
         {overview ? (
           <div style={{ display: "grid", gap: 16 }}>
-            <div className="summary-strip">
-              {[
-                ["Default workspace", overview.defaultWorkspacePath ?? "Not set"],
-                ["Active jobs", overview.jobs.active],
-                ["Waiting jobs", overview.jobs.waiting],
-                ["Finished jobs", overview.jobs.finished],
-                ["Stale jobs", overview.jobs.staleWorkspaceJobs],
-                ["Stale intents", overview.jobs.staleWorkspaceLaunchIntents],
-                ["Stale speech", overview.speech.staleArtifacts],
-                ["Broken samples", overview.speech.staleProfileSamples],
-              ].map(([label, value]) => (
-                <div key={String(label)} className="summary-chip">
-                  <p className="summary-chip-label">{label}</p>
-                  <p className="summary-chip-value">{String(value)}</p>
-                </div>
-              ))}
-            </div>
+            <StatGrid>
+              <StatCard label="Default workspace" value={overview.defaultWorkspacePath ?? "Not set"} detail="Primary agent-job working root" tone="soft" />
+              <StatCard label="Active jobs" value={String(overview.jobs.active)} detail="Runs in motion right now" tone="soft" />
+              <StatCard label="Waiting jobs" value={String(overview.jobs.waiting)} detail="Runs blocked on approval or runtime" tone="soft" />
+              <StatCard label="Finished jobs" value={String(overview.jobs.finished)} detail="Completed, failed, or cancelled runs" tone="soft" />
+              <StatCard label="Stale jobs" value={String(overview.jobs.staleWorkspaceJobs)} detail="Workspace paths no longer reachable" tone="soft" />
+              <StatCard label="Stale intents" value={String(overview.jobs.staleWorkspaceLaunchIntents)} detail="Conversation launch intents pointing at dead paths" tone="soft" />
+              <StatCard label="Stale speech" value={String(overview.speech.staleArtifacts)} detail="Speech records whose media is gone" tone="soft" />
+              <StatCard label="Broken samples" value={String(overview.speech.staleProfileSamples)} detail="Voice samples missing from disk" tone="soft" />
+            </StatGrid>
 
             <div className="admin-health-grid">
               <SurfaceCard tone="soft" title="Queue state">
@@ -185,12 +184,7 @@ export function AdminSettingsConsole() {
               </SurfaceCard>
             </div>
           </div>
-        ) : (
-          <EmptyState
-            title="Loading maintenance status"
-            description={<p>The latest queue, job, and service state is being gathered now.</p>}
-          />
-        )}
+        ) : null}
       </SurfaceCard>
 
       <SurfaceCard

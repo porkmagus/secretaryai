@@ -12,7 +12,8 @@ import type {
   AgentJobSettingsResponse,
   CreateAgentJobRequest,
 } from "@secretary/core-runtime";
-import { AppPage, EmptyState, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
+import { AppPage, EmptyState, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../../lib/ui";
+import { fetchJson } from "../../lib/fetch-json";
 import { formatTimestamp } from "../../lib/presenters";
 import { usePolling } from "../../lib/use-polling";
 
@@ -33,6 +34,15 @@ const defaultForm: JobFormState = {
   constraintsText: "",
   deliverablesText: "",
 };
+
+const RUNNING_JOB_STATUSES = ["queued", "planning", "running", "retrying"] as const;
+const WAITING_JOB_STATUSES = ["waiting_for_approval", "waiting_for_runtime", "blocked"] as const;
+const ACTIVE_JOB_STATUSES = [...RUNNING_JOB_STATUSES, ...WAITING_JOB_STATUSES] as const;
+const HISTORY_JOB_STATUSES = ["completed", "failed", "cancelled"] as const;
+
+function hasJobStatus(job: AgentJobRecord, statuses: readonly string[]) {
+  return statuses.includes(job.status);
+}
 
 function parseLines(value: string) {
   return value
@@ -163,20 +173,12 @@ export function JobsConsole() {
     }
 
     try {
-      const response = await fetch("/api/agent-jobs", { cache: "no-store" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to load agent jobs.");
-      }
-
-      const nextJobs = (payload as AgentJobListResponse).jobs;
+      const payload = await fetchJson<AgentJobListResponse>("/api/agent-jobs", { cache: "no-store" });
+      const nextJobs = payload.jobs;
       setJobs(nextJobs);
       setError(null);
 
-      const operationalJobs = nextJobs.filter((job) =>
-        ["queued", "planning", "running", "retrying", "waiting_for_approval", "waiting_for_runtime", "blocked"].includes(job.status),
-      );
+      const operationalJobs = nextJobs.filter((job) => hasJobStatus(job, ACTIVE_JOB_STATUSES));
       const nextSelected =
         preferredJobId && nextJobs.some((job) => job.id === preferredJobId)
           ? preferredJobId
@@ -197,14 +199,8 @@ export function JobsConsole() {
     }
 
     try {
-      const response = await fetch(`/api/agent-jobs/${jobId}`, { cache: "no-store" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to load agent job.");
-      }
-
-      setDetail(payload as AgentJobDetailResponse);
+      const payload = await fetchJson<AgentJobDetailResponse>(`/api/agent-jobs/${jobId}`, { cache: "no-store" });
+      setDetail(payload);
       setDetailError(null);
     } catch (loadError) {
       setDetail(null);
@@ -221,14 +217,8 @@ export function JobsConsole() {
 
     void (async () => {
       try {
-        const response = await fetch("/api/agent-job-settings", { cache: "no-store" });
-        const payload = await response.json();
-
-        if (!response.ok) {
-          return;
-        }
-
-        const settings = (payload as AgentJobSettingsResponse).settings;
+        const payload = await fetchJson<AgentJobSettingsResponse>("/api/agent-job-settings", { cache: "no-store" });
+        const settings = payload.settings;
         setForm((current) => ({
           ...current,
           workspacePath: settings.defaultWorkspacePath ?? current.workspacePath,
@@ -250,11 +240,7 @@ export function JobsConsole() {
   }, [selectedJobId]);
 
   usePolling({
-    enabled:
-      Boolean(detail) &&
-      ["queued", "planning", "running", "retrying", "waiting_for_approval", "waiting_for_runtime"].includes(
-        detail?.job.status ?? "",
-      ),
+    enabled: detail ? hasJobStatus(detail.job, ACTIVE_JOB_STATUSES) : false,
     intervalMs: 4000,
     callback: async () => {
       if (!detail) {
@@ -268,17 +254,17 @@ export function JobsConsole() {
 
   const summary = useMemo(
     () => ({
-      active: jobs.filter((job) => ["queued", "planning", "running", "retrying"].includes(job.status)).length,
-      waiting: jobs.filter((job) => ["waiting_for_approval", "waiting_for_runtime"].includes(job.status)).length,
+      active: jobs.filter((job) => hasJobStatus(job, RUNNING_JOB_STATUSES)).length,
+      waiting: jobs.filter((job) => hasJobStatus(job, WAITING_JOB_STATUSES)).length,
       completed: jobs.filter((job) => job.status === "completed").length,
     }),
     [jobs],
   );
   const groupedJobs = useMemo(
     () => ({
-      active: jobs.filter((job) => ["queued", "planning", "running", "retrying"].includes(job.status)),
-      waiting: jobs.filter((job) => ["waiting_for_approval", "waiting_for_runtime", "blocked"].includes(job.status)),
-      finished: jobs.filter((job) => ["completed", "failed", "cancelled"].includes(job.status)),
+      active: jobs.filter((job) => hasJobStatus(job, RUNNING_JOB_STATUSES)),
+      waiting: jobs.filter((job) => hasJobStatus(job, WAITING_JOB_STATUSES)),
+      finished: jobs.filter((job) => hasJobStatus(job, HISTORY_JOB_STATUSES)),
     }),
     [jobs],
   );
@@ -334,20 +320,14 @@ export function JobsConsole() {
           deliverables: parseLines(form.deliverablesText),
         };
 
-        const response = await fetch("/api/agent-jobs", {
+        const payload = await fetchJson<{ job: AgentJobRecord }>("/api/agent-jobs", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(requestBody),
         });
-        const payload = await response.json();
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Unable to create agent job.");
-        }
-
-        const nextJob = (payload as { job: AgentJobRecord }).job;
+        const nextJob = payload.job;
         await loadJobs(nextJob.id);
         await loadDetail(nextJob.id);
         setForm((current) => ({
@@ -367,16 +347,10 @@ export function JobsConsole() {
     setActionBusyKey(`${action}:${jobId}`);
 
     try {
-      const response = await fetch(`/api/agent-jobs/${jobId}/${action}`, {
+      const payload = await fetchJson<AgentJobActionResponse>(`/api/agent-jobs/${jobId}/${action}`, {
         method: "POST",
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? `Unable to ${action} agent job.`);
-      }
-
-      const nextJob = (payload as AgentJobActionResponse).job;
+      const nextJob = payload.job;
       await loadJobs(nextJob.id);
       await loadDetail(nextJob.id);
     } catch (actionError) {
@@ -394,20 +368,14 @@ export function JobsConsole() {
         approved,
         reason: approved ? "Approved from the jobs queue." : "Denied from the jobs queue.",
       };
-      const response = await fetch(`/api/agent-jobs/${jobId}/requirements/${requirementId}/decision`, {
+      const payload = await fetchJson<AgentJobActionResponse>(`/api/agent-jobs/${jobId}/requirements/${requirementId}/decision`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to update requirement.");
-      }
-
-      const nextJob = (payload as AgentJobActionResponse).job;
+      const nextJob = payload.job;
       await loadJobs(nextJob.id);
       await loadDetail(nextJob.id);
     } catch (actionError) {
@@ -588,16 +556,26 @@ export function JobsConsole() {
 
                 <div className="jobs-detail__header">
                   <div className="jobs-detail__stats">
-                    {[
-                      ["Status", <JobStatusPill key="status" status={detail.job.status} />],
-                      ["Current step", detail.steps.find((step) => step.id === detail.job.currentStepId)?.title ?? "Not set"],
-                      ["Updated", formatTimestamp(detail.job.updatedAt)],
-                    ].map(([label, value]) => (
-                      <div key={String(label)} className="jobs-detail__stat">
-                        <span className="jobs-detail__stat-label">{label}</span>
-                        <div>{value}</div>
-                      </div>
-                    ))}
+                    <StatGrid>
+                      <StatCard
+                        label="Status"
+                        value={<JobStatusPill status={detail.job.status} />}
+                        detail="Current run state"
+                        tone="soft"
+                      />
+                      <StatCard
+                        label="Current step"
+                        value={detail.steps.find((step) => step.id === detail.job.currentStepId)?.title ?? "Not set"}
+                        detail="What the agent is working through now"
+                        tone="soft"
+                      />
+                      <StatCard
+                        label="Updated"
+                        value={formatTimestamp(detail.job.updatedAt)}
+                        detail="Latest durable checkpoint"
+                        tone="soft"
+                      />
+                    </StatGrid>
                   </div>
 
                   <div className="jobs-detail__actions">
@@ -879,16 +857,26 @@ export function JobsConsole() {
 
               <div className="jobs-detail__header">
                 <div className="jobs-detail__stats">
-                  {[
-                    ["Status", <JobStatusPill key="status" status={detail.job.status} />],
-                    ["Current step", detail.steps.find((step) => step.id === detail.job.currentStepId)?.title ?? "Not set"],
-                    ["Updated", formatTimestamp(detail.job.updatedAt)],
-                  ].map(([label, value]) => (
-                    <div key={String(label)} className="jobs-detail__stat">
-                      <span className="jobs-detail__stat-label">{label}</span>
-                      <div>{value}</div>
-                    </div>
-                  ))}
+                  <StatGrid>
+                    <StatCard
+                      label="Status"
+                      value={<JobStatusPill status={detail.job.status} />}
+                      detail="Final recorded run state"
+                      tone="soft"
+                    />
+                    <StatCard
+                      label="Current step"
+                      value={detail.steps.find((step) => step.id === detail.job.currentStepId)?.title ?? "Not set"}
+                      detail="Last recorded focus"
+                      tone="soft"
+                    />
+                    <StatCard
+                      label="Updated"
+                      value={formatTimestamp(detail.job.updatedAt)}
+                      detail="When this run last changed"
+                      tone="soft"
+                    />
+                  </StatGrid>
                 </div>
 
                 <div className="jobs-detail__actions">

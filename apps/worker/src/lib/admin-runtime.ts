@@ -775,7 +775,7 @@ export async function runAdminMaintenanceAction(params: {
       includeGeneratedState: false,
     });
     summary =
-      "Reset the secretary to a first-run onboarding state and cleared memory, conversations, jobs, integrations, and voice state.";
+      "Reset the secretary to a first-run state and cleared memory, conversations, jobs, integrations, and voice state.";
   } else if (params.action === "wipe_runtime_state") {
     details = await resetSecretaryState({
       config: params.config,

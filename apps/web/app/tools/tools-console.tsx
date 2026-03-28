@@ -9,7 +9,7 @@ import type {
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
-import { ActionRow, AppPage, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import { ActionRow, AppPage, EmptyState, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
 
 type EditableTool = {
@@ -436,6 +436,23 @@ export function ToolsConsole() {
     filteredExecutions[0] ??
     null;
 
+  if (isLoading && tools.length === 0 && executions.length === 0) {
+    return (
+      <AppPage width="1280px">
+        <LoadingSurface
+          title="Preparing tool controls"
+          description={
+            <p>
+              Gathering tool policies, approval history, and recent executions so the tools surface
+              opens with the current control state already in view.
+            </p>
+          }
+          blocks={3}
+        />
+      </AppPage>
+    );
+  }
+
   return (
     <AppPage width="1280px">
       <SurfaceCard
@@ -443,33 +460,13 @@ export function ToolsConsole() {
         title="Tools"
         description={<p>Set the rules once, keep approvals calm, and only dive into audit detail when something actually matters.</p>}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div className="persona-summary-strip">
-            {[
-              ["Pending", pending.length],
-              ["Completed", executions.filter((execution) => execution.executionStatus === "completed").length],
-              ["Failures", executions.filter((execution) => execution.executionStatus === "failed").length],
-              ["Dirty", dirtyToolIds.length],
-            ].map(([label, value], index) => (
-              <div key={String(label)} className="persona-summary-item">
-                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
-                  {label}
-                </span>
-                <span className="summary-chip-value" style={{ fontSize: 12 }}>
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-
+        <div className="stack-md">
+          <StatGrid>
+            <StatCard label="Pending" value={String(pending.length)} detail="Approvals currently waiting" tone="soft" />
+            <StatCard label="Completed" value={String(executions.filter((execution) => execution.executionStatus === "completed").length)} detail="Recent successful runs" tone="soft" />
+            <StatCard label="Failures" value={String(executions.filter((execution) => execution.executionStatus === "failed").length)} detail="Runs that need a closer look" tone="soft" />
+            <StatCard label="Dirty" value={String(dirtyToolIds.length)} detail="Policies changed but not yet saved" tone="soft" />
+          </StatGrid>
           <div className="persona-action-cluster">
             {(["restrictive", "full_access"] as const).map((preset) => (
               <button

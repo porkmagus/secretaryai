@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { proxyWorkerJson } from "../../../_lib/worker-proxy";
 
-const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
 const supportedChannels = new Set(["discord", "slack", "email", "sms"]);
 
 function resolveChannel(channel: string) {
@@ -24,29 +24,8 @@ export async function POST(
 
   const body = await request.json();
 
-  try {
-    const response = await fetch(
-      `${workerBaseUrl}/runtime/integrations/${channel}/test-message`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        cache: "no-store",
-      },
-    );
-    const payload = await response.json();
-
-    if (!response.ok) {
-      return NextResponse.json(payload, { status: response.status });
-    }
-
-    return NextResponse.json(payload);
-  } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
-  }
+  return proxyWorkerJson(`/runtime/integrations/${channel}/test-message`, {
+    method: "POST",
+    body,
+  });
 }

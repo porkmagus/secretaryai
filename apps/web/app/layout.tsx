@@ -8,6 +8,11 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Secretary Workspace",
   description: "Desk, onboarding, health, persona, memory, activity, tools, channels, and voice surfaces for the Secretary-first assistant.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

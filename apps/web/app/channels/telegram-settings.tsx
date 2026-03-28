@@ -12,7 +12,8 @@ import type {
   TelegramSyncWebhookResponse,
   TelegramTestMessageResponse,
 } from "@secretary/core-runtime";
-import { ActionRow, AppPage, EmptyState, NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
+import { fetchJson } from "../lib/fetch-json";
+import { ActionRow, AppPage, EmptyState, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard, ToggleField } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
 
 type DraftState = {
@@ -117,36 +118,17 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
     setError(null);
 
     try {
-      const [telegramResponse, conversationsResponse, tasksResponse] = await Promise.all([
-        fetch("/api/integrations/telegram", { cache: "no-store" }),
-        fetch("/api/conversations", { cache: "no-store" }),
-        fetch("/api/tasks", { cache: "no-store" }),
-      ]);
-
       const [telegramPayload, conversationsPayload, tasksPayload] = await Promise.all([
-        telegramResponse.json(),
-        conversationsResponse.json(),
-        tasksResponse.json(),
+        fetchJson<TelegramIntegrationStatusResponse>("/api/integrations/telegram", { cache: "no-store" }),
+        fetchJson<ConversationListResponse>("/api/conversations", { cache: "no-store" }),
+        fetchJson<TaskListResponse>("/api/tasks", { cache: "no-store" }),
       ]);
-
-      if (!telegramResponse.ok) {
-        throw new Error(telegramPayload.error ?? "Unable to load Telegram status.");
-      }
-
-      if (!conversationsResponse.ok) {
-        throw new Error(conversationsPayload.error ?? "Unable to load conversations.");
-      }
-
-      if (!tasksResponse.ok) {
-        throw new Error(tasksPayload.error ?? "Unable to load tasks.");
-      }
-
-      const telegram = (telegramPayload as TelegramIntegrationStatusResponse).integration;
+      const telegram = telegramPayload.integration;
 
       setState({
         telegram,
-        conversations: (conversationsPayload as ConversationListResponse).conversations,
-        tasks: (tasksPayload as TaskListResponse).tasks,
+        conversations: conversationsPayload.conversations,
+        tasks: tasksPayload.tasks,
       });
       setDraft({
         deliveryMode: telegram.deliveryMode,
@@ -170,7 +152,7 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
     setNotice(null);
 
     try {
-      const response = await fetch("/api/integrations/telegram", {
+      const payload = await fetchJson<TelegramIntegrationStatusResponse>("/api/integrations/telegram", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -182,15 +164,10 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
           defaultChatId: draft.defaultChatId.trim() || null,
         }),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to save Telegram settings.");
-      }
 
       setState((current) => ({
         ...current,
-        telegram: (payload as TelegramIntegrationStatusResponse).integration,
+        telegram: payload.integration,
       }));
       setNotice("Telegram settings saved.");
     } catch (saveError) {
@@ -206,14 +183,7 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
     setNotice(null);
 
     try {
-      const response = await fetch("/api/integrations/telegram/sync-webhook", { method: "POST" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to sync webhook.");
-      }
-
-      const result = payload as TelegramSyncWebhookResponse;
+      const result = await fetchJson<TelegramSyncWebhookResponse>("/api/integrations/telegram/sync-webhook", { method: "POST" });
       setNotice(
         draft.mode === "polling"
           ? "Polling mode applied. Telegram inbound now comes from local long-polling."
@@ -235,7 +205,7 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
     setNotice(null);
 
     try {
-      const response = await fetch("/api/integrations/telegram/test-message", {
+      const result = await fetchJson<TelegramTestMessageResponse>("/api/integrations/telegram/test-message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -243,13 +213,6 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
           text: testText.trim() || null,
         }),
       });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to send test message.");
-      }
-
-      const result = payload as TelegramTestMessageResponse;
       setNotice(`Test message sent to ${result.chatId} as ${result.sentMessageIds.length} chunk${result.sentMessageIds.length === 1 ? "" : "s"}.`);
     } catch (testError) {
       setError(testError instanceof Error ? testError.message : "Unable to send test message.");
@@ -264,14 +227,7 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
     setNotice(null);
 
     try {
-      const response = await fetch("/api/integrations/telegram/deliver-reminders", { method: "POST" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Unable to deliver reminders.");
-      }
-
-      const result = payload as TelegramReminderDispatchResponse;
+      const result = await fetchJson<TelegramReminderDispatchResponse>("/api/integrations/telegram/deliver-reminders", { method: "POST" });
       setNotice(`Reminder dispatch scanned ${result.scanned}, delivered ${result.delivered}, failed ${result.failed}.`);
       await refresh();
     } catch (dispatchError) {
@@ -292,60 +248,56 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
 
   const content = (
     <>
+      {isLoading && !state.telegram ? (
+        <LoadingSurface
+          title="Preparing Telegram"
+          description={
+            <p>
+              Checking bot health, recent channel activity, reminder state, and delivery posture so
+              Telegram opens as one complete lane.
+            </p>
+          }
+          blocks={3}
+        />
+      ) : null}
+
       <SurfaceCard
         tone="dark"
         title="Channels"
         description={<p>Keep Telegram setup, delivery behavior, and follow-through in one quieter control surface.</p>}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div className="persona-summary-strip">
-            {[
-              ["Health", state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown")],
-              ["Mode", state.telegram?.mode ?? draft.mode],
-              [
-                "Delivery",
-                draft.deliveryMode === "mirror_all"
-                  ? "mirror"
-                  : draft.deliveryMode === "telegram_when_away"
-                    ? "when away"
-                    : draft.deliveryMode === "important_only"
-                      ? "important only"
-                      : "web only",
-              ],
-              ["Conversations", String(state.telegram?.conversationCount ?? 0)],
-              ["Due", String(state.telegram?.dueReminderCount ?? 0)],
-            ].map(([label, value], index) => (
-              <div key={String(label)} className="persona-summary-item">
-                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
-                  {label}
-                </span>
-                <span className="summary-chip-value" style={{ fontSize: 12 }}>
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
+        <StatGrid>
+          <StatCard label="Health" value={state.telegram?.healthStatus ?? (isLoading ? "loading" : "unknown")} detail={state.telegram?.healthSummary ?? "Runtime health and connection state"} tone="soft" />
+          <StatCard label="Mode" value={state.telegram?.mode ?? draft.mode} detail="Inbound transport path" tone="soft" />
+          <StatCard
+            label="Delivery"
+            value={
+              draft.deliveryMode === "mirror_all"
+                ? "mirror"
+                : draft.deliveryMode === "telegram_when_away"
+                  ? "when away"
+                  : draft.deliveryMode === "important_only"
+                    ? "important only"
+                    : "web only"
+            }
+            detail="How Telegram participates in secretary follow-through"
+            tone="soft"
+          />
+          <StatCard label="Conversations" value={String(state.telegram?.conversationCount ?? 0)} detail="Recent Telegram-linked threads" tone="soft" />
+          <StatCard label="Due" value={String(state.telegram?.dueReminderCount ?? 0)} detail="Telegram reminder items waiting right now" tone="soft" />
+        </StatGrid>
 
-          <div className="persona-action-cluster">
-            <div
-              className="pill"
-              style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
-            >
-              Telegram: {isLoading ? "loading" : tone.label}
-            </div>
-            <button type="button" onClick={() => void refresh()} className="button-secondary">
-              {isLoading ? "Refreshing..." : "Refresh"}
-            </button>
+        <ActionRow align="between">
+          <div
+            className="pill"
+            style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
+          >
+            Telegram: {isLoading ? "loading" : tone.label}
           </div>
-        </div>
+          <button type="button" onClick={() => void refresh()} className="button-secondary">
+            {isLoading ? "Refreshing..." : "Refresh"}
+          </button>
+        </ActionRow>
 
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
           {error ??

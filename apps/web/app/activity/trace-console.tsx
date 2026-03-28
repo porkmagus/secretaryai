@@ -6,7 +6,7 @@ import type {
   ConversationListItem,
   ConversationListResponse,
 } from "@secretary/core-runtime";
-import { AppPage, PageHero, SurfaceCard } from "../lib/ui";
+import { AppPage, LoadingSurface, PageHero, SurfaceCard } from "../lib/ui";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
 
 export function ActivityConsole() {
@@ -104,6 +104,23 @@ export function ActivityConsole() {
       cancelled = true;
     };
   }, [selectedConversationId]);
+
+  if (isLoading && conversations.length === 0) {
+    return (
+      <AppPage>
+        <LoadingSurface
+          title="Preparing runtime activity"
+          description={
+            <p>
+              Pulling recent conversations and trace streams into one inspection surface so the
+              activity console opens with context instead of a blank rail.
+            </p>
+          }
+          blocks={3}
+        />
+      </AppPage>
+    );
+  }
 
   return (
     <AppPage>

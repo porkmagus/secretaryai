@@ -24,7 +24,7 @@ import type {
   UpdateInferenceSettingsRequest,
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
-import { ActionRow, AppPage, FieldHint, NoticeBanner, SurfaceCard } from "../lib/ui";
+import { ActionRow, AppPage, FieldHint, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 import { SecretaryPortraitField } from "../lib/secretary-portrait-field";
 
 type PersonaDraft = {
@@ -707,24 +707,23 @@ export function PersonaConsole({
   if (!isLoaded) {
     return (
       <AppPage>
-        <SurfaceCard
-          tone="dark"
-          title={mode === "secretary" ? "Secretary settings" : "General settings"}
+        <LoadingSurface
+          title={mode === "secretary" ? "Preparing the secretary profile" : "Preparing settings"}
           description={
             <p>
               {mode === "secretary"
-                ? "Loading the secretary's portrait, voice, and writing profile..."
-                : "Loading inference and shared settings..."}
+                ? "Pulling in portrait, identity, voice, and writing guidance so the profile opens in one complete surface."
+                : "Loading inference, defaults, and saved settings into one clean control surface."}
             </p>
           }
-        >
-          <p style={{ margin: 0, color: "var(--muted)" }}>
-            Preparing the current settings surface...
-          </p>
-        </SurfaceCard>
+          blocks={4}
+        />
       </AppPage>
     );
   }
+
+  const resolvedData = data!;
+  const resolvedDraft = draft!;
 
   return (
     <AppPage>
@@ -753,76 +752,64 @@ export function PersonaConsole({
             </p>
           }
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 16,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            <div className="persona-summary-strip">
-              {[
-                ...(showGeneral
-                  ? ([
-                      [
-                        "Conversation",
-                        data
-                          ? data.conversationEngine.mode === "provider"
-                            ? `${data.conversationEngine.provider} · ${data.conversationEngine.model}`
-                            : "Local fallback"
-                          : "loading",
-                      ],
-                      [
-                        "Provider",
-                        selectedProvider?.label ?? inferenceDraft?.selectedProviderId ?? "none",
-                      ],
-                    ] as Array<[string, string]>)
-                  : []),
-                ...(showSecretary
-                  ? ([
-                      ["Name", draft?.name ?? data?.persona.name ?? "SetAgentName"],
-                      ["Tone", draft?.toneMode ?? data?.persona.toneMode ?? "calm"],
-                    ] as Array<[string, string]>)
-                  : []),
-                ["Voice", activeVoiceName],
-              ].map(([label, value], index) => (
-                <div key={String(label)} className="persona-summary-item">
-                  <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
-                    {label}
-                  </span>
-                  <span
-                    className="summary-chip-value"
-                    style={{
-                      fontSize: 12,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="pill" style={{ minWidth: 220, justifyContent: "center" }}>
-              {mode === "secretary"
-                ? "Secretary profile ready"
-                : data!.conversationEngine.mode === "provider"
-                  ? "Provider-backed conversation ready"
-                  : "Local fallback ready"}
-            </div>
-          </div>
+          <StatGrid>
+            {showGeneral ? (
+              <StatCard
+                label="Conversation"
+                value={
+                  resolvedData.conversationEngine.mode === "provider"
+                    ? `${resolvedData.conversationEngine.provider} · ${resolvedData.conversationEngine.model}`
+                    : "Local fallback"
+                }
+                detail="Current reply path"
+                tone="soft"
+              />
+            ) : null}
+            {showGeneral ? (
+              <StatCard
+                label="Provider"
+                value={selectedProvider?.label ?? inferenceDraft?.selectedProviderId ?? "none"}
+                detail="Selected inference source"
+                tone="soft"
+              />
+            ) : null}
+            {showSecretary ? (
+              <StatCard
+                label="Name"
+                value={resolvedDraft.name ?? resolvedData.persona.name ?? "SetAgentName"}
+                detail="Displayed throughout Desk and settings"
+                tone="soft"
+              />
+            ) : null}
+            {showSecretary ? (
+              <StatCard
+                label="Tone"
+                value={resolvedDraft.toneMode ?? resolvedData.persona.toneMode ?? "calm"}
+                detail="Current public tone tag"
+                tone="soft"
+              />
+            ) : null}
+            <StatCard
+              label="Voice"
+              value={activeVoiceName}
+              detail={
+                mode === "secretary"
+                  ? "Voice currently tied to the secretary profile"
+                  : "Default speaking voice for replies"
+              }
+              tone="soft"
+            />
+          </StatGrid>
 
           {(error || status) ? (
             <NoticeBanner tone={error ? "error" : "success"}>{error ?? status}</NoticeBanner>
           ) : (
             <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
               {mode === "secretary"
-                ? "Shape the portrait, habits, and deeper writing voice from one focused profile surface."
-                : data?.conversationEngine.summary ??
+                ? (resolvedDraft.name.trim() === "SetAgentName"
+                    ? "The secretary is ready for shaping, but still needs a real public name before the profile feels complete."
+                    : "Shape the portrait, habits, and deeper writing voice from one focused profile surface.")
+                : resolvedData.conversationEngine.summary ??
                   "Load, tune, export, or import the current settings from one place."}
             </p>
           )}

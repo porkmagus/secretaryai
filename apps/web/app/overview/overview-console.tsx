@@ -6,7 +6,8 @@ import type {
   OnboardingStatusResponse,
   SystemHealthResponse,
 } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../lib/ui";
+import { fetchJson } from "../lib/fetch-json";
+import { AppPage, LoadingSurface, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 
 function statusTone(status: string) {
   switch (status) {
@@ -55,33 +56,16 @@ export function OverviewConsole() {
     setError(null);
 
     try {
-      const [onboardingResponse, healthResponse, heartbeatResponse] = await Promise.all([
-        fetch("/api/onboarding", { cache: "no-store" }),
-        fetch("/api/system/health", { cache: "no-store" }),
-        fetch("/api/integrations/heartbeat", { cache: "no-store" }),
-      ]);
       const [onboardingPayload, healthPayload, heartbeatPayload] = await Promise.all([
-        onboardingResponse.json(),
-        healthResponse.json(),
-        heartbeatResponse.json(),
+        fetchJson<OnboardingStatusResponse>("/api/onboarding", { cache: "no-store" }),
+        fetchJson<SystemHealthResponse>("/api/system/health", { cache: "no-store" }),
+        fetchJson<HeartbeatIntegrationStatusResponse>("/api/integrations/heartbeat", { cache: "no-store" }),
       ]);
-
-      if (!onboardingResponse.ok) {
-        throw new Error(onboardingPayload.error ?? "Unable to load system overview.");
-      }
-
-      if (!healthResponse.ok) {
-        throw new Error(healthPayload.error ?? "Unable to load system health.");
-      }
-
-      if (!heartbeatResponse.ok) {
-        throw new Error(heartbeatPayload.error ?? "Unable to load heartbeat status.");
-      }
 
       setState({
-        onboarding: onboardingPayload as OnboardingStatusResponse,
-        health: healthPayload as SystemHealthResponse,
-        heartbeat: (heartbeatPayload as HeartbeatIntegrationStatusResponse).integration,
+        onboarding: onboardingPayload,
+        health: healthPayload,
+        heartbeat: heartbeatPayload.integration,
       });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load system overview.");
@@ -156,6 +140,25 @@ export function OverviewConsole() {
     }
   }
 
+  const initialLoading = isLoading && !state.health && !state.onboarding;
+
+  if (initialLoading) {
+    return (
+      <AppPage width="1220px">
+        <LoadingSurface
+          title="Preparing the overview"
+          description={
+            <p>
+              Gathering local health, onboarding readiness, heartbeat status, and storage signals
+              so the overview opens as one clean status board.
+            </p>
+          }
+          blocks={3}
+        />
+      </AppPage>
+    );
+  }
+
   return (
     <AppPage width="1220px">
       <PageHero
@@ -187,92 +190,20 @@ export function OverviewConsole() {
           title="Local stack"
           description={<p>Runtime health and storage visibility in one compact place.</p>}
         >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: 10,
-              alignItems: "center",
-              flexWrap: "nowrap",
-              overflow: "hidden",
-              padding: "10px 12px",
-              borderRadius: 14,
-              border: "1px solid rgba(164, 141, 100, 0.16)",
-              background:
-                "linear-gradient(180deg, rgba(43, 35, 27, 0.98), rgba(28, 23, 18, 0.96))",
-              boxShadow: "inset 0 1px 0 rgba(255, 248, 238, 0.04)",
-            }}
-          >
-            {[
-              ["Readiness", state.onboarding ? `${state.onboarding.completedSteps}/${state.onboarding.totalSteps}` : "..."],
-              ["Conversation", state.health?.services.conversation.status === "ok" ? "model-backed" : "fallback"],
-              ["Channels", state.health?.services.telegram.status === "ok" ? "web + telegram" : "web only"],
-              [
-                "Voice",
-                state.health?.services.stt.status === "ok" && state.health?.services.tts.status === "ok"
-                  ? "stt + tts ready"
-                  : "needs attention",
-              ],
-              ["Heartbeat", nextHeartbeatLabel],
-            ].map(([label, value], index) => (
-              <div
-                key={String(label)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "baseline",
-                  gap: 6,
-                  minWidth: 0,
-                  flex: "0 1 auto",
-                  paddingLeft: index === 0 ? 0 : 10,
-                  borderLeft: index === 0 ? "none" : "1px solid rgba(196, 180, 154, 0.1)",
-                }}
-              >
-                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
-                  {label}
-                </span>
-                <span
-                  className="summary-chip-value"
-                  style={{
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {value}
-                </span>
-              </div>
-            ))}
-
-            {[
-              ["Refresh", isRefreshing ? "Refreshing..." : "Refresh", "button-secondary", () => void refresh()],
-              [
-                "Run Heartbeat",
-                isRunningHeartbeat ? "Running..." : "Run Heartbeat",
-                "button-primary",
-                () => void runHeartbeatNow(),
-              ],
-            ].map(([key, label, className, action]) => (
-              <div
-                key={String(key)}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  paddingLeft: 10,
-                  borderLeft: "1px solid rgba(196, 180, 154, 0.1)",
-                  flex: "0 0 auto",
-                }}
-              >
-                <button
-                  type="button"
-                  className={String(className)}
-                  onClick={action as () => void}
-                  style={{ minHeight: 32, padding: "7px 11px", borderRadius: 10 }}
-                >
-                  {label as string}
-                </button>
-              </div>
-            ))}
+          <StatGrid>
+            <StatCard label="Readiness" value={state.onboarding ? `${state.onboarding.completedSteps}/${state.onboarding.totalSteps}` : "..."} detail="Setup steps completed" tone="soft" />
+            <StatCard label="Conversation" value={state.health?.services.conversation.status === "ok" ? "model-backed" : "fallback"} detail="Current reply path" tone="soft" />
+            <StatCard label="Channels" value={state.health?.services.telegram.status === "ok" ? "web + telegram" : "web only"} detail="Active conversational reach" tone="soft" />
+            <StatCard label="Voice" value={state.health?.services.stt.status === "ok" && state.health?.services.tts.status === "ok" ? "stt + tts ready" : "needs attention"} detail="Speech path status" tone="soft" />
+            <StatCard label="Heartbeat" value={nextHeartbeatLabel} detail="Next scheduled sweep" tone="soft" />
+          </StatGrid>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+            <button type="button" className="button-secondary" onClick={() => void refresh()}>
+              {isRefreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <button type="button" className="button-primary" onClick={() => void runHeartbeatNow()}>
+              {isRunningHeartbeat ? "Running..." : "Run Heartbeat"}
+            </button>
           </div>
 
           <div

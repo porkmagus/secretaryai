@@ -147,6 +147,30 @@ export function EmptyState({
   );
 }
 
+export function LoadingSurface({
+  title,
+  description,
+  blocks = 3,
+}: {
+  title: ReactNode;
+  description: ReactNode;
+  blocks?: number;
+}) {
+  return (
+    <SurfaceCard tone="dark" title={title} description={description}>
+      <div className="loading-shell" aria-hidden="true">
+        {Array.from({ length: blocks }).map((_, index) => (
+          <div key={index} className="loading-shell__block">
+            <span className="loading-shell__line loading-shell__line--short" />
+            <span className="loading-shell__line" />
+            <span className="loading-shell__line loading-shell__line--soft" />
+          </div>
+        ))}
+      </div>
+    </SurfaceCard>
+  );
+}
+
 export function ActionRow({
   children,
   align = "end",

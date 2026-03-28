@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { TaskListResponse, TaskRecord } from "@secretary/core-runtime";
-import { AppPage, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
+import { AppPage, LoadingSurface, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
 import { formatTimestamp } from "../../lib/presenters";
 
 function taskTone(task: TaskRecord) {
@@ -89,6 +89,23 @@ export function TasksConsole() {
     }),
     [tasks],
   );
+
+  if (isLoading && tasks.length === 0) {
+    return (
+      <AppPage>
+        <LoadingSurface
+          title="Preparing tasks and follow-through"
+          description={
+            <p>
+              Gathering reminder hooks, delivery attempts, and lightweight follow-through so the
+              task queue opens with the current state already in view.
+            </p>
+          }
+          blocks={3}
+        />
+      </AppPage>
+    );
+  }
 
   return (
     <AppPage>

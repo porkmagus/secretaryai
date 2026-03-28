@@ -12,6 +12,7 @@ export function usePolling({
   callback: () => void | Promise<void>;
 }) {
   const callbackRef = useRef(callback);
+  const runningRef = useRef(false);
 
   useEffect(() => {
     callbackRef.current = callback;
@@ -22,14 +23,34 @@ export function usePolling({
       return;
     }
 
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "hidden") {
+    async function runPoll() {
+      if (runningRef.current || document.visibilityState === "hidden") {
         return;
       }
 
-      void callbackRef.current();
+      runningRef.current = true;
+      try {
+        await callbackRef.current();
+      } finally {
+        runningRef.current = false;
+      }
+    }
+
+    const interval = window.setInterval(() => {
+      void runPoll();
     }, intervalMs);
 
-    return () => window.clearInterval(interval);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void runPoll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(interval);
+    };
   }, [enabled, intervalMs]);
 }

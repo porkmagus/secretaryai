@@ -12,12 +12,16 @@ import type {
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
+import { fetchJson } from "../lib/fetch-json";
 import {
   ActionRow,
   AppPage,
   EmptyState,
   FieldHint,
+  LoadingSurface,
   NoticeBanner,
+  StatCard,
+  StatGrid,
   SurfaceCard,
 } from "../lib/ui";
 import { formatTimestamp, snippet } from "../lib/presenters";
@@ -199,26 +203,18 @@ export function VoiceConsole() {
     setIsLoading(true);
     setError(null);
     try {
-      const [profilesResponse, conversationsResponse, statusResponse] = await Promise.all([
-        fetch("/api/voice/profiles", { cache: "no-store" }),
-        fetch("/api/conversations", { cache: "no-store" }),
-        fetch("/api/speech/status", { cache: "no-store" }),
-      ]);
       const [profilesPayload, conversationsPayload, statusPayload] = await Promise.all([
-        profilesResponse.json(),
-        conversationsResponse.json(),
-        statusResponse.json(),
+        fetchJson<VoiceProfileListResponse>("/api/voice/profiles", { cache: "no-store" }),
+        fetchJson<ConversationListResponse>("/api/conversations", { cache: "no-store" }),
+        fetchJson<SpeechServiceStatusResponse>("/api/speech/status", { cache: "no-store" }),
       ]);
-      if (!profilesResponse.ok) throw new Error(profilesPayload.error ?? "Unable to load voice settings.");
-      if (!conversationsResponse.ok) throw new Error(conversationsPayload.error ?? "Unable to load conversations.");
-      if (!statusResponse.ok) throw new Error(statusPayload.error ?? "Unable to load speech status.");
 
-      const profiles = (profilesPayload as VoiceProfileListResponse).profiles;
-      const conversations = (conversationsPayload as ConversationListResponse).conversations;
+      const profiles = profilesPayload.profiles;
+      const conversations = conversationsPayload.conversations;
       const active = profiles.find((profile) => profile.isActive) ?? profiles[0] ?? null;
 
       setState({ profiles, conversations });
-      setSpeechStatus((statusPayload as SpeechServiceStatusResponse).services);
+      setSpeechStatus(statusPayload.services);
       setDraft(active ? draftFromProfile(active) : null);
       setClearSampleOnSave(false);
       if (recordingConversationId !== "new" && !conversations.some((conversation) => conversation.id === recordingConversationId)) {
@@ -238,9 +234,7 @@ export function VoiceConsole() {
         conversationId === "all"
           ? "/api/speech/artifacts"
           : `/api/speech/artifacts?conversationId=${encodeURIComponent(conversationId)}`;
-      const response = await fetch(artifactsUrl, { cache: "no-store" });
-      const payload = (await response.json()) as SpeechArtifactListResponse & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to load recent speech activity.");
+      const payload = await fetchJson<SpeechArtifactListResponse>(artifactsUrl, { cache: "no-store" });
       setDiagnostics({
         artifacts: payload.artifacts,
         isLoading: false,
@@ -468,6 +462,19 @@ export function VoiceConsole() {
 
   return (
     <AppPage width="1240px">
+      {isLoading && !speechStatus && state.profiles.length === 0 ? (
+        <LoadingSurface
+          title="Preparing the voice path"
+          description={
+            <p>
+              Checking speech services, active profile state, and the latest voice workspace so the
+              page opens with one reliable speaking path.
+            </p>
+          }
+          blocks={3}
+        />
+      ) : null}
+
       <SurfaceCard
         tone="dark"
         title="Voice"
@@ -479,26 +486,10 @@ export function VoiceConsole() {
         }
       >
         <ActionRow align="between">
-          <div className="persona-summary-strip">
-            {summaryItems.map(([label, value]) => (
-              <div key={String(label)} className="persona-summary-item">
-                <span className="summary-chip-label" style={{ whiteSpace: "nowrap", fontSize: 9 }}>
-                  {label}
-                </span>
-                <span
-                  className="summary-chip-value"
-                  style={{
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
+          <p style={{ margin: 0, color: "var(--muted)", maxWidth: 760 }}>
+            Keep the active voice path simple: one engine, one optional sample, one place to test
+            what the secretary will sound like.
+          </p>
 
           <button
             type="button"
@@ -512,11 +503,16 @@ export function VoiceConsole() {
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
           {error ??
             (isLoading
-              ? "Loading the active voice path..."
+              ? "Checking the active voice path, service readiness, and current speech workspace..."
               : activeProfile
                 ? `Active voice: ${activeProfile.name} via ${activeProfile.engineId}.`
                 : "No active voice is available yet.")}
         </p>
+        <StatGrid>
+          {summaryItems.map(([label, value]) => (
+            <StatCard key={String(label)} label={String(label)} value={String(value)} tone="soft" />
+          ))}
+        </StatGrid>
       </SurfaceCard>
 
       {notice ? (
