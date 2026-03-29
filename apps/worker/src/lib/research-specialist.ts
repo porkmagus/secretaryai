@@ -1,8 +1,5 @@
 import type { ResearchSpecialistResult } from "@secretary/core-runtime";
-
-function cleanText(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
+import { cleanText } from "./utils/index.js";
 
 export function shouldUseResearchSpecialist(text: string) {
   return /\b(research|compare|comparison|look up|investigate|options|tradeoffs|pros and cons)\b/i.test(

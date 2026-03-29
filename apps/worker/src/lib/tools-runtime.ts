@@ -38,11 +38,11 @@ import { sendConfiguredEmail } from "./outbound-channel-integrations.js";
 import { defaultSecretaryName, defaultSecretarySoul } from "./persona-soul.js";
 import {
   buildTaskDraft,
-  cleanText as cleanTaskText,
   normalizeTaskTitle,
   parseReminderTime,
   summarizeTaskSchedule,
 } from "./task-runtime.js";
+import { cleanText as cleanTaskText, logToolExecution } from "./utils/index.js";
 
 const FILE_PREVIEW_LIMIT = 1500;
 const MAX_FILE_READ_BYTES = 256 * 1024;
@@ -53,7 +53,7 @@ const EMAIL_DRAFTS_DIR = "runtime/generated/email-drafts";
 const CALENDAR_EXPORTS_DIR = "runtime/generated/calendar-events";
 const BROWSER_TARGETS_DIR = "runtime/generated/browser-targets";
 const DOWNLOADS_DIR = "runtime/downloads";
-const REPO_ROOT = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
+import { repoRoot } from "./utils/index.js";
 
 type BuiltInTool = {
   key: string;
@@ -753,15 +753,30 @@ function parseShellIntent(text: string) {
 }
 
 function parseMemoryReadIntent(text: string) {
-  if (
-    !/\b(?:do you remember|what do you know about|what do you have on|recall|look up in memory|search (?:your )?memory for)\b/i.test(text)
-  ) {
+  // Expanded patterns to catch more natural phrasing
+  const memoryPhrases = [
+    /\b(?:do you remember|what do you know about|what do you have on|recall)\b/i,
+    /\b(?:look up|check|search)\s+(?:in |through )?(?:your |my )?memory\b/i,
+    /\b(?:search|look)\s+(?:your |my )?memory\s+for\b/i,
+    /\bwhat\s+(?:is|are)\s+(?:in|stored in)\s+(?:your |my )?memory\b/i,
+    /\bread\s+(?:from )?(?:your |my )?memory\b/i,
+    /\bcheck\s+(?:your |my )?notes\b/i,
+    /\bwhat\s+did\s+(?:i|we)\s+(?:say|talk about|discuss)\b/i,
+  ];
+  
+  const hasMemoryPhrase = memoryPhrases.some(pattern => pattern.test(text));
+  if (!hasMemoryPhrase) {
     return null;
   }
 
+  // Extract the query - look for what comes after the trigger phrase
   const queryMatch =
-    text.match(/\b(?:do you remember|recall|what do you know about|what do you have on|search (?:your )?memory for)\s+(.+)/i);
-  const query = queryMatch?.[1]?.trim().replace(/[.?!]+$/, "") ?? text;
+    text.match(/\b(?:do you remember|recall|what do you know about|what do you have on|search(?:\s+your)?\s+memory\s+for|check(?:\s+your)?\s+memory\s+for|look(?:\s+in)?(?:\s+your)?\s+memory\s+for)\s+(.+)/i) ??
+    text.match(/\b(?:about|regarding|on)\s+(.+)/i);
+  
+  // If no specific query found, use the whole text minus common prefixes
+  const query = queryMatch?.[1]?.trim().replace(/[.?!]+$/, "") ?? 
+    text.replace(/^\s*(?:can you|please|i want to|let me|i'll)\s+/i, "").trim();
 
   return {
     requestJson: { query },
@@ -771,22 +786,34 @@ function parseMemoryReadIntent(text: string) {
 }
 
 function parseNoteToSelfIntent(text: string) {
-  const match =
-    text.match(/\b(?:make a note(?:\s+that)?|jot(?:\s+down)?|note\s+for\s+(?:yourself|me)|keep(?:\s+a)?\s+note)\s*[:\s]+(.+)$/i);
-  if (!match?.[1]) {
-    return null;
+  // Expanded patterns for more natural note-taking phrasing
+  const notePatterns = [
+    /\b(?:make|take|write|create)\s+(?:a\s+)?note(?:\s+that)?\s*[:\s]+(.+)$/i,
+    /\b(?:jot|write)\s+(?:this\s+)?down\s*[:\s]+(.+)$/i,
+    /\bnote\s+(?:to\s+)?(?:yourself|self)\s*[:\s]+(.+)$/i,
+    /\bremember\s+(?:this|that)\s*[:\s]+(.+)$/i,
+    /\bdon'?t\s+forget\s+(?:that)?\s*[:\s]+(.+)$/i,
+    /\badd\s+(?:this\s+)?to\s+(?:your\s+)?memory\s*[:\s]+(.+)$/i,
+    /\bsave\s+(?:this\s+)?(?:to\s+memory|for\s+later)\s*[:\s]+(.+)$/i,
+  ];
+  
+  for (const pattern of notePatterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) {
+      const contentText = match[1].trim().replace(/[.]+$/, "");
+      return {
+        requestJson: {
+          contentText,
+          title: contentText.slice(0, 60),
+          memoryType: "semantic",
+        },
+        summary: `Note to self: ${contentText.slice(0, 60)}`,
+        toolKey: "note_to_self" as const,
+      };
+    }
   }
-
-  const contentText = match[1].trim().replace(/[.]+$/, "");
-  return {
-    requestJson: {
-      contentText,
-      title: contentText.slice(0, 60),
-      memoryType: "semantic",
-    },
-    summary: `Note to self: ${contentText.slice(0, 60)}`,
-    toolKey: "note_to_self" as const,
-  };
+  
+  return null;
 }
 
 function detectToolIntent(text: string): ToolIntent | null {
@@ -1101,7 +1128,7 @@ async function getToolByKey(dbClient: DbClient, key: string) {
 }
 
 function resolveWorkspacePath(inputPath: string) {
-  const root = REPO_ROOT;
+  const root = repoRoot;
   const candidate = resolve(root, inputPath);
 
   if (!isPathInsideWorkspace(root, candidate)) {
@@ -1222,7 +1249,9 @@ async function executeFileRead(pathInput: string) {
       preview,
       truncated,
     },
-    text: `I read ${pathInput}.${truncated ? " This is a preview, not the full file." : ""} Preview: ${preview}`,
+    text: truncated 
+      ? `Here's the start of ${pathInput} (truncated):\n\n${preview}`
+      : `Here's ${pathInput}:\n\n${preview}`,
   };
 }
 
@@ -1260,7 +1289,7 @@ async function executeDocumentCreate(requestJson: Record<string, unknown>) {
       path: relativePath,
       title,
     },
-    text: `I created the document "${title}" at ${relativePath}.`,
+    text: `Created "${title}" — saved to ${relativePath}.`,
   };
 }
 
@@ -1297,7 +1326,7 @@ async function executeDownloadUrl(requestJson: Record<string, unknown>) {
       path: relativePath,
       url,
     },
-    text: `I downloaded ${url} to ${relativePath}.`,
+    text: `Downloaded ${url} to ${relativePath}.`,
   };
 }
 
@@ -1338,7 +1367,7 @@ async function executeShellCommand(command: string) {
   const output = await new Promise<{ durationMs: number; stderr: string; stdout: string }>((resolvePromise, rejectPromise) => {
     const startedAt = Date.now();
     const child = spawn(shellCommand, shellArgs, {
-      cwd: REPO_ROOT,
+      cwd: repoRoot,
       shell: false,
     });
     let stdout = "";
@@ -1376,7 +1405,7 @@ async function executeShellCommand(command: string) {
       stderr: output.stderr.slice(0, 4000),
       stdout: output.stdout.slice(0, 4000),
     },
-    text: `I ran the approved shell command \`${command}\`. Output: ${(output.stdout || output.stderr || "No output.").slice(0, 1200)}`,
+    text: `\`${command}\` output:\n\n${(output.stdout || output.stderr || "No output.").slice(0, 1200)}`,
   };
 }
 
@@ -1416,9 +1445,9 @@ async function executeTaskList(dbClient: DbClient, userId: string, requestJson: 
     text:
       filtered.length === 0
         ? status === "done"
-          ? "There are no completed tasks recorded right now."
-          : "You do not have any open tasks or reminder hooks right now."
-        : `Here ${filtered.length === 1 ? "is" : "are"} ${filtered.length} ${status === "all" ? "" : status === "done" ? "completed " : "open "}task${filtered.length === 1 ? "" : "s"}: ${filtered
+          ? "No completed tasks yet."
+          : "No open tasks right now."
+        : `${filtered.length} task${filtered.length === 1 ? "" : "s"}: ${filtered
             .map((task) => {
               const timing = task.reminderAt
                 ? `reminder ${task.reminderAt.toLocaleString()}`
@@ -1427,7 +1456,7 @@ async function executeTaskList(dbClient: DbClient, userId: string, requestJson: 
                   : task.status;
               return `${task.title} (${timing})`;
             })
-            .join("; ")}.`,
+            .join("; ")}`,
   };
 }
 
@@ -1460,7 +1489,7 @@ async function executeTaskCreate(
         taskId: existing.id,
         title: existing.title,
       },
-      text: `That task already exists as "${existing.title}", so I left the existing reminder in place.`,
+      text: `"${existing.title}" is already on your list — I left it as is.`,
     };
   }
 
@@ -1666,7 +1695,7 @@ async function executeMemoryWrite(
         operation,
         title,
       },
-      text: `I created a new explicit memory entry titled "${title}".`,
+      text: `Remembered: "${title}"`,
     };
   }
 
@@ -1698,10 +1727,10 @@ async function executeMemoryWrite(
     },
     text:
       operation === "pin"
-        ? `I pinned the memory "${memory.title ?? memory.id}".`
+        ? `Pinned "${memory.title ?? memory.id}".`
         : operation === "suppress"
-          ? `I suppressed the memory "${memory.title ?? memory.id}".`
-          : `I restored the memory "${memory.title ?? memory.id}" back into normal retrieval.`,
+          ? `Removed "${memory.title ?? memory.id}" from active memory.`
+          : `Restored "${memory.title ?? memory.id}".`,
   };
 }
 
@@ -1736,7 +1765,7 @@ async function executeTelegramSend(config: AppConfig, requestJson: Record<string
       message,
       sentMessageIds,
     },
-    text: `I sent the Telegram message to chat ${chatId}.`,
+    text: `Sent to Telegram.`,
   };
 }
 
@@ -1769,7 +1798,7 @@ async function executeBrowserOpen(requestJson: Record<string, unknown>) {
       path: relativePath,
       target,
     },
-    text: `I saved the browser follow-up for ${target} to ${relativePath}. You can review it later without losing the link or next step.`,
+    text: `Saved ${target} to ${relativePath}.`,
   };
 }
 
@@ -1819,7 +1848,7 @@ async function executeCalendarCreate(requestJson: Record<string, unknown>) {
       startAt: startAt.toISOString(),
       title,
     },
-    text: `I drafted the calendar event "${title}" and exported it to ${relativePath}. It starts ${startAt.toLocaleString()} for ${durationMinutes} minutes.`,
+    text: `Drafted "${title}" for ${startAt.toLocaleString()} (${durationMinutes} mins) — saved to ${relativePath}.`,
   };
 }
 
@@ -1858,7 +1887,7 @@ async function executeEmailDraft(requestJson: Record<string, unknown>) {
       subject,
       to,
     },
-    text: `I drafted the email to ${to} and saved it to ${relativePath}. Review it there before sending.`,
+    text: `Drafted email to ${to} — saved to ${relativePath}.`,
   };
 }
 
@@ -1889,7 +1918,7 @@ async function executeEmailSend(
       subject,
       to: result.recipient,
     },
-    text: `I sent the email to ${result.recipient}.`,
+    text: `Email sent to ${result.recipient}.`,
   };
 }
 
@@ -1975,8 +2004,8 @@ async function executeToolRequest(params: {
         responseJson: { query, count: results.length, results },
         text:
           lines.length > 0
-            ? `Here's what I found in memory about "${query}": ${lines.join(" | ")}`
-            : `I searched my memory for "${query}" but didn't find anything specific.`,
+            ? `${lines.join(" | ")}`
+            : `I don't remember anything about "${query}" yet.`,
       };
     }
     case "note_to_self": {
@@ -2003,7 +2032,7 @@ async function executeToolRequest(params: {
       });
       return {
         responseJson: { memoryId, title },
-        text: `I made a note: "${title}".`,
+        text: `Noted: "${title}"`,
       };
     }
     default:
@@ -2232,6 +2261,7 @@ export async function handleToolAwareTurn(params: {
       traceId: params.traceId,
     });
 
+    const executionStartedAt = performance.now();
     try {
       const result = await executeToolRequest({
         config: params.config,
@@ -2240,6 +2270,13 @@ export async function handleToolAwareTurn(params: {
         requestJson: intent.requestJson,
         requestedBy: envelope.userId,
         toolKey: tool.key,
+      });
+
+      logToolExecution({
+        toolKey: tool.key,
+        durationMs: Math.round(performance.now() - executionStartedAt),
+        success: true,
+        resultCount: result.responseJson ? 1 : 0,
       });
 
       await params.dbClient.db
@@ -2272,12 +2309,20 @@ export async function handleToolAwareTurn(params: {
         },
       ];
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logToolExecution({
+        toolKey: tool.key,
+        durationMs: Math.round(performance.now() - executionStartedAt),
+        success: false,
+        error: errorMessage,
+      });
+
       await params.dbClient.db
         .update(toolExecutions)
         .set({
           executionStatus: "failed",
           responseJson: null,
-          errorText: error instanceof Error ? error.message : String(error),
+          errorText: errorMessage,
           startedAt: new Date(),
           finishedAt: new Date(),
           updatedAt: new Date(),
@@ -2289,13 +2334,13 @@ export async function handleToolAwareTurn(params: {
         eventName: "tool.execution.failed",
         executionId,
         payload: {
-          error: error instanceof Error ? error.message : String(error),
+          error: errorMessage,
           toolKey: tool.key,
         },
         traceId: params.traceId,
       });
 
-      outputText = `${tool.name} failed safely. ${error instanceof Error ? error.message : "Unknown tool error."}`;
+      outputText = `${tool.name} failed safely. ${errorMessage}`;
     }
   }
 
@@ -2427,7 +2472,7 @@ export async function decideToolExecution(params: {
     const assistantMessage = await appendApprovalMessage({
       conversationId: execution.conversationId,
       dbClient: params.dbClient,
-      text: `${tool.name} was denied, so nothing was executed.`,
+      text: `${tool.name} was cancelled.`,
     });
 
     return {
@@ -2523,7 +2568,7 @@ export async function decideToolExecution(params: {
     const assistantMessage = await appendApprovalMessage({
       conversationId: execution.conversationId,
       dbClient: params.dbClient,
-      text: `${tool.name} failed safely after approval. ${error instanceof Error ? error.message : "Unknown tool error."}`,
+      text: `${tool.name} failed: ${error instanceof Error ? error.message : "Unknown error"}`,
     });
 
     return {

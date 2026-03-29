@@ -1,12 +1,40 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { repoRoot } from "./utils/index.js";
 
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const personaDirectoryPath = resolve(repoRoot, "runtime/persona");
-const runtimeRoot = resolve(repoRoot, "runtime");
-const soulFilePath = resolve(personaDirectoryPath, "secretary-soul.md");
-const personaFilePath = resolve(personaDirectoryPath, "secretary-persona.md");
+// Lazy initialization to avoid circular dependency issues
+let _personaDirectoryPath: string | undefined;
+let _runtimeRoot: string | undefined;
+let _soulFilePath: string | undefined;
+let _personaFilePath: string | undefined;
+
+function getPersonaDirectoryPath() {
+  if (!_personaDirectoryPath) {
+    _personaDirectoryPath = resolve(repoRoot, "runtime/persona");
+  }
+  return _personaDirectoryPath;
+}
+
+function getRuntimeRoot() {
+  if (!_runtimeRoot) {
+    _runtimeRoot = resolve(repoRoot, "runtime");
+  }
+  return _runtimeRoot;
+}
+
+function getSoulFilePath() {
+  if (!_soulFilePath) {
+    _soulFilePath = resolve(getPersonaDirectoryPath(), "secretary-soul.md");
+  }
+  return _soulFilePath;
+}
+
+function getPersonaFilePath() {
+  if (!_personaFilePath) {
+    _personaFilePath = resolve(getPersonaDirectoryPath(), "secretary-persona.md");
+  }
+  return _personaFilePath;
+}
 
 export const defaultSecretaryName = "SetAgentName";
 
@@ -70,7 +98,7 @@ SetAgentName should feel like a capable woman running a beautiful, slightly myst
 `;
 
 async function ensurePersonaDirectory() {
-  await mkdir(personaDirectoryPath, { recursive: true });
+  await mkdir(getPersonaDirectoryPath(), { recursive: true });
 }
 
 async function loadFileOrCreate(path: string, fallbackText: string) {
@@ -93,11 +121,11 @@ async function writeFileAndEnsureDirectory(path: string, text: string) {
 }
 
 export function getSecretarySoulFilePath() {
-  return soulFilePath;
+  return getSoulFilePath();
 }
 
 export function getSecretaryPersonaFilePath() {
-  return personaFilePath;
+  return getPersonaFilePath();
 }
 
 export function createPersonaAvatarStorageKey(filename: string) {
@@ -106,12 +134,12 @@ export function createPersonaAvatarStorageKey(filename: string) {
 }
 
 export function resolvePersonaStoragePath(storageKey: string) {
-  return resolve(runtimeRoot, storageKey);
+  return resolve(getRuntimeRoot(), storageKey);
 }
 
 export function resolveManagedPersonaStoragePath(storageKey: string) {
   const path = resolvePersonaStoragePath(storageKey);
-  const normalizedPersonaRoot = `${resolve(personaDirectoryPath)}${sep}`;
+  const normalizedPersonaRoot = `${resolve(getPersonaDirectoryPath())}${sep}`;
 
   if (!path.startsWith(normalizedPersonaRoot)) {
     throw new Error("Invalid persona storage key.");
@@ -127,19 +155,19 @@ export async function ensurePersonaStoragePath(storageKey: string) {
 }
 
 export async function loadSecretarySoul(fallbackText = defaultSecretarySoul) {
-  return loadFileOrCreate(soulFilePath, fallbackText);
+  return loadFileOrCreate(getSoulFilePath(), fallbackText);
 }
 
 export async function saveSecretarySoul(text: string) {
-  await writeFileAndEnsureDirectory(soulFilePath, text);
+  await writeFileAndEnsureDirectory(getSoulFilePath(), text);
 }
 
 export async function loadSecretaryPersonaProfile(
   fallbackText = defaultSecretaryPersonaProfile,
 ) {
-  return loadFileOrCreate(personaFilePath, fallbackText);
+  return loadFileOrCreate(getPersonaFilePath(), fallbackText);
 }
 
 export async function saveSecretaryPersonaProfile(text: string) {
-  await writeFileAndEnsureDirectory(personaFilePath, text);
+  await writeFileAndEnsureDirectory(getPersonaFilePath(), text);
 }

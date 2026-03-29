@@ -31,6 +31,8 @@ export type InferenceRuntimeKind =
   | "ollama"
   | "openai_compatible"
   | "opencode"
+  | "opencode_zen"
+  | "opencode_go"
   | "codex_cli"
   | "gemini_cli"
   | "claude_code";
@@ -144,18 +146,18 @@ export const inferenceProviderDefinitions: InferenceProviderDefinition[] = [
   {
     id: "moonshot",
     label: "Kimi Code (Moonshot)",
-    description: "Direct Moonshot/Kimi API via the AI SDK Moonshot provider.",
+    description: "Kimi Code API via the OpenAI-compatible endpoint. Use your Kimi Code API key.",
     authMode: "api_key",
-    docsUrl: `${docsBase}/providers/ai-sdk-providers/moonshot-ai`,
-    packageName: "@ai-sdk/moonshotai",
-    providerFamily: "ai_sdk_provider",
+    docsUrl: `${docsBase}/providers/openai-compatible-providers`,
+    packageName: "@ai-sdk/openai-compatible",
+    providerFamily: "openai_compatible",
     accessMode: "direct_api",
     availableInApp: true,
-    defaultBaseUrl: "https://api.moonshot.ai/v1",
-    defaultModel: "kimi-k2.5",
+    defaultBaseUrl: "https://api.kimi.com/coding/v1",
+    defaultModel: "kimi-for-coding",
     defaultMaxOutputTokens: 900,
     supportsModelFetch: true,
-    supportsReasoningEffort: true,
+    supportsReasoningEffort: false,
     runtimeKind: "moonshot",
   },
   {
@@ -446,6 +448,40 @@ export const inferenceProviderDefinitions: InferenceProviderDefinition[] = [
     supportsModelFetch: true,
     supportsReasoningEffort: false,
     runtimeKind: "opencode",
+  },
+  {
+    id: "opencode_zen",
+    label: "OpenCode Zen",
+    description: "OpenCode Zen API key provider for curated pay-as-you-go models.",
+    authMode: "api_key",
+    docsUrl: "https://opencode.ai/docs/zen/",
+    packageName: "@ai-sdk/openai-compatible",
+    providerFamily: "openai_compatible",
+    accessMode: "direct_api",
+    availableInApp: true,
+    defaultBaseUrl: "https://opencode.ai/zen/v1",
+    defaultModel: null,
+    defaultMaxOutputTokens: 1000,
+    supportsModelFetch: true,
+    supportsReasoningEffort: false,
+    runtimeKind: "opencode_zen",
+  },
+  {
+    id: "opencode_go",
+    label: "OpenCode Go",
+    description: "OpenCode Go API key provider for low-cost subscription models.",
+    authMode: "api_key",
+    docsUrl: "https://opencode.ai/docs/go/",
+    packageName: "@ai-sdk/openai-compatible",
+    providerFamily: "openai_compatible",
+    accessMode: "direct_api",
+    availableInApp: true,
+    defaultBaseUrl: "https://opencode.ai/zen/go/v1",
+    defaultModel: null,
+    defaultMaxOutputTokens: 1000,
+    supportsModelFetch: true,
+    supportsReasoningEffort: false,
+    runtimeKind: "opencode_go",
   },
   {
     id: "codex_cli",

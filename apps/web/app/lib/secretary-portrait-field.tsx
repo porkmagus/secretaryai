@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type {
   PersonaAvatarRecord,
   PersonaSettingsResponse,
@@ -84,26 +84,7 @@ export function SecretaryPortraitField({
   const [selectedImage, setSelectedImage] = useState<InspectedImage | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
   const portraitUrl = useMemo(() => buildPortraitUrl(avatar), [avatar]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    function handlePointer(event: MouseEvent) {
-      if (!popoverRef.current?.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handlePointer);
-
-    return () => {
-      document.removeEventListener("mousedown", handlePointer);
-    };
-  }, [isOpen]);
 
   async function handleFileSelection(file: File | null) {
     setInlineError(null);
@@ -182,7 +163,6 @@ export function SecretaryPortraitField({
 
   return (
     <div
-      ref={popoverRef}
       className={`secretary-portrait-field secretary-portrait-field--${variant}`}
     >
       <div className={`desk-polaroid ${variant === "desk" ? "desk-polaroid--large" : "desk-polaroid--settings"}`}>
@@ -215,8 +195,19 @@ export function SecretaryPortraitField({
       </button>
 
       {isOpen ? (
-        <div className="secretary-portrait-popover">
-          <div className="secretary-portrait-popover__copy">
+        <>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9998,
+              background: "rgba(0, 0, 0, 0.5)",
+              backdropFilter: "blur(4px)",
+            }}
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="secretary-portrait-popover">
+            <div className="secretary-portrait-popover__copy">
             <p className="secretary-portrait-popover__title">Set portrait</p>
             <p className="secretary-portrait-popover__text">
               Use a centered head-and-shoulders photo with clean lighting for the
@@ -273,7 +264,8 @@ export function SecretaryPortraitField({
               {isUploading ? "Uploading..." : "Upload portrait"}
             </button>
           </div>
-        </div>
+          </div>
+        </>
       ) : null}
     </div>
   );

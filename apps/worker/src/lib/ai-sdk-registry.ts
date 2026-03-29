@@ -13,7 +13,7 @@ import { createVertex } from "@ai-sdk/google-vertex";
 import { createGroq } from "@ai-sdk/groq";
 import { createHuggingFace } from "@ai-sdk/huggingface";
 import { createMistral } from "@ai-sdk/mistral";
-import { createMoonshotAI } from "@ai-sdk/moonshotai";
+// Moonshot/Kimi Code now uses @ai-sdk/openai-compatible
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createPerplexity } from "@ai-sdk/perplexity";
@@ -45,6 +45,14 @@ export type InferenceRuntimeConfig = {
 
 export type InferenceResolutionPurpose = "conversation" | "agent_job";
 
+export type InferenceResolutionIssue =
+  | "disabled"
+  | "missing_provider"
+  | "unknown_provider"
+  | "missing_model"
+  | "missing_api_key"
+  | "registry_unavailable";
+
 type InferenceResolutionOptions = {
   purpose?: InferenceResolutionPurpose;
   workspacePath?: string | null;
@@ -66,16 +74,6 @@ function buildProviderOptions(
   }
 
   switch (definition.runtimeKind) {
-    case "moonshot":
-      return hasElevatedReasoning(inference.reasoningEffort)
-        ? ({
-            moonshotai: {
-              thinking: {
-                type: "enabled",
-              },
-            },
-          } satisfies SharedV3ProviderOptions)
-        : undefined;
     case "openrouter":
       return inference.reasoningEffort === "minimal"
         ? undefined
@@ -168,9 +166,10 @@ function createProviderForDefinition(
         baseURL: inference.baseUrl ?? undefined,
       });
     case "moonshot":
-      return createMoonshotAI({
+      return createOpenAICompatible({
+        name: "moonshot",
         apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
+        baseURL: inference.baseUrl ?? "https://api.kimi.com/coding/v1",
       });
     case "mistral":
       return createMistral({
@@ -282,6 +281,18 @@ function createProviderForDefinition(
           cwd: isAgentJob ? workspacePath : undefined,
         },
       });
+    case "opencode_zen":
+      return createOpenAICompatible({
+        name: "opencode-zen",
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? "https://opencode.ai/zen/v1",
+      });
+    case "opencode_go":
+      return createOpenAICompatible({
+        name: "opencode-go",
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? "https://opencode.ai/zen/go/v1",
+      });
     case "codex_cli":
       return createCodexCli({
         defaultSettings: {
@@ -367,4 +378,43 @@ export function resolveInferenceLanguageModel(
     providerOptions: buildProviderOptions(inference),
     modelId,
   };
+}
+
+export function getInferenceResolutionIssue(
+  inference: InferenceRuntimeConfig,
+  options: InferenceResolutionOptions = {},
+): InferenceResolutionIssue | null {
+  if (!inference.enabled) {
+    return "disabled";
+  }
+
+  if (!inference.providerId) {
+    return "missing_provider";
+  }
+
+  const definition = getInferenceProviderDefinition(inference.providerId);
+
+  if (!definition) {
+    return "unknown_provider";
+  }
+
+  if (!inference.model) {
+    return "missing_model";
+  }
+
+  if (
+    providerNeedsApiKey(definition.id) &&
+    providerSupportsStoredApiKey(definition.authMode) &&
+    !inference.apiKey
+  ) {
+    return "missing_api_key";
+  }
+
+  const registry = buildRegistry(inference, options);
+
+  if (!registry) {
+    return "registry_unavailable";
+  }
+
+  return null;
 }

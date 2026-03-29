@@ -25,10 +25,15 @@ export function createAgentJobQueue(
     username: url.username || undefined,
     password: url.password || undefined,
     db: url.pathname ? Number(url.pathname.slice(1) || 0) : 0,
-    connectTimeout: 1000,
+    connectTimeout: 10000,
     lazyConnect: true,
     maxRetriesPerRequest: null,
-    retryStrategy: () => null,
+    retryStrategy: (times: number) => {
+      if (times > 10) {
+        return null; // Stop retrying after 10 attempts
+      }
+      return Math.min(times * 1000, 30000); // Exponential backoff, max 30 seconds
+    },
   };
 
   const queue = new Queue<
@@ -54,16 +59,44 @@ export function createAgentJobQueue(
 
   void queue.client
     .then((client) => {
-      client.on("error", () => undefined);
+      client.on("error", (err) => {
+        console.error(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          service: "worker",
+          event: "agent_job_queue.redis_error",
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      });
     })
-    .catch(() => undefined);
+    .catch((err) => {
+      console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        service: "worker",
+        event: "agent_job_queue.client_init_failed",
+        error: err instanceof Error ? err.message : String(err),
+      }));
+    });
 
   if (worker) {
     void worker.client
       .then((client) => {
-        client.on("error", () => undefined);
+        client.on("error", (err) => {
+          console.error(JSON.stringify({
+            timestamp: new Date().toISOString(),
+            service: "worker",
+            event: "agent_job_worker.redis_error",
+            error: err instanceof Error ? err.message : String(err),
+          }));
+        });
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        console.error(JSON.stringify({
+          timestamp: new Date().toISOString(),
+          service: "worker",
+          event: "agent_job_worker.client_init_failed",
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      });
   }
 
   return {

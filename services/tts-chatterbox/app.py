@@ -15,6 +15,13 @@ from chatterbox.tts_turbo import ChatterboxTurboTTS
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
+# Login to Hugging Face if token is available
+hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+if hf_token:
+    import huggingface_hub
+
+    huggingface_hub.login(token=hf_token)
+    logging.info("Logged in to Hugging Face with provided token")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("secretary-tts")
@@ -29,6 +36,11 @@ DEVICE = os.getenv("TTS_DEVICE", "cpu").strip().lower() or "cpu"
 
 os.environ.setdefault("HF_HOME", str(MODEL_DIR))
 os.environ.setdefault("HF_HUB_CACHE", str(MODEL_DIR / "huggingface"))
+
+# Ensure Hugging Face token is available for model downloads
+hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+if hf_token:
+    os.environ.setdefault("HF_TOKEN", hf_token)
 
 app = FastAPI(
     title="Secretary TTS Service",
@@ -84,6 +96,24 @@ def get_model(engine_id: str):
         model = ChatterboxTurboTTS.from_pretrained(RUNTIME_DEVICE)
     else:
         model = ChatterboxMultilingualTTS.from_pretrained(torch.device(RUNTIME_DEVICE))
+
+    _models[engine_id] = model
+    return model
+
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("Loading TTS engine %s on %s", engine_id, RUNTIME_DEVICE)
+
+    # Get Hugging Face token for model downloads
+    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+
+    if engine_id == "chatterbox":
+        model = ChatterboxTTS.from_pretrained(RUNTIME_DEVICE, token=hf_token)
+    elif engine_id == "chatterbox-turbo":
+        model = ChatterboxTurboTTS.from_pretrained(RUNTIME_DEVICE, token=hf_token)
+    else:
+        model = ChatterboxMultilingualTTS.from_pretrained(
+            torch.device(RUNTIME_DEVICE), token=hf_token
+        )
 
     _models[engine_id] = model
     return model
@@ -162,7 +192,9 @@ async def synthesize(
     try:
         if speakerWav is not None:
             suffix = Path(speakerWav.filename or "speaker.wav").suffix or ".wav"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=TMP_DIR) as tmp:
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix=suffix, dir=TMP_DIR
+            ) as tmp:
                 speaker_path = Path(tmp.name)
                 shutil.copyfileobj(speakerWav.file, tmp)
 
@@ -172,7 +204,9 @@ async def synthesize(
             language=language,
             speaker_path=speaker_path,
         )
-        duration_ms = int((waveform.shape[-1] / sample_rate) * 1000) if waveform.numel() else 0
+        duration_ms = (
+            int((waveform.shape[-1] / sample_rate) * 1000) if waveform.numel() else 0
+        )
 
         buffer = io.BytesIO()
         ta.save(buffer, waveform, sample_rate, format="wav")
@@ -182,7 +216,9 @@ async def synthesize(
             "X-Secretary-Duration-Ms": str(duration_ms),
         }
 
-        return Response(content=buffer.getvalue(), media_type="audio/wav", headers=headers)
+        return Response(
+            content=buffer.getvalue(), media_type="audio/wav", headers=headers
+        )
     except HTTPException:
         raise
     except Exception as error:  # pragma: no cover - service runtime failure path

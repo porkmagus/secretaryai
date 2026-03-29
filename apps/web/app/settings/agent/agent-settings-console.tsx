@@ -232,7 +232,7 @@ export function AgentSettingsConsole() {
                 onChange={(event) => updateField("allowedWorkspaceRoots", event.target.value)}
                 className="textarea-shell"
                 rows={4}
-                placeholder="One allowed root per line. Leave blank to allow any reachable workspace."
+                placeholder={"One root per line, e.g. /home/user/projects\nThe repo root is included by default. Blank means deny-all."}
               />
             </label>
 

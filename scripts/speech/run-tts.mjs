@@ -29,6 +29,7 @@ const child = spawn(
     shell: false,
     env: {
       ...process.env,
+      HF_TOKEN: process.env.HF_TOKEN || process.env.HUGGING_FACE_HUB_TOKEN,
     },
   },
 );

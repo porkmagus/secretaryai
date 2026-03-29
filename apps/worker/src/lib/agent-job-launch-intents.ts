@@ -1,5 +1,3 @@
-import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
@@ -15,11 +13,10 @@ import {
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { createAgentJob } from "./agent-jobs.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";
-import { finalizeChatTurn, findConversationIdByChannelRef, prepareChatTurn } from "./chat-persistence.js";
+import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { normalizeWorkspacePath } from "./agent-job-executor.js";
 import { detectConversationDecision, extractWorkspacePathHint } from "./conversation-decisions.js";
-
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
+import { repoRoot, resolveConversationId } from "./utils/index.js";
 
 
 type MaybeHandleAgentJobLaunchTurnParams = {
@@ -63,30 +60,25 @@ function deriveJobTitle(goal: string) {
 
 function buildConfirmationText(params: { title: string; workspacePath: string; channel: RuntimeChatRequest["channel"] }) {
   const workspaceNote = params.workspacePath ? ` in ${params.workspacePath}` : "";
-  const channelNote =
-    params.channel === "telegram"
-      ? "Say yes, go for it, or use this folder to start it as an agent job, or say no to keep this in normal chat."
-      : "Say yes, go for it, or use this folder to start it as an agent job, or say no to keep this as normal chat.";
-
-  return `That sounds like a larger build job. Do you want me to start \"${params.title}\"${workspaceNote}? ${channelNote}`;
+  return `I can help with "${params.title}"${workspaceNote}. Want me to go ahead with that?`;
 }
 
 function buildPendingClarificationText() {
-  return "I still have that build job ready to launch. Say yes, go for it, or use this folder to start it, or say no to keep this in normal chat.";
+  return "Still waiting on your go-ahead for that. Want me to start, or should we keep talking?";
 }
 
 function buildCancellationText() {
-  return "Okay. I won't start an agent job from that request, and I'll keep helping in normal chat.";
+  return "Got it — I'll hold off. What would you like to talk about instead?";
 }
 
 function buildStartedText(params: { title: string; workspacePath: string; channel: RuntimeChatRequest["channel"] }) {
-  const location = params.workspacePath ? ` Workspace: ${params.workspacePath}.` : "";
+  const location = params.workspacePath ? ` Working in ${params.workspacePath}.` : "";
   const followUp =
     params.channel === "telegram"
-      ? " I'll keep this thread tied to the job and can report back here."
-      : " You can follow it in Activity > Jobs, and I'll treat this thread as the job's home.";
+      ? " I'll update you here as it progresses."
+      : "";
 
-  return `I started the agent job \"${params.title}\".${location}${followUp}`;
+  return `On it — started \"${params.title}\".${location}${followUp}`;
 }
 
 async function recordLaunchIntentTrace(params: {
@@ -107,17 +99,7 @@ async function recordLaunchIntentTrace(params: {
   });
 }
 
-async function resolveConversationId(dbClient: DbClient, request: RuntimeChatRequest) {
-  if (request.conversationId) {
-    return request.conversationId;
-  }
-
-  if (request.channel === "telegram" && request.metadata?.telegramChatId) {
-    return findConversationIdByChannelRef(dbClient, "telegram", request.metadata.telegramChatId);
-  }
-
-  return null;
-}
+// Note: resolveConversationId is now imported from utils/conversation.ts
 
 async function getPendingLaunchIntent(dbClient: DbClient, conversationId: string) {
   return dbClient.db.query.agentJobLaunchIntents.findFirst({

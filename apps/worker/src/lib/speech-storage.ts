@@ -1,14 +1,14 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { repoRoot } from "./utils/index.js";
 
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const runtimeRoot = resolve(repoRoot, "runtime");
-const speechRoot = resolve(runtimeRoot, "speech");
-const inboundRoot = resolve(speechRoot, "inbound");
-const transcriptsRoot = resolve(speechRoot, "transcripts");
-const ttsRoot = resolve(speechRoot, "tts");
-const profilesRoot = resolve(speechRoot, "profiles");
+// Lazy initialization to avoid circular dependency issues
+function getRuntimeRoot() { return resolve(repoRoot, "runtime"); }
+function getSpeechRoot() { return resolve(getRuntimeRoot(), "speech"); }
+function getInboundRoot() { return resolve(getSpeechRoot(), "inbound"); }
+function getTranscriptsRoot() { return resolve(getSpeechRoot(), "transcripts"); }
+function getTtsRoot() { return resolve(getSpeechRoot(), "tts"); }
+function getProfilesRoot() { return resolve(getSpeechRoot(), "profiles"); }
 
 async function ensureDir(path: string) {
   await mkdir(path, { recursive: true });
@@ -17,19 +17,19 @@ async function ensureDir(path: string) {
 
 export async function ensureSpeechStorageLayout() {
   await Promise.all([
-    ensureDir(speechRoot),
-    ensureDir(inboundRoot),
-    ensureDir(transcriptsRoot),
-    ensureDir(ttsRoot),
-    ensureDir(profilesRoot),
+    ensureDir(getSpeechRoot()),
+    ensureDir(getInboundRoot()),
+    ensureDir(getTranscriptsRoot()),
+    ensureDir(getTtsRoot()),
+    ensureDir(getProfilesRoot()),
   ]);
 
   return {
-    speechRoot,
-    inboundRoot,
-    profilesRoot,
-    transcriptsRoot,
-    ttsRoot,
+    speechRoot: getSpeechRoot(),
+    inboundRoot: getInboundRoot(),
+    profilesRoot: getProfilesRoot(),
+    transcriptsRoot: getTranscriptsRoot(),
+    ttsRoot: getTtsRoot(),
   };
 }
 
@@ -61,12 +61,12 @@ export function createSpeechStorageKey(kind: "telegram" | "web" | "tts" | "profi
 }
 
 export function resolveSpeechStoragePath(storageKey: string) {
-  return resolve(runtimeRoot, normalizeSpeechStorageKey(storageKey));
+  return resolve(getRuntimeRoot(), normalizeSpeechStorageKey(storageKey));
 }
 
 export function resolveManagedSpeechStoragePath(storageKey: string) {
   const path = resolveSpeechStoragePath(storageKey);
-  const normalizedSpeechRoot = `${resolve(speechRoot)}${sep}`;
+  const normalizedSpeechRoot = `${resolve(getSpeechRoot())}${sep}`;
 
   if (!path.startsWith(normalizedSpeechRoot)) {
     throw new Error("Invalid speech storage key.");

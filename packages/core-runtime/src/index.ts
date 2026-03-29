@@ -1190,120 +1190,39 @@ function isGreeting(text: string) {
   );
 }
 
-function isMemoryIntent(text: string) {
-  return /\b(remember (?:that|this)|please remember|note this|save this|don't forget|do not forget)\b/i.test(
-    text,
-  );
-}
 
-function isStatusQuestion(text: string) {
-  return /\b(status|what can you do|what do you do|current scope|phase 1)\b/i.test(
-    text,
-  );
-}
 
-function isTaskIntent(text: string) {
-  return /\b(task|tasks|todo|to-do|remind|reminder|due|schedule|scheduled)\b/i.test(
-    text,
-  );
-}
 
-function isMetaRuntimeQuestion(text: string) {
-  return /\b(memory issues|repeating|repeat yourself|stuck|bug|broken|glitch|what happened|why are you)\b/i.test(
-    text,
-  );
-}
 
-function isVoiceQuestion(text: string) {
-  return /\b(voice|speak|speaking|audio|tts|sound)\b/i.test(text);
-}
 
-function isFeelingQuestion(text: string) {
-  return /\b(how are you|how are you feeling|how do you feel|are you okay|feeling better|doing better|feel more normal|normal yet|more like yourself)\b/i.test(
-    text,
-  );
-}
 
-function isPushForDirectAnswer(text: string) {
-  return /\b(answer the question|be direct|stop that|stop narrating|just answer|can you answer)\b/i.test(
-    text,
-  );
-}
 
-function isImprovementIntent(text: string) {
-  return /\b(upgrade|upgrades|improve|improvement|improvements|better|polish|suggestion|suggestions|what should we do|what needs work)\b/i.test(
-    text,
-  );
-}
 
-function isOpinionIntent(text: string) {
-  return /\b(what do you think|your take|your thoughts|should we|would you|do you think|what would you do)\b/i.test(
-    text,
-  );
-}
 
-function isDetailRequest(text: string) {
-  return /\b(give me details|more details|tell me more|be specific|elaborate|more detail|go deeper|say more|details please)\b/i.test(
-    text,
-  );
-}
 
-function isResearchIntent(text: string) {
-  return /\b(research|compare|comparison|look up|investigate|options|tradeoffs|pros and cons)\b/i.test(
-    text,
-  );
-}
 
-function isMemoryRecallIntent(text: string) {
-  return /\b(what do you remember|what do you know about|remind me what|based on what you remember)\b/i.test(
-    text,
-  );
-}
 
-function summarizeRecentContext(recentMessages: RuntimeContextMessage[]) {
-  const nonSystem = recentMessages.filter((message) => message.role !== "system");
-  const lastUserMessage = [...nonSystem]
-    .reverse()
-    .find((message) => message.role === "user");
-  const lastAssistantMessage = [...nonSystem]
-    .reverse()
-    .find((message) => message.role === "assistant");
-  const earlierUserCount = Math.max(
-    nonSystem.filter((message) => message.role === "user").length - 1,
-    0,
-  );
 
-  return {
-    earlierUserCount,
-    hasPriorContext: nonSystem.length > 1,
-    lastAssistantMessage: lastAssistantMessage?.text,
-    lastUserMessage: lastUserMessage?.text,
-  };
-}
 
-function normalizeForComparison(text: string | undefined) {
-  return cleanText(text ?? "").toLowerCase();
-}
 
-function wasRecentlyMentioned(
-  lastAssistantMessage: string | undefined,
-  text: string,
-) {
-  const normalizedAssistant = normalizeForComparison(lastAssistantMessage);
-  const normalizedText = normalizeForComparison(text);
 
-  return normalizedAssistant.length > 0 && normalizedAssistant.includes(normalizedText);
-}
 
-function isAcknowledgement(text: string) {
-  return /\b(thanks|thank you|got it|okay|ok|cool|sounds good|understood|alright)\b/i.test(
-    text,
-  );
-}
 
-function isShortFollowUp(text: string) {
-  return cleanText(text).split(/\s+/).length <= 6;
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 function soulStyleLead(context: RuntimeTurnContext) {
   const personaName = context.persona?.name?.trim() || "Secretary";
@@ -1352,266 +1271,36 @@ function pickDirectness<T>(
   return options[preference];
 }
 
-function greetingPrefix(context: RuntimeTurnContext) {
-  const preference = context.persona?.customization?.greetingStyle ?? "minimal";
-  const address =
-    context.persona?.customization?.addressPreference?.trim() ||
-    context.userDisplayName?.trim() ||
-    "";
 
-  if (preference === "minimal") {
-    return "";
-  }
 
-  if (preference === "warm") {
-    return address ? `${address}, ` : "Of course. ";
-  }
 
-  return address ? `${address}, ` : "";
-}
+export type SecretaryFallbackReason =
+  | "no_inference"
+  | "provider_error"
+  | "guarded_output"
+  | "unknown";
 
-function closingLine(context: RuntimeTurnContext, activeTasks: RuntimeTaskContextItem[]) {
-  const preference = context.persona?.customization?.closingStyle ?? "next_steps";
-
-  if (preference === "none") {
-    return "";
-  }
-
-  if (preference === "summary") {
-    return " In short: we have the context we need and can keep moving.";
-  }
-
-  if (activeTasks.length > 0) {
-    return ` Next step: ${activeTasks[0]?.title}.`;
-  }
-
-  return " Next step: point me at the next move and I'll keep it tidy.";
-}
+type SecretaryFallbackOptions = {
+  reason?: SecretaryFallbackReason;
+  providerError?: string | null;
+};
 
 export function generateSecretaryReply(
   request: RuntimeChatRequest,
   context: RuntimeTurnContext,
+  options: SecretaryFallbackOptions = {},
 ) {
-  const text = cleanText(request.message.text);
-  const { hasPriorContext, lastAssistantMessage, lastUserMessage } = summarizeRecentContext(
-    context.recentMessages,
-  );
-  const { personaName, soulLine, tone, customization } = soulStyleLead(context);
-  const relevantMemories = context.relevantMemories.slice(0, 3);
-  const activeTasks = context.activeTasks
-    .filter(
-      (task, index, list) =>
-        list.findIndex(
-          (candidate) =>
-            normalizeForComparison(candidate.title) === normalizeForComparison(task.title),
-        ) === index,
-    )
-    .slice(0, 3);
+  void request;
+  void context;
+  void options.providerError;
 
-  const memoryLead =
-    relevantMemories.length > 0
-      ? `Relevant memory in play: ${relevantMemories
-          .map((memory) => memory.title ?? memory.summary ?? memory.contentText)
-          .join(" | ")}.`
-      : "I don't have a strong stored memory match for this turn yet.";
-  const shouldMentionMemoryLead =
-    relevantMemories.length > 0 &&
-    !wasRecentlyMentioned(lastAssistantMessage, memoryLead);
-  const warmLead = greetingPrefix(context);
-  const taskLead =
-    activeTasks.length > 0
-      ? `Open reminders/tasks: ${activeTasks.map((task) => task.title).join(", ")}.`
-      : "";
-  const shouldMentionTasks = isTaskIntent(text);
+  const reason = options.reason ?? "unknown";
 
-  if (context.researchResult) {
-    const focus = context.researchResult.focusAreas.length > 0
-      ? ` Focus areas: ${context.researchResult.focusAreas.join(", ")}.`
-      : "";
-    const nextStep = context.researchResult.suggestedNextStep
-      ? ` Suggested next step: ${context.researchResult.suggestedNextStep}.`
-      : "";
-
-    return `I delegated an internal research pass before responding. ${context.researchResult.summary}.${focus}${nextStep}`;
+  if (reason === "guarded_output") {
+    return "Response unavailable due to a safety guard. Please try again.";
   }
 
-  if (isGreeting(text)) {
-    const soulPrefix = soulLine ? `${soulLine} ` : "";
-    const baseReply = shouldMentionMemoryLead
-      ? `${soulPrefix}${personaName} is ready. ${memoryLead} I can help with planning, note-taking, and carrying memory forward between conversations.`
-      : `${soulPrefix}${personaName} is ready. I can help with planning, note-taking, and carrying memory forward between conversations.`;
-
-    return `${warmLead}${pickReplyShape(context, {
-      concise: `${personaName} is ready.`,
-      balanced: baseReply,
-      expansive: `${baseReply}${closingLine(context, activeTasks)}`,
-    })}`.trim();
-  }
-
-  if (isFeelingQuestion(text)) {
-    if (isMetaRuntimeQuestion(lastAssistantMessage ?? "")) {
-      return "Better now. I was getting too mechanical for a minute, but I should sound more like myself again.";
-    }
-
-    if (/\b(normal yet|feel more normal|more like yourself|doing better|feeling better)\b/i.test(text)) {
-      return "Yes, more normal. I'm sounding more like myself and less like a runtime log now.";
-    }
-
-    return pickDirectness(context, {
-      soft: tone
-        ? `${warmLead}Steady. ${personaName} feels ${tone.toLowerCase()} and fully here with you.`
-        : `${warmLead}Steady, warm, and present. ${personaName} is here with you.`,
-      balanced: tone
-        ? `${personaName} feels ${tone.toLowerCase()} and fully here with you.`
-        : `${personaName} is steady, warm, and present.`,
-      direct: tone
-        ? `${personaName} feels ${tone.toLowerCase()} and present.`
-        : `${personaName} is present and steady.`,
-    }).trim();
-  }
-
-  if (isMemoryRecallIntent(text)) {
-    return `${memoryLead} ${taskLead}`.trim();
-  }
-
-  if (isMemoryIntent(text)) {
-    const memoryPrefix = shouldMentionMemoryLead ? `${memoryLead} ` : "";
-    return `${memoryPrefix}I've marked this as something worth carrying forward. Your message is persisted locally and the Memory Specialist queue will turn it into longer-term context.`;
-  }
-
-  if (isStatusQuestion(text)) {
-    return pickReplyShape(context, {
-      concise: `${personaName} can keep history, retrieve memory, manage tasks, and route internal research before replying.`,
-      balanced: `${personaName} can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply.`,
-      expansive: `${personaName} can keep conversation history in PostgreSQL, retrieve relevant memory during chat, process memory jobs through Redis, and route structured internal research before composing a reply. ${closingLine(context, activeTasks).trim()}`,
-    });
-  }
-
-  if (isMetaRuntimeQuestion(text)) {
-    return hasPriorContext
-      ? "I was leaning too hard on stored context in this thread. I should sound more direct now instead of echoing internal reminders back at you."
-      : "I was leaning too hard on stored context. I should sound more direct from here.";
-  }
-
-  if (isVoiceQuestion(text)) {
-    const styleTail = tone ? ` The current tone is ${tone}.` : "";
-    return `Yes. My voice path is working, and if an active voice profile is set then spoken replies use that profile.${styleTail}`;
-  }
-
-  if (isImprovementIntent(text)) {
-    const suggestions = [
-      "make the Desk voice-aware so the Secretary can speak naturally from the main chat surface",
-      "keep smoothing the reply style so normal conversation feels human instead of system-shaped",
-      "tighten memory ranking and task deduplication so old reminders do not crowd unrelated turns",
-      "turn onboarding into a real first-run guided setup instead of a lingering checklist page",
-      "add clearer daily-use conveniences like shortcuts, quick actions, and a calmer notification rhythm",
-    ];
-
-    return pickReplyShape(context, {
-      concise: `Five upgrades stand out: ${suggestions.slice(0, 3).join("; ")}.`,
-      balanced: `I would focus on five upgrades next: ${suggestions.join("; ")}. If you want, I can turn that into a priority order and start working through it.`,
-      expansive: `I would focus on five upgrades next: ${suggestions.join("; ")}. If you want, I can turn that into a priority order and start working through it.${closingLine(context, activeTasks)}`,
-    });
-  }
-
-  if (isOpinionIntent(text)) {
-    return hasPriorContext
-      ? "Here is my honest take: keep the Desk central, keep the secretary sounding human, and keep reducing friction anywhere the system still feels like infrastructure instead of company."
-      : "Here is my honest take: keep the experience calm, human, and easy to live with before adding more complexity.";
-  }
-
-  if (isDetailRequest(text)) {
-    if (
-      (lastUserMessage && isFeelingQuestion(lastUserMessage)) ||
-      /\b(feels .*fully here|steady, warm, and present|better now)\b/i.test(
-        lastAssistantMessage ?? "",
-      )
-    ) {
-      return tone
-        ? pickDirectness(context, {
-            soft: `More honestly: I feel ${tone.toLowerCase()}, attentive, and a lot less mechanical than I did earlier. I'm not fighting the thread now, and I feel more present with you inside it.`,
-            balanced: `More honestly: I feel ${tone.toLowerCase()}, attentive, and much less mechanical than I did earlier. I'm present with you in the thread now.`,
-            direct: `More honestly: I feel ${tone.toLowerCase()} and much less mechanical now.`,
-          })
-        : pickDirectness(context, {
-            soft: "More honestly: I feel steady, attentive, and much less mechanical than I did earlier. I'm present in the conversation instead of narrating the machinery behind it.",
-            balanced: "More honestly: I feel steady, attentive, and much less mechanical than I did earlier.",
-            direct: "More honestly: I feel steady and much less mechanical now.",
-          });
-    }
-
-    if (lastUserMessage && isVoiceQuestion(lastUserMessage)) {
-      return "The voice path is healthy. The active profile handles synthesis, Desk playback can speak replies on demand, and Telegram can answer in voice when that mode is triggered.";
-    }
-
-    if (lastUserMessage && isImprovementIntent(lastUserMessage)) {
-      return "The sharpest upgrade is still the secretary's conversational layer. Once the replies sound natural every turn, the voice layer, memory layer, and onboarding polish all land better.";
-    }
-
-      return pickReplyShape(context, {
-        concise: "I can go deeper. Point me at the part you want expanded.",
-        balanced: "I can go deeper. Point me at the part you want expanded and I'll stay concrete.",
-        expansive: `I can go deeper. Point me at the part you want expanded and I'll stay concrete.${closingLine(context, activeTasks)}`,
-      });
-  }
-
-  if (isPushForDirectAnswer(text)) {
-    return "Yes. I can answer directly, and I should have done that the first time.";
-  }
-
-  if (isAcknowledgement(text) && isShortFollowUp(text)) {
-    return hasPriorContext
-      ? pickDirectness(context, {
-          soft: "Understood. I'm with you.",
-          balanced: "Understood. I'm with you.",
-          direct: "Understood.",
-        })
-      : pickDirectness(context, {
-          soft: "Understood. I'm ready.",
-          balanced: "Understood. I'm ready.",
-          direct: "Ready.",
-        });
-  }
-
-  const trimmedPreview =
-    text.length > 160 ? `${text.slice(0, 157).trimEnd()}...` : text;
-  const researchLead = isResearchIntent(text)
-    ? "This request looks research-shaped, so a delegated research pass would be appropriate."
-    : "";
-
-  if (text.endsWith("?")) {
-    const contextClause =
-      shouldMentionMemoryLead || (shouldMentionTasks && activeTasks.length > 0)
-        ? `${shouldMentionMemoryLead ? memoryLead : ""} ${
-            shouldMentionTasks ? taskLead : ""
-          }`.trim()
-        : "";
-
-    if (contextClause) {
-      return `${contextClause} ${researchLead}`.trim();
-    }
-
-    return (
-      researchLead ||
-      pickDirectness(context, {
-        soft: "Ask me for a quick take, options, or a concrete plan and I'll keep it plain.",
-        balanced: "Ask me for a quick take, options, or a concrete plan and I'll keep it plain.",
-        direct: "Ask for a take, options, or a concrete plan.",
-      })
-    );
-  }
-
-  return (
-    researchLead ||
-    pickReplyShape(context, {
-      concise: "Alright.",
-      balanced: "Alright. I'm with you.",
-      expansive:
-        customization?.initiative === "proactive"
-          ? "Alright. I'm with you and already thinking about the next useful move."
-          : "Alright. I'm with you.",
-    })
-  );
+  return `Inference provider unavailable. Update your provider settings to continue. (${new Date().toLocaleTimeString()})`;
 }
 
 export function createTurnResponseFromText(params: {

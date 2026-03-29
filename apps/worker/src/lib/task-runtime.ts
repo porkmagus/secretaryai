@@ -1,4 +1,5 @@
 import type { RuntimeChatRequest } from "@secretary/core-runtime";
+import { cleanText } from "./utils/index.js";
 
 export type TaskDraft = {
   title: string;
@@ -58,9 +59,7 @@ function parseDeliveryPreference(params: {
   };
 }
 
-export function cleanText(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
+// Note: cleanText is now imported from utils/clean.ts
 
 export function titleCase(value: string) {
   return value
@@ -188,12 +187,12 @@ export function summarizeTaskSchedule(task: {
   reminderAt?: Date | null;
 }) {
   if (task.reminderAt) {
-    return `I created the task "${task.title}" and scheduled a reminder for ${task.reminderAt.toLocaleString()}.`;
+    return `Task "${task.title}" created — reminder set for ${task.reminderAt.toLocaleString()}.`;
   }
 
   if (task.dueAt) {
-    return `I created the task "${task.title}" due ${task.dueAt.toLocaleString()}.`;
+    return `Task "${task.title}" created — due ${task.dueAt.toLocaleString()}.`;
   }
 
-  return `I created the task "${task.title}".`;
+  return `Task "${task.title}" created.`;
 }

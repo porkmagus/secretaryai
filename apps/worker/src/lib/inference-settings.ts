@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { OpencodeModels } from "ai-sdk-provider-opencode-sdk";
 import { listModels as listCodexCliModels } from "ai-sdk-provider-codex-cli";
 import type {
@@ -17,10 +16,11 @@ import {
   isLocalRuntimeProvider,
   providerSupportsStoredApiKey,
 } from "./inference-provider-definitions.js";
+import { repoRoot } from "./utils/index.js";
 
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const settingsFilePath = resolve(repoRoot, "runtime/config/inference-provider.json");
-const secretFilePath = resolve(repoRoot, "runtime/secrets/inference-provider.json");
+// Lazy initialization to avoid circular dependency issues
+function getSettingsFilePath() { return resolve(repoRoot, "runtime/config/inference-provider.json"); }
+function getSecretFilePath() { return resolve(repoRoot, "runtime/secrets/inference-provider.json"); }
 
 type StoredInferenceSettings = {
   enabled: boolean;
@@ -146,12 +146,12 @@ function normalizeStoredSettings(settings: StoredInferenceSettings | null): Stor
 
 async function readStoredSettings() {
   return normalizeStoredSettings(
-    await readJsonFile<StoredInferenceSettings>(settingsFilePath),
+    await readJsonFile<StoredInferenceSettings>(getSettingsFilePath()),
   );
 }
 
 async function readStoredSecrets() {
-  return (await readJsonFile<StoredInferenceSecrets>(secretFilePath)) ?? {};
+  return (await readJsonFile<StoredInferenceSecrets>(getSecretFilePath())) ?? {};
 }
 
 function providerHasUsableAuth(params: {
@@ -373,8 +373,8 @@ export async function updateInferenceSettings(params: {
     providers: currentSettings.providers,
   };
 
-  await writeJsonFile(settingsFilePath, nextSettings);
-  await writeJsonFile(secretFilePath, currentSecrets);
+  await writeJsonFile(getSettingsFilePath(), nextSettings);
+  await writeJsonFile(getSecretFilePath(), currentSecrets);
 
   return loadInferenceSettings();
 }
@@ -609,6 +609,8 @@ export async function listInferenceModels(
     case "deepseek":
     case "fireworks":
     case "groq":
+    case "opencode_zen":
+    case "opencode_go":
       return listGenericModels({
         providerId: selectedProvider.id,
         baseUrl:

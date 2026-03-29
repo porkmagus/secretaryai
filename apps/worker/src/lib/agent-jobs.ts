@@ -701,7 +701,7 @@ async function satisfyRuntimeRequirement(params: {
     jobId: params.jobId,
     eventName: "agent.job.chat.runtime_available",
     importance: "normal",
-    text: "The workspace is reachable again, so I’m resuming the build job now.",
+    text: "Workspace is back — resuming now.",
     metadataJson: {
       stepId: params.inspectStep.id,
     },
@@ -791,7 +791,7 @@ async function executeInspectStep(params: {
     jobId: params.jobId,
     eventName: "agent.job.chat.inspect_completed",
     importance: "normal",
-    text: "I finished inspecting the workspace and I’m moving into implementation now.",
+    text: "Inspection done — moving to implementation.",
     metadataJson: {
       stepId: params.inspectStep.id,
       nextStepId: implementStep?.id ?? null,
@@ -1150,6 +1150,29 @@ async function executeDraftingStep(params: {
     return;
   }
 
+  // Block if the selected provider has no default model and the user hasn't picked one.
+  // Without a model the ToolLoopAgent would be constructed with model=null and crash.
+  const modelResolutionIssue = inference.model
+    ? null
+    : "No model is configured for this provider. Pick a model in Settings > General before running agent jobs.";
+  if (modelResolutionIssue) {
+    await updateStepState({
+      dbClient: params.dbClient,
+      stepId: params.draftStep.id,
+      status: "blocked",
+      errorText: modelResolutionIssue,
+    });
+    await updateJobState({
+      dbClient: params.dbClient,
+      jobId: params.jobId,
+      status: "blocked",
+      blockerSummary: modelResolutionIssue,
+      currentStepId: params.draftStep.id,
+      errorText: null,
+    });
+    return;
+  }
+
   await updateStepState({
     dbClient: params.dbClient,
     stepId: params.draftStep.id,
@@ -1175,6 +1198,49 @@ async function executeDraftingStep(params: {
       phase: "draft_plan",
     },
   });
+
+  // Detect and sync runtime requirements before running the agent.
+  const detectedRequirements = await detectExecutionRequirements({
+    settings,
+    workspacePath: params.row.agent.workspacePath,
+  });
+  await syncDetectedRequirements({
+    dbClient: params.dbClient,
+    jobId: params.jobId,
+    stepId: params.draftStep.id,
+    detected: detectedRequirements,
+  });
+
+  if (detectedRequirements.length > 0) {
+    await updateStepState({
+      dbClient: params.dbClient,
+      stepId: params.draftStep.id,
+      status: "waiting_for_runtime",
+      errorText: detectedRequirements.map((entry) => entry.label).join("; "),
+    });
+    await updateJobState({
+      dbClient: params.dbClient,
+      jobId: params.jobId,
+      status: "waiting_for_runtime",
+      blockerSummary: detectedRequirements[0]?.detail ?? "Missing runtime requirements.",
+      currentStepId: params.draftStep.id,
+      errorText: null,
+    });
+    await postAgentJobConversationUpdate({
+      dbClient: params.dbClient,
+      config: params.config,
+      conversationId: params.row.agent.conversationId ?? null,
+      jobId: params.jobId,
+      eventName: "agent.job.chat.runtime_requirements_detected",
+      importance: "important",
+      text: `I'm blocked on runtime requirements before drafting can begin: ${detectedRequirements.map((entry) => entry.label).join("; ")}.`,
+      metadataJson: {
+        stepId: params.draftStep.id,
+        requirements: detectedRequirements,
+      },
+    });
+    return;
+  }
 
   const storedMessages = parseStoredMessages(params.draftStep.outputJson?.agentMessages);
 
@@ -1243,7 +1309,7 @@ async function executeDraftingStep(params: {
     jobId: params.jobId,
     eventName: "agent.job.chat.drafting_completed",
     importance: "normal",
-    text: "I finished drafting the execution plan and I’m beginning the implementation pass.",
+    text: "Plan drafted — starting implementation.",
     metadataJson: {
       stepId: params.draftStep.id,
     },
@@ -1595,7 +1661,7 @@ async function executeImplementationStep(params: {
     jobId: params.jobId,
     eventName: "agent.job.chat.implementation_completed",
     importance: "normal",
-    text: "I finished the implementation pass and I’m starting verification.",
+    text: "Implementation done — starting verification.",
     metadataJson: {
       stepId: params.implementStep.id,
       nextStepId: verifyStep?.id ?? null,
@@ -2343,7 +2409,7 @@ export async function resumeAgentJob(params: {
     jobId: params.jobId,
     eventName: "agent.job.chat.resumed",
     importance: "normal",
-    text: "I resumed the build job and I’m continuing from the current step.",
+    text: "Resumed from where I left off.",
   });
 
   const nextRow = await getAgentJobRow(params.dbClient, params.jobId);
@@ -2386,7 +2452,7 @@ export async function cancelAgentJob(params: {
     jobId: params.jobId,
     eventName: "agent.job.chat.cancelled",
     importance: "important",
-    text: "The build job was cancelled by the operator.",
+    text: "Build job cancelled.",
   });
 
   const nextRow = await getAgentJobRow(params.dbClient, params.jobId);

@@ -3,8 +3,9 @@ import type { AppConfig } from "@secretary/config";
 import { toolExecutions, type DbClient } from "@secretary/db";
 import { createMessageId, type RuntimeChatRequest } from "@secretary/core-runtime";
 import { decideToolExecution } from "./tools-runtime.js";
-import { finalizeChatTurn, findConversationIdByChannelRef, prepareChatTurn } from "./chat-persistence.js";
+import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision } from "./conversation-decisions.js";
+import { resolveConversationId } from "./utils/index.js";
 
 type MaybeHandleToolApprovalTurnParams = {
   config: AppConfig;
@@ -17,20 +18,10 @@ type MaybeHandleToolApprovalTurnParams = {
 
 const approvalHelpPattern = /\b(approval|approve|deny|tool|permission|allowed|blocked|what do you need)\b/i;
 
-async function resolveConversationId(dbClient: DbClient, request: RuntimeChatRequest) {
-  if (request.conversationId) {
-    return request.conversationId;
-  }
-
-  if (request.channel === "telegram" && request.metadata?.telegramChatId) {
-    return findConversationIdByChannelRef(dbClient, "telegram", request.metadata.telegramChatId);
-  }
-
-  return null;
-}
+// Note: resolveConversationId is now imported from utils/conversation.ts
 
 function buildApprovalPrompt(toolName: string, summary: string) {
-  return `${toolName} is ready: ${summary}. Say yes, go for it, or approve to let me run it, or say no to keep it blocked.`;
+  return `I'm about to use ${toolName} to ${summary}. Go ahead?`;
 }
 
 export async function maybeHandleToolApprovalTurn(

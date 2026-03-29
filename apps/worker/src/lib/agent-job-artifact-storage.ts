@@ -1,13 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { repoRoot, sanitizeSegment } from "./utils/index.js";
 
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
-const artifactRoot = resolve(repoRoot, "runtime/agent-jobs/artifacts");
-
-function sanitizeSegment(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-");
-}
+// Lazy initialization to avoid circular dependency issues
+function getArtifactRoot() { return resolve(repoRoot, "runtime/agent-jobs/artifacts"); }
 
 export function createAgentJobArtifactStorageKey(jobId: string, fileName: string) {
   const timestamp = Date.now();
@@ -15,11 +11,11 @@ export function createAgentJobArtifactStorageKey(jobId: string, fileName: string
 }
 
 export async function ensureAgentJobArtifactStoragePath(storageKey: string) {
-  const targetPath = resolve(artifactRoot, storageKey);
+  const targetPath = resolve(getArtifactRoot(), storageKey);
   await mkdir(dirname(targetPath), { recursive: true });
   return targetPath;
 }
 
 export function resolveManagedAgentJobArtifactPath(storageKey: string) {
-  return resolve(artifactRoot, storageKey);
+  return resolve(getArtifactRoot(), storageKey);
 }

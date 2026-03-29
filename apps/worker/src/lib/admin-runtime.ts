@@ -1,6 +1,5 @@
 import { access, rm, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { asc, eq, inArray } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
@@ -73,9 +72,7 @@ import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage
 import { cancelAgentJob } from "./agent-jobs.js";
 import { resolveManagedSpeechStoragePath } from "./speech-storage.js";
 import { pathExists, logError } from "./utils.js";
-
-
-const repoRoot = resolve(fileURLToPath(new URL("../../../../", import.meta.url)));
+import { repoRoot } from "./utils/index.js";
 
 function normalizePersonaGender(value: unknown): PersonaGender {
   return value === "male" ? "male" : "female";

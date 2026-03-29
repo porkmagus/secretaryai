@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import net from "node:net";
@@ -130,8 +130,19 @@ function truncateText(text: string, maxLength = MAX_TEXT_OUTPUT) {
   return `${text.slice(0, maxLength)}\n...[truncated ${text.length - maxLength} chars]`;
 }
 
+// Tracks whether the WSL fallback warning has been emitted this process lifetime.
+let wslFallbackWarned = false;
+
 function resolveExecutionBackend(backend: AgentExecutionBackend): AgentExecutionBackend {
   if (backend === "wsl_bash" && process.platform !== "win32") {
+    if (!wslFallbackWarned) {
+      wslFallbackWarned = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[Secretary] executionBackend is set to 'wsl_bash' but WSL is only available on Windows. " +
+          "Falling back to 'host_native'. Set executionBackend to 'host_native' to silence this.",
+      );
+    }
     return "host_native";
   }
 
@@ -198,8 +209,10 @@ function isWorkspaceAllowed(
   settings: AgentJobSettingsRecord,
   workspacePath: string,
 ) {
+  // Empty array means "deny all" — there is no catch-all allowed root.
+  // Users populate the list via Settings > Agent > Allowed workspace roots.
   if (settings.allowedWorkspaceRoots.length === 0) {
-    return true;
+    return false;
   }
 
   const candidate = resolve(workspacePath);
@@ -487,12 +500,20 @@ export async function detectExecutionRequirements(params: {
   }
 
   if (backend === "docker_sandbox") {
-    const hasDocker = await commandExists("docker", "host_native");
-    if (!hasDocker) {
+    let dockerHealthy = false;
+    try {
+      // execSync is appropriate here — we need a hard check, not an async probe,
+      // and the Docker daemon is local (no network latency concern).
+      execSync("docker info", { stdio: "ignore", timeout: 8_000 });
+      dockerHealthy = true;
+    } catch {
+      dockerHealthy = false;
+    }
+    if (!dockerHealthy) {
       requirements.push({
         kind: "service",
-        label: "Docker is required for the selected sandbox backend",
-        detail: "Switch the execution backend to host native / WSL or make Docker available before continuing.",
+        label: "Docker daemon is not reachable",
+        detail: "Switch the execution backend to host native / WSL, or ensure the Docker daemon is running and accessible.",
       });
     }
   }
@@ -575,14 +596,6 @@ export async function detectExecutionRequirements(params: {
       kind: "runtime",
       label: "Git is required for autonomous coding work",
       detail: "The agent expects git to be available for safe inspection and handoff flows.",
-    });
-  }
-
-  if (!params.settings.allowNetworkAccess) {
-    requirements.push({
-      kind: "network",
-      label: "Network access is disabled",
-      detail: "Jobs can still work locally, but installs, remote fetches, and browser-heavy verification will stay blocked until network access is enabled.",
     });
   }
 

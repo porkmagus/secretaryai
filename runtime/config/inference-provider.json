@@ -1,7 +1,13 @@
 {
-  "enabled": false,
+  "enabled": true,
   "activeTarget": "provider",
-  "selectedProviderId": null,
+  "selectedProviderId": "opencode_zen",
   "reasoningEffort": "low",
-  "providers": {}
+  "providers": {
+    "opencode_zen": {
+      "baseUrl": "https://opencode.ai/zen/v1",
+      "model": "minimax-m2.5",
+      "maxOutputTokens": 1000
+    }
+  }
 }

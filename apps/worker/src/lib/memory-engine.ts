@@ -25,10 +25,10 @@ import {
 } from "@secretary/core-runtime";
 import {
   buildTaskDraft,
-  cleanText,
   normalizeTaskTitle,
   titleCase,
 } from "./task-runtime.js";
+import { cleanText, logMemoryRetrieval } from "./utils/index.js";
 import { generateText } from "ai";
 import { resolveInferenceLanguageModel, type InferenceRuntimeConfig } from "./ai-sdk-registry.js";
 
@@ -733,6 +733,7 @@ export async function retrieveRelevantMemories(
   dbClient: DbClient,
   queryText: string,
 ) {
+  const startTime = performance.now();
   const records = await dbClient.db.query.memoryEntries.findMany({
     where: eq(memoryEntries.suppressed, false),
     orderBy: [desc(memoryEntries.pinned), desc(memoryEntries.importanceScore), desc(memoryEntries.updatedAt)],
@@ -831,13 +832,21 @@ export async function retrieveRelevantMemories(
         ((queryTokens.length <= 2 && overlap >= 1) ||
           overlap >= 2 ||
           overlapRatio >= 0.5) &&
-        score >= 45
+        score >= 25
       );
     })
     .sort((left, right) => right.score - left.score)
     .slice(0, 6);
 
   const selectedIds = scored.map(({ record }) => record.id);
+
+  // Log retrieval metrics for debugging
+  logMemoryRetrieval({
+    query: queryText,
+    durationMs: Math.round(performance.now() - startTime),
+    resultsCount: scored.length,
+    topScore: scored[0]?.score,
+  });
 
   if (selectedIds.length > 0) {
     await dbClient.db

@@ -1,0 +1,23 @@
+{
+  "enabled": true,
+  "activeTarget": "provider",
+  "selectedProviderId": "ollama_cloud",
+  "reasoningEffort": "low",
+  "providers": {
+    "moonshot": {
+      "baseUrl": "https://api.kimi.com/coding/v1",
+      "model": "kimi-for-coding",
+      "maxOutputTokens": 900
+    },
+    "opencode_zen": {
+      "baseUrl": "https://opencode.ai/zen/v1",
+      "model": "big-pickle",
+      "maxOutputTokens": 1000
+    },
+    "ollama_cloud": {
+      "baseUrl": "https://ollama.com/v1",
+      "model": "minimax-m2.7",
+      "maxOutputTokens": 1000
+    }
+  }
+}

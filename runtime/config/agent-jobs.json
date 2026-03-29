@@ -1,13 +1,13 @@
 {
   "defaultWorkspacePath": null,
-  "defaultApprovalMode": "builder",
+  "defaultApprovalMode": "full_access",
   "executionBackend": "host_native",
   "maxAgentSteps": 24,
   "maxCommandTimeoutSeconds": 120,
   "maxVerificationAttempts": 2,
   "maxJobRuntimeMinutes": 45,
   "allowNetworkAccess": true,
-  "browserVerificationEnabled": false,
+  "browserVerificationEnabled": true,
   "redactSecretsInArtifacts": true,
   "allowedWorkspaceRoots": []
 }

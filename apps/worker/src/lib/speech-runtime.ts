@@ -32,12 +32,12 @@ const builtInVoiceProfiles: Record<
   female: {
     name: "Secretary Female Voice",
     qualityPreset: "balanced",
-    speakingStyle: "warm, poised, and clear",
+    speakingStyle: "speaks with warmth and natural ease, like someone you trust",
   },
   male: {
     name: "Secretary Male Voice",
     qualityPreset: "balanced",
-    speakingStyle: "grounded, steady, and clear",
+    speakingStyle: "speaks with calm confidence, grounded and approachable",
   },
 };
 

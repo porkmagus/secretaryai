@@ -25,6 +25,7 @@ import type {
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
 import { ActionRow, AppPage, FieldHint, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
+import { HeartbeatSettingsSection } from "./heartbeat-settings-section";
 import { InferenceSettingsSection } from "./inference-settings-section";
 import { PersonaIdentitySection } from "./persona-identity-section";
 import { PersonaWritingSection } from "./persona-writing-section";
@@ -829,6 +830,8 @@ export function PersonaConsole({
             downloadText={downloadText}
             buildSecretaryExamplesMarkdown={buildSecretaryExamplesMarkdown}
           />
+
+          <HeartbeatSettingsSection />
 
           <input
             ref={importFileRef}

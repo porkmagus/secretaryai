@@ -4,8 +4,9 @@ import { agentJobRequirements, agentJobs, jobs, type DbClient } from "@secretary
 import { createMessageId, type RuntimeChatRequest } from "@secretary/core-runtime";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { decideAgentJobRequirement } from "./agent-jobs.js";
-import { finalizeChatTurn, findConversationIdByChannelRef, prepareChatTurn } from "./chat-persistence.js";
+import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision } from "./conversation-decisions.js";
+import { resolveConversationId } from "./utils/index.js";
 
 type MaybeHandleAgentJobRequirementTurnParams = {
   config: AppConfig;
@@ -19,21 +20,11 @@ type MaybeHandleAgentJobRequirementTurnParams = {
 
 const requirementHelpPattern = /\b(blocked|requirement|requirements|approve|approval|deny|denied|runtime|what do you need)\b/i;
 
-async function resolveConversationId(dbClient: DbClient, request: RuntimeChatRequest) {
-  if (request.conversationId) {
-    return request.conversationId;
-  }
-
-  if (request.channel === "telegram" && request.metadata?.telegramChatId) {
-    return findConversationIdByChannelRef(dbClient, "telegram", request.metadata.telegramChatId);
-  }
-
-  return null;
-}
+// Note: resolveConversationId is now imported from utils/conversation.ts
 
 function buildRequirementPrompt(label: string, detail: string | null) {
   const detailLine = detail ? ` ${detail}` : "";
-  return `The build job is waiting on: ${label}.${detailLine} Say yes, continue, or approve to let me keep going, or say no to leave it blocked.`;
+  return `Waiting on: ${label}.${detailLine} Approve to continue, or deny to block.`;
 }
 
 export async function maybeHandleAgentJobRequirementTurn(

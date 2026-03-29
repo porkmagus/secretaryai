@@ -9,6 +9,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import net from "node:net";
+import { openSync, closeSync } from "node:fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -34,13 +35,19 @@ const ttsVenvPythonPath = process.platform === "win32"
   ? resolve(root, "runtime/venvs/tts/Scripts/python.exe")
   : resolve(root, "runtime/venvs/tts/bin/python");
 
+// Global state for signal handling
+let isShuttingDown = false;
+const activeProcesses = new Map();
+
 const services = [
   {
     key: "web",
     label: "Secretary Web",
     port: 3000,
-    startupTimeoutMs: 45_000,
-    windowsCommand: ["cmd.exe", ["/d", "/s", "/c", "npm run dev --workspace @secretary/web"]],
+    startupTimeoutMs: 60_000,
+    startupDelayMs: 2000,
+    healthRetries: 3,
+    windowsCommand: ["npm.cmd", ["run", "dev", "--workspace", "@secretary/web"]],
     unixCommand: ["npm", ["run", "dev", "--workspace", "@secretary/web"]],
     healthUrl: "http://127.0.0.1:3000",
   },
@@ -48,8 +55,10 @@ const services = [
     key: "worker",
     label: "Secretary Worker",
     port: 4000,
-    startupTimeoutMs: 45_000,
-    windowsCommand: ["cmd.exe", ["/d", "/s", "/c", "node --env-file=.env apps/worker/dist/index.js"]],
+    startupTimeoutMs: 60_000,
+    startupDelayMs: 1000,
+    healthRetries: 3,
+    windowsCommand: ["node", ["--env-file=.env", "apps/worker/dist/index.js"]],
     unixCommand: ["node", ["--env-file=.env", "apps/worker/dist/index.js"]],
     healthUrl: "http://127.0.0.1:4000/health/ready",
   },
@@ -57,7 +66,9 @@ const services = [
     key: "stt",
     label: "Secretary STT",
     port: 5001,
-    startupTimeoutMs: 90_000,
+    startupTimeoutMs: 120_000,
+    startupDelayMs: 3000,
+    healthRetries: 5,
     windowsCommand: ["node", ["scripts/speech/run-stt.mjs"]],
     unixCommand: ["node", ["scripts/speech/run-stt.mjs"]],
     healthUrl: "http://127.0.0.1:5001/health",
@@ -66,7 +77,9 @@ const services = [
     key: "tts",
     label: "Secretary TTS",
     port: 5002,
-    startupTimeoutMs: 120_000,
+    startupTimeoutMs: 150_000,
+    startupDelayMs: 3000,
+    healthRetries: 5,
     windowsCommand: ["node", ["scripts/speech/run-tts.mjs"]],
     unixCommand: ["node", ["scripts/speech/run-tts.mjs"]],
     healthUrl: "http://127.0.0.1:5002/health",
@@ -80,9 +93,9 @@ const infrastructureContainers = [
 ];
 const infrastructureNetwork = "compose_default";
 const infrastructureServices = [
-  { label: "Postgres", port: 5432, startupTimeoutMs: 45_000 },
+  { label: "Postgres", port: 5432, startupTimeoutMs: 60_000 },
   { label: "Redis", port: 6379, startupTimeoutMs: 30_000 },
-  { label: "SearXNG", port: 8080, startupTimeoutMs: 45_000 },
+  { label: "SearXNG", port: 8080, startupTimeoutMs: 60_000 },
 ];
 
 function parseArgs(argv) {
@@ -91,6 +104,7 @@ function parseArgs(argv) {
   return {
     command,
     dryRun: args.includes("--dry-run"),
+    verbose: args.includes("--verbose") || args.includes("-v"),
   };
 }
 
@@ -101,6 +115,12 @@ function logSection(title) {
 
 function logStep(label, detail = null) {
   console.log(detail ? `- ${label}: ${detail}` : `- ${label}`);
+}
+
+function logVerbose(verbose, message) {
+  if (verbose) {
+    console.log(`  [verbose] ${message}`);
+  }
 }
 
 function formatTimestamp(timestamp) {
@@ -117,12 +137,54 @@ function formatTimestamp(timestamp) {
 }
 
 function canRun(command, args = ["--version"]) {
-  const result = spawnSync(command, args, {
-    stdio: "ignore",
-    shell: false,
-  });
+  try {
+    const result = spawnSync(command, args, {
+      stdio: "ignore",
+      shell: false,
+      windowsHide: true,
+    });
+    return result.status === 0;
+  } catch {
+    return false;
+  }
+}
 
-  return result.status === 0;
+function getProcessIdsOnPort(port) {
+  if (process.platform !== "win32") {
+    return [];
+  }
+
+  const command = [
+    `$connections = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue;`,
+    "if (-not $connections) { exit 0 }",
+    "$processIds = $connections | Select-Object -ExpandProperty OwningProcess -Unique;",
+    "$processIds | ConvertTo-Json -Compress",
+  ].join(" ");
+
+  const result = spawnSync(
+    "powershell.exe",
+    ["-NoProfile", "-Command", command],
+    {
+      cwd: root,
+      encoding: "utf8",
+      shell: false,
+      windowsHide: true,
+    },
+  );
+
+  if (result.status !== 0 || !result.stdout.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout.trim());
+    if (Array.isArray(parsed)) {
+      return parsed.filter((value) => Number.isFinite(value));
+    }
+    return Number.isFinite(parsed) ? [parsed] : [];
+  } catch {
+    return [];
+  }
 }
 
 function getStrayDevProcessIds() {
@@ -206,9 +268,21 @@ async function writeState(state) {
   await writeFile(stateFilePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
+function normalizeWindowsSpawn(command, args) {
+  if (process.platform !== "win32") {
+    return [command, args];
+  }
+  const lower = command.toLowerCase();
+  if (lower.endsWith(".cmd") || lower.endsWith(".bat")) {
+    return ["cmd.exe", ["/c", command, ...args]];
+  }
+  return [command, args];
+}
+
 function runCommand(command, args, options = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, {
+    const [spawnCommand, spawnArgs] = normalizeWindowsSpawn(command, args);
+    const child = spawn(spawnCommand, spawnArgs, {
       cwd: options.cwd ?? root,
       stdio: options.stdio ?? "inherit",
       env: options.env ?? process.env,
@@ -217,8 +291,21 @@ function runCommand(command, args, options = {}) {
       windowsHide: true,
     });
 
-    child.on("error", rejectPromise);
+    if (options.track) {
+      activeProcesses.set(options.trackKey || `${command}-${args.join("-")}`, child);
+    }
+
+    child.on("error", (err) => {
+      if (options.track) {
+        activeProcesses.delete(options.trackKey || `${command}-${args.join("-")}`);
+      }
+      rejectPromise(err);
+    });
+    
     child.on("exit", (code) => {
+      if (options.track) {
+        activeProcesses.delete(options.trackKey || `${command}-${args.join("-")}`);
+      }
       if (code === 0) {
         resolvePromise(undefined);
         return;
@@ -232,29 +319,14 @@ function runCommand(command, args, options = {}) {
 }
 
 async function runNpmScript(scriptName, options = {}) {
-  if (process.platform === "win32") {
-    await runCommand(
-      "cmd.exe",
-      ["/d", "/s", "/c", `npm run ${scriptName}`],
-      options,
-    );
-    return;
-  }
-
-  await runCommand("npm", ["run", scriptName], options);
+  // Use npm.cmd on Windows directly without wrapping in cmd.exe to avoid window flashing
+  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  await runCommand(npmCmd, ["run", scriptName], options);
 }
 
 async function runNpmArgs(args, options = {}) {
-  if (process.platform === "win32") {
-    await runCommand(
-      "cmd.exe",
-      ["/d", "/s", "/c", `npm ${args.join(" ")}`],
-      options,
-    );
-    return;
-  }
-
-  await runCommand("npm", args, options);
+  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  await runCommand(npmCmd, args, options);
 }
 
 async function ensureEnvFile({ dryRun }) {
@@ -303,7 +375,7 @@ async function cleanupInfrastructureResidue({ dryRun }) {
   });
 }
 
-async function ensureDockerStack({ dryRun }) {
+async function ensureDockerStack({ dryRun, verbose }) {
   logStep("Docker stack", "npm run stack:up");
   if (dryRun) {
     return;
@@ -319,7 +391,7 @@ async function ensureDockerStack({ dryRun }) {
 
   for (const infrastructureService of infrastructureServices) {
     logStep("Waiting for", `${infrastructureService.label} on ${infrastructureService.port}`);
-    const ready = await waitForPortReadiness(infrastructureService);
+    const ready = await waitForPortReadiness(infrastructureService, verbose);
     if (!ready) {
       throw new Error(`${infrastructureService.label} did not become ready on port ${infrastructureService.port}.`);
     }
@@ -345,7 +417,7 @@ async function maybeRunWithRetries(commandLabel, npmScript, { dryRun, attempts =
       }
 
       logStep(commandLabel, `attempt ${attempt} failed, retrying in ${Math.round(delayMs / 1000)}s`);
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, delayMs));
+      await sleep(delayMs);
     }
   }
 
@@ -364,7 +436,10 @@ async function ensureNodeModules(state, { dryRun }) {
     return state;
   }
 
-  await maybeRun("Dependencies", "install", { dryRun });
+  logStep("Dependencies", "npm install");
+  if (!dryRun) {
+    await runNpmArgs(["install"]);
+  }
   return {
     ...state,
     bootstrap: {
@@ -528,7 +603,7 @@ async function ensureSystemDependencies({ installMissing, dryRun }) {
   logStep("System dependencies", "installation attempted");
 }
 
-async function ensureBootstrap({ installMissing, dryRun }) {
+async function ensureBootstrap({ installMissing, dryRun, verbose }) {
   await ensureDir(logsRoot);
   await ensureDir(configRoot);
   await ensureEnvFile({ dryRun });
@@ -537,7 +612,7 @@ async function ensureBootstrap({ installMissing, dryRun }) {
   let state = await readState();
   state = await ensureNodeModules(state, { dryRun });
 
-  await ensureDockerStack({ dryRun });
+  await ensureDockerStack({ dryRun, verbose });
   await maybeRunWithRetries("Database migrations", "db:migrate", {
     dryRun,
     attempts: 5,
@@ -562,22 +637,25 @@ function isPortOpen(port) {
     socket.once("error", () => {
       resolvePromise(false);
     });
-    socket.setTimeout(500, () => {
+    socket.setTimeout(1000, () => {
       socket.destroy();
       resolvePromise(false);
     });
   });
 }
 
-async function killProcessByPid(pid) {
+async function killProcessByPid(pid, verbose = false) {
   if (!Number.isFinite(pid)) {
     return false;
   }
+
+  logVerbose(verbose, `Killing process ${pid}`);
 
   if (process.platform === "win32") {
     const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
       stdio: "ignore",
       shell: false,
+      windowsHide: true,
     });
     return result.status === 0;
   }
@@ -590,35 +668,54 @@ async function killProcessByPid(pid) {
   }
 }
 
-async function killPortListeners(port) {
-  if (process.platform === "win32") {
-    const command = [
-      `$connections = Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue;`,
-      "if (-not $connections) { exit 0 }",
-      "$processIds = $connections | Select-Object -ExpandProperty OwningProcess -Unique;",
-      "foreach ($processId in $processIds) {",
-      "  try { Stop-Process -Id $processId -Force -ErrorAction Stop } catch { exit 1 }",
-      "}",
-    ].join(" ");
-    const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", command], {
-      stdio: "ignore",
-      shell: false,
-    });
-
-    return result.status === 0;
-  }
-
-  if (canRun("bash", ["-lc", `fuser -k ${port}/tcp`])) {
+async function killPortListeners(port, verbose = false) {
+  const pids = getProcessIdsOnPort(port);
+  if (pids.length === 0) {
     return true;
   }
 
-  return false;
+  logVerbose(verbose, `Found ${pids.length} process(es) on port ${port}: ${pids.join(", ")}`);
+
+  let success = true;
+  for (const pid of pids) {
+    const killed = await killProcessByPid(pid, verbose);
+    if (!killed) {
+      success = false;
+    }
+  }
+  
+  // Give the OS time to release the port
+  if (pids.length > 0) {
+    await sleep(500);
+  }
+  
+  return success;
 }
 
-async function stopManagedProcesses({ dryRun, keepDocker = false }) {
+async function stopManagedProcesses({ dryRun, keepDocker = false, verbose = false }) {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+
+  logSection("Stopping Secretary");
+  
   const state = await readState();
   const entries = Object.entries(state.processes ?? {});
 
+  // Stop tracked active processes first
+  for (const [key, child] of activeProcesses) {
+    logStep("Stopping active process", key);
+    if (!dryRun) {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // Ignore errors
+      }
+    }
+  }
+
+  // Stop managed processes from state
   for (const [, processInfo] of entries) {
     if (!processInfo?.pid) {
       continue;
@@ -626,22 +723,27 @@ async function stopManagedProcesses({ dryRun, keepDocker = false }) {
 
     logStep("Stopping managed process", `${processInfo.label} (${processInfo.pid})`);
     if (!dryRun) {
-      await killProcessByPid(processInfo.pid);
+      await killProcessByPid(processInfo.pid, verbose);
     }
   }
 
+  // Find and stop stray processes
   const strayProcessIds = getStrayDevProcessIds();
   for (const pid of strayProcessIds) {
     logStep("Stopping stray dev process", String(pid));
     if (!dryRun) {
-      await killProcessByPid(pid);
+      await killProcessByPid(pid, verbose);
     }
   }
 
+  // Kill any remaining port listeners
   for (const service of services) {
-    logStep("Cleaning port", String(service.port));
-    if (!dryRun) {
-      await killPortListeners(service.port);
+    const pids = getProcessIdsOnPort(service.port);
+    if (pids.length > 0) {
+      logStep("Cleaning port", String(service.port));
+      if (!dryRun) {
+        await killPortListeners(service.port, verbose);
+      }
     }
   }
 
@@ -657,27 +759,49 @@ async function stopManagedProcesses({ dryRun, keepDocker = false }) {
   if (!keepDocker) {
     await maybeRun("Docker stack down", "stack:down", { dryRun });
   }
+  
+  isShuttingDown = false;
 }
 
-async function launchDetachedProcess(service) {
+async function launchDetachedProcess(service, verbose = false) {
   const outLogPath = resolve(logsRoot, `${service.key}.out.log`);
   const errLogPath = resolve(logsRoot, `${service.key}.err.log`);
-  await writeFile(outLogPath, "", "utf8");
+  
+  // Ensure log files exist
+  await ensureDir(logsRoot);
+  await writeFile(outLogPath, `=== ${service.label} started at ${new Date().toISOString()} ===\n`, "utf8");
   await writeFile(errLogPath, "", "utf8");
+  
   const [command, args] = process.platform === "win32"
     ? service.windowsCommand
     : service.unixCommand;
 
-  const child = spawn(command, args, {
+  logVerbose(verbose, `Launching ${service.label}: ${command} ${args.join(" ")}`);
+
+  // Open log files as file descriptors so they can be passed to spawn stdio
+  const outFd = openSync(outLogPath, "a");
+  const errFd = openSync(errLogPath, "a");
+
+  const [spawnCommand, spawnArgs] = normalizeWindowsSpawn(command, args);
+  const child = spawn(spawnCommand, spawnArgs, {
     cwd: root,
     detached: true,
-    stdio: [
-      "ignore",
-      await openFileForAppend(outLogPath),
-      await openFileForAppend(errLogPath),
-    ],
+    stdio: ["ignore", outFd, errFd],
     shell: false,
     windowsHide: true,
+  });
+
+  // Store in active processes for cleanup tracking
+  activeProcesses.set(service.key, child);
+
+  child.on("exit", () => {
+    activeProcesses.delete(service.key);
+    try {
+      closeSync(outFd);
+    } catch {}
+    try {
+      closeSync(errFd);
+    } catch {}
   });
 
   child.unref();
@@ -690,37 +814,63 @@ async function launchDetachedProcess(service) {
   };
 }
 
-async function openFileForAppend(path) {
-  const fs = await import("node:fs");
-  return fs.openSync(path, "a");
-}
-
 function sleep(ms) {
   return new Promise((resolvePromise) => {
     setTimeout(resolvePromise, ms);
   });
 }
 
-async function waitForPortReadiness({ port, startupTimeoutMs }) {
+async function waitForPortReadiness({ port, startupTimeoutMs }, verbose = false, healthUrl = null, healthRetries = 3) {
   const timeoutMs = startupTimeoutMs ?? 45_000;
   const startedAt = Date.now();
+  let lastError = null;
 
   while (Date.now() - startedAt < timeoutMs) {
-    if (await isPortOpen(port)) {
+    const isOpen = await isPortOpen(port);
+    
+    if (isOpen && healthUrl) {
+      // If we have a health URL, verify it's actually responding
+      for (let attempt = 0; attempt < healthRetries; attempt++) {
+        try {
+          const response = await fetch(healthUrl, { 
+            signal: AbortSignal.timeout(2000) 
+          }).catch(() => null);
+          
+          if (response?.ok || response?.status === 404) {
+            return true;
+          }
+          
+          logVerbose(verbose, `Health check attempt ${attempt + 1} for ${healthUrl}: ${response?.status || 'failed'}`);
+          await sleep(500);
+        } catch (err) {
+          lastError = err;
+          await sleep(500);
+        }
+      }
+    } else if (isOpen) {
       return true;
     }
 
     await sleep(1_000);
   }
 
+  logVerbose(verbose, `Timeout waiting for port ${port}. Last error: ${lastError?.message || 'none'}`);
   return false;
 }
 
-async function waitForService(service) {
-  return waitForPortReadiness({
-    port: service.port,
-    startupTimeoutMs: service.startupTimeoutMs,
-  });
+async function waitForService(service, verbose = false) {
+  // Wait initial delay for service to start binding
+  if (service.startupDelayMs) {
+    logVerbose(verbose, `Waiting ${service.startupDelayMs}ms for ${service.label} to initialize...`);
+    await sleep(service.startupDelayMs);
+  }
+  
+  return waitForPortReadiness(
+    { port: service.port, startupTimeoutMs: service.startupTimeoutMs },
+    verbose,
+    service.healthUrl,
+    service.healthRetries ?? 3
+  );
 }
 
 async function readLogTail(path, lineCount = 40) {
@@ -728,102 +878,145 @@ async function readLogTail(path, lineCount = 40) {
     return "";
   }
 
-  const content = await readFile(path, "utf8");
-  return content
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .slice(-lineCount)
-    .join("\n");
+  try {
+    const content = await readFile(path, "utf8");
+    return content
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-lineCount)
+      .join("\n");
+  } catch {
+    return "";
+  }
 }
 
-async function startCommand({ dryRun }) {
-  let state = await ensureBootstrap({ installMissing: false, dryRun });
-  await stopManagedProcesses({ dryRun, keepDocker: true });
+async function checkServiceHealth(service, verbose = false) {
+  if (!service.healthUrl) {
+    return await isPortOpen(service.port);
+  }
+  
+  try {
+    const response = await fetch(service.healthUrl, { 
+      signal: AbortSignal.timeout(3000) 
+    });
+    return response.ok || response.status === 404;
+  } catch (err) {
+    logVerbose(verbose, `Health check failed for ${service.label}: ${err.message}`);
+    return false;
+  }
+}
 
-  logSection("Starting background services");
-  const processState = {};
-
+async function startCommand({ dryRun, verbose }) {
+  let state = await ensureBootstrap({ installMissing: false, dryRun, verbose });
+  
+  // Set up signal handlers for clean shutdown
+  const shutdownHandler = async () => {
+    console.log("\n");
+    logStep("Shutdown signal received", "cleaning up...");
+    await stopManagedProcesses({ dryRun: false, keepDocker: true, verbose });
+    process.exit(0);
+  };
+  
+  process.on("SIGINT", shutdownHandler);
+  process.on("SIGTERM", shutdownHandler);
+  
+  // Pre-flight: check for existing processes on our ports
+  logSection("Pre-flight checks");
   for (const service of services) {
-    logStep("Launching", service.label);
-    if (dryRun) {
-      continue;
+    const existingPids = getProcessIdsOnPort(service.port);
+    if (existingPids.length > 0) {
+      logStep("Port in use", `${service.port} (PIDs: ${existingPids.join(", ")})`);
+      if (!dryRun) {
+        await killPortListeners(service.port, verbose);
+      }
     }
+  }
+  
+  await stopManagedProcesses({ dryRun, keepDocker: true, verbose });
 
-    const launched = await launchDetachedProcess(service);
-    processState[service.key] = {
-      label: service.label,
-      pid: launched.pid,
-      port: service.port,
-      logPath: launched.outLogPath,
-      errorLogPath: launched.errLogPath,
-      startedAt: launched.startedAt,
-    };
+  logSection("Starting services");
+  
+  if (dryRun) {
+    logStep("Services", "Would start web, worker, stt, tts via service runner");
+    return;
   }
 
-  state = {
-    ...state,
-    processes: processState,
-    lastStartedAt: new Date().toISOString(),
+  // Launch all services using the consolidated service runner
+  const serviceRunnerPath = resolve(__dirname, "service-runner.mjs");
+  const [spawnCommand, spawnArgs] = normalizeWindowsSpawn("node", [serviceRunnerPath]);
+  
+  const child = spawn(spawnCommand, spawnArgs, {
+    cwd: root,
+    stdio: "inherit", // Pass through all stdio to show consolidated output
+    env: process.env,
+    shell: false,
+    detached: false,
+    windowsHide: true,
+  });
+
+  // Store in active processes for cleanup tracking
+  activeProcesses.set("service-runner", child);
+
+  // Update state with a placeholder for the service runner
+  const currentState = await readState();
+  const processState = {
+    service_runner: {
+      label: "Service Runner (consolidated)",
+      pid: child.pid,
+      port: null,
+      logPath: null,
+      errorLogPath: null,
+      startedAt: new Date().toISOString(),
+    },
   };
 
-  if (!dryRun) {
-    await writeState(state);
-  }
+  await writeState({
+    ...currentState,
+    processes: processState,
+    lastStartedAt: new Date().toISOString(),
+  });
 
-  if (!dryRun) {
-    const failedServices = [];
-
-    for (const service of services) {
-      logStep("Waiting for", `${service.label} on ${service.port}`);
-      const ready = await waitForService(service);
-      if (ready) {
-        logStep("Ready", service.label);
-        continue;
+  // Wait for the service runner to exit (this will happen on Ctrl+C)
+  return new Promise((resolvePromise) => {
+    child.on("exit", (code) => {
+      activeProcesses.delete("service-runner");
+      
+      if (code !== 0) {
+        console.log(`\nService runner exited with code ${code}`);
       }
-
-      const processInfo = processState[service.key];
-      const stderrTail = processInfo?.errorLogPath
-        ? await readLogTail(processInfo.errorLogPath)
-        : "";
-      const stdoutTail = processInfo?.logPath
-        ? await readLogTail(processInfo.logPath)
-        : "";
-
-      failedServices.push({
-        service,
-        stderrTail,
-        stdoutTail,
+      
+      // Clean up state
+      const state = readState();
+      writeState({
+        ...state,
+        processes: {},
       });
-    }
+      
+      resolvePromise();
+    });
 
-    if (failedServices.length > 0) {
-      await stopManagedProcesses({ dryRun: false, keepDocker: true });
-      const details = failedServices.map(({ service, stderrTail, stdoutTail }) => {
-        const tail = stderrTail || stdoutTail || "No recent log output.";
-        return `${service.label} did not become ready on port ${service.port}.\n${tail}`;
-      }).join("\n\n");
-
-      throw new Error(`Secretary startup failed.\n\n${details}`);
-    }
-  }
-
-  logSection("Secretary startup");
-  logStep("Desk", "http://localhost:3000");
-  logStep("Worker", "http://127.0.0.1:4000");
-  logStep("Speech services", "127.0.0.1:5001 and :5002");
-  logStep("Logs", logsRoot);
-  logStep("Next check", "Run secretary.cmd status in a few seconds to confirm each service is listening");
+    child.on("error", (err) => {
+      activeProcesses.delete("service-runner");
+      console.error(`Failed to start service runner: ${err.message}`);
+      resolvePromise();
+    });
+  });
 }
 
-async function installCommand({ dryRun }) {
-  await ensureBootstrap({ installMissing: true, dryRun });
+async function installCommand({ dryRun, verbose }) {
+  await ensureBootstrap({ installMissing: true, dryRun, verbose });
   logSection("Install complete");
   logStep("Next step", "Run secretary.cmd start");
 }
 
-async function stopCommand({ dryRun }) {
-  logSection("Stopping Secretary");
-  await stopManagedProcesses({ dryRun, keepDocker: false });
+async function stopCommand({ dryRun, verbose }) {
+  await stopManagedProcesses({ dryRun, keepDocker: false, verbose });
+}
+
+async function restartCommand({ dryRun, verbose }) {
+  await stopManagedProcesses({ dryRun, keepDocker: true, verbose });
+  await sleep(2000); // Give processes time to fully terminate
+  await startCommand({ dryRun, verbose });
 }
 
 async function statusCommand() {
@@ -840,37 +1033,99 @@ async function statusCommand() {
   for (const service of services) {
     const running = await isPortOpen(service.port);
     const processInfo = state.processes?.[service.key] ?? null;
+    const healthStatus = service.healthUrl && running 
+      ? await checkServiceHealth(service).then(() => " (healthy)", () => " (unhealthy)")
+      : "";
+    
     logStep(
       service.label,
       running
-        ? `listening on ${service.port}${processInfo?.pid ? ` (pid ${processInfo.pid})` : ""}${service.healthUrl ? ` -> ${service.healthUrl}` : ""}`
+        ? `listening on ${service.port}${processInfo?.pid ? ` (pid ${processInfo.pid})` : ""}${healthStatus}${service.healthUrl ? ` -> ${service.healthUrl}` : ""}`
         : "stopped",
     );
   }
 }
 
+async function logsCommand({ service, follow = false }) {
+  const validServices = services.map(s => s.key);
+  
+  if (!service || !validServices.includes(service)) {
+    logSection("Available logs");
+    for (const svc of services) {
+      const outLog = resolve(logsRoot, `${svc.key}.out.log`);
+      const errLog = resolve(logsRoot, `${svc.key}.err.log`);
+      const hasOut = await pathExists(outLog);
+      const hasErr = await pathExists(errLog);
+      logStep(svc.label, hasOut || hasErr ? `${svc.key}.out.log, ${svc.key}.err.log` : "no logs");
+    }
+    logStep("Usage", "secretary.cmd logs <service> [--follow]");
+    logStep("Services", validServices.join(", "));
+    return;
+  }
+  
+  const outLogPath = resolve(logsRoot, `${service}.out.log`);
+  const errLogPath = resolve(logsRoot, `${service}.err.log`);
+  
+  if (follow) {
+    // Tail the logs
+    const tailCmd = process.platform === "win32" ? "powershell.exe" : "tail";
+    const tailArgs = process.platform === "win32" 
+      ? ["-NoProfile", "-Command", `Get-Content -Path "${outLogPath}" -Wait -Tail 20`]
+      : ["-f", "-n", "20", outLogPath];
+    
+    await runCommand(tailCmd, tailArgs, { stdio: "inherit" });
+  } else {
+    // Show recent logs
+    console.log(`\n=== ${service} stdout ===\n`);
+    console.log(await readLogTail(outLogPath, 50) || "(no output)");
+    console.log(`\n=== ${service} stderr ===\n`);
+    console.log(await readLogTail(errLogPath, 50) || "(no errors)");
+  }
+}
+
 async function main() {
-  const { command, dryRun } = parseArgs(process.argv);
+  const { command, dryRun, verbose } = parseArgs(process.argv);
+
+  // Handle logs command with arguments
+  if (command === "logs") {
+    const serviceArg = process.argv.find((arg, i) => i > 2 && !arg.startsWith("-"));
+    const follow = process.argv.includes("--follow") || process.argv.includes("-f");
+    await logsCommand({ service: serviceArg, follow });
+    return;
+  }
 
   switch (command) {
     case "install":
-      await installCommand({ dryRun });
+      await installCommand({ dryRun, verbose });
       break;
     case "start":
-      await startCommand({ dryRun });
+      await startCommand({ dryRun, verbose });
       break;
     case "stop":
-      await stopCommand({ dryRun });
+      await stopCommand({ dryRun, verbose });
       break;
     case "restart":
-      await stopCommand({ dryRun });
-      await startCommand({ dryRun });
+      await restartCommand({ dryRun, verbose });
       break;
     case "status":
       await statusCommand();
       break;
     default:
-      throw new Error(`Unknown command "${command}". Use install, start, stop, restart, or status.`);
+      console.log(`Unknown command "${command}".`);
+      console.log("Usage: secretary.cmd <install|start|stop|restart|status|logs>");
+      console.log("");
+      console.log("Commands:");
+      console.log("  install  - Set up dependencies and infrastructure");
+      console.log("  start    - Start all services");
+      console.log("  stop     - Stop all services");
+      console.log("  restart  - Restart all services");
+      console.log("  status   - Check service health");
+      console.log("  logs     - View service logs (use: logs <service> [--follow])");
+      console.log("");
+      console.log("Options:");
+      console.log("  --dry-run  - Show what would be done without doing it");
+      console.log("  --verbose  - Show detailed output");
+      process.exit(1);
   }
 }
 

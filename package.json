@@ -45,5 +45,9 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "ai": "^6.0.141",
+    "ai-sdk-provider-opencode-sdk": "^3.0.1"
   }
 }

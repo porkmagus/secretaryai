@@ -2221,7 +2221,7 @@ export async function buildServer() {
               traceId,
             });
 
-            return "Something went wrong while the secretary was replying.";
+            return "Something went wrong. Let me try again."
           },
         });
 
