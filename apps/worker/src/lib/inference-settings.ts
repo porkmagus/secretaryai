@@ -1,7 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { OpencodeModels } from "ai-sdk-provider-opencode-sdk";
-import { listModels as listCodexCliModels } from "ai-sdk-provider-codex-cli";
 import type {
   InferenceModelListResponse,
   InferenceProviderAuthMode,
@@ -510,6 +508,8 @@ async function listHuggingFaceModels(): Promise<InferenceModelListResponse> {
 }
 
 function listOpencodeModels(): InferenceModelListResponse {
+  // Lazy import to avoid TDZ — repoRoot must be initialized before the SDK loads
+  const { OpencodeModels } = require("ai-sdk-provider-opencode-sdk");
   return {
     providerId: "opencode",
     source: "static",
@@ -521,7 +521,9 @@ function listOpencodeModels(): InferenceModelListResponse {
 }
 
 async function listCodexModels(): Promise<InferenceModelListResponse> {
-  const payload = await listCodexCliModels();
+  // Lazy import to avoid TDZ
+  const { listModels } = await import("ai-sdk-provider-codex-cli");
+  const payload = await listModels();
 
   return {
     providerId: "codex_cli",
