@@ -514,7 +514,7 @@ function listOpencodeModels(): InferenceModelListResponse {
     providerId: "opencode",
     source: "static",
     models: Object.entries(OpencodeModels).map(([id, model]) => ({
-      id: model,
+      id: model as string,
       name: id,
     })),
   };
