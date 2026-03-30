@@ -18,21 +18,24 @@ function getSettingsFilePath() { return resolve(repoRoot, "runtime/config/agent-
 // created when [] meant "allow all" (the old pickup-and-run default).
 const INITIALIZED_FLAG = "initialized";
 
-const defaultSettings: AgentJobSettingsRecord = {
-  defaultWorkspacePath: null,
-  defaultApprovalMode: "builder",
-  executionBackend: "host_native",
-  maxAgentSteps: 24,
-  maxCommandTimeoutSeconds: 120,
-  maxVerificationAttempts: 2,
-  maxJobRuntimeMinutes: 45,
-  allowNetworkAccess: true,
-  browserVerificationEnabled: false,
-  redactSecretsInArtifacts: true,
-  // Fresh installs get [repoRoot] — safe default that still allows the agent
-  // to work on project code without manual configuration.
-  allowedWorkspaceRoots: [repoRoot],
-};
+// Lazy factory to avoid TDZ — repoRoot must be initialized before access.
+function getDefaultSettings(): AgentJobSettingsRecord {
+  return {
+    defaultWorkspacePath: null,
+    defaultApprovalMode: "builder",
+    executionBackend: "host_native",
+    maxAgentSteps: 24,
+    maxCommandTimeoutSeconds: 120,
+    maxVerificationAttempts: 2,
+    maxJobRuntimeMinutes: 45,
+    allowNetworkAccess: true,
+    browserVerificationEnabled: false,
+    redactSecretsInArtifacts: true,
+    // Fresh installs get [repoRoot] — safe default that still allows the agent
+    // to work on project code without manual configuration.
+    allowedWorkspaceRoots: [repoRoot],
+  };
+}
 
 function clampInteger(value: unknown, minimum: number, maximum: number, fallback: number) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -51,24 +54,24 @@ function parseSettings(raw: Record<string, unknown> | null | undefined): AgentJo
         : null,
     defaultApprovalMode: normalizeApprovalMode(raw?.defaultApprovalMode),
     executionBackend: normalizeExecutionBackend(raw?.executionBackend),
-    maxAgentSteps: clampInteger(raw?.maxAgentSteps, 4, 60, defaultSettings.maxAgentSteps),
+    maxAgentSteps: clampInteger(raw?.maxAgentSteps, 4, 60, getDefaultSettings().maxAgentSteps),
     maxCommandTimeoutSeconds: clampInteger(
       raw?.maxCommandTimeoutSeconds,
       10,
       10 * 60,
-      defaultSettings.maxCommandTimeoutSeconds,
+      getDefaultSettings().maxCommandTimeoutSeconds,
     ),
     maxVerificationAttempts: clampInteger(
       raw?.maxVerificationAttempts,
       1,
       5,
-      defaultSettings.maxVerificationAttempts,
+      getDefaultSettings().maxVerificationAttempts,
     ),
     maxJobRuntimeMinutes: clampInteger(
       raw?.maxJobRuntimeMinutes,
       5,
       8 * 60,
-      defaultSettings.maxJobRuntimeMinutes,
+      getDefaultSettings().maxJobRuntimeMinutes,
     ),
     allowNetworkAccess: raw?.allowNetworkAccess !== false,
     browserVerificationEnabled: raw?.browserVerificationEnabled === true,
@@ -108,8 +111,8 @@ export async function loadAgentJobSettings(): Promise<AgentJobSettingsRecord> {
 
     return settings;
   } catch {
-    await writeSettingsFile(defaultSettings);
-    return defaultSettings;
+    await writeSettingsFile(getDefaultSettings());
+    return getDefaultSettings();
   }
 }
 
