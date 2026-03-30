@@ -1,4 +1,5 @@
 {
+  "_initialized": "initialized",
   "defaultWorkspacePath": null,
   "defaultApprovalMode": "full_access",
   "executionBackend": "host_native",
@@ -9,5 +10,8 @@
   "allowNetworkAccess": true,
   "browserVerificationEnabled": true,
   "redactSecretsInArtifacts": true,
-  "allowedWorkspaceRoots": []
+  "allowedWorkspaceRoots": [
+    "F:\\hamcult",
+    "F:\\"
+  ]
 }

@@ -101,7 +101,11 @@ type AgentToolName =
   | "run_command"
   | "probe_http"
   | "check_port"
-  | "browser_visit";
+  | "browser_visit"
+  | "web_search"
+  | "fetch_url"
+  | "download_url"
+  | "site_crawl";
 
 type CommandExecutionResult = {
   command: string;
@@ -1002,6 +1006,203 @@ async function browserVisitImpl(params: {
   }
 }
 
+// Web search implementation using SearXNG
+async function webSearchImpl(query: string, maxResults: number) {
+  const searxngUrl = process.env.SEARXNG_BASE_URL ?? "http://localhost:8080";
+  const searchUrl = new URL(`${searxngUrl}/search`);
+  searchUrl.searchParams.set("q", query);
+  searchUrl.searchParams.set("format", "json");
+
+  const response = await fetch(searchUrl.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`SearXNG search failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as {
+    query: string;
+    number_of_results: number;
+    results: Array<{
+      url: string;
+      title: string;
+      content?: string;
+      publishedDate?: string | null;
+      engine?: string;
+    }>;
+  };
+
+  const results = data.results.slice(0, maxResults).map((r) => ({
+    url: r.url,
+    title: r.title,
+    content: r.content ?? "",
+    publishedDate: r.publishedDate,
+    engine: r.engine,
+  }));
+
+  return {
+    query: data.query,
+    totalResults: data.number_of_results,
+    returnedResults: results.length,
+    results,
+  };
+}
+
+// Fetch URL content implementation
+async function fetchUrlImpl(url: string, maxLength: number) {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  const isHtml = contentType.includes("text/html");
+
+  if (isHtml) {
+    const { chromium } = await import("playwright");
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      const title = await page.title().catch(() => "");
+      const text = await page.locator("body").innerText().catch(() => "");
+      return {
+        url,
+        title,
+        content: truncateText(text, maxLength),
+        contentType,
+        length: text.length,
+      };
+    } finally {
+      await browser.close();
+    }
+  }
+
+  const text = await response.text();
+  return {
+    url,
+    title: "",
+    content: truncateText(text, maxLength),
+    contentType,
+    length: text.length,
+  };
+}
+
+// Download URL implementation
+async function downloadUrlImpl(params: {
+  workspacePath: string;
+  url: string;
+  filename?: string;
+  subdir?: string;
+}) {
+  const response = await fetch(params.url, {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; Secretary/1.0)",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+  }
+
+  const urlPath = new URL(params.url).pathname;
+  const basename = params.filename ?? urlPath.split("/").pop() ?? "downloaded-file";
+
+  const targetDir = params.subdir
+    ? resolve(params.workspacePath, params.subdir)
+    : params.workspacePath;
+
+  await mkdir(targetDir, { recursive: true });
+
+  const filePath = resolve(targetDir, basename);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(filePath, buffer);
+
+  return {
+    url: params.url,
+    savedTo: params.subdir ? `${params.subdir}/${basename}` : basename,
+    fullPath: filePath,
+    sizeBytes: buffer.length,
+    contentType: response.headers.get("content-type") ?? "application/octet-stream",
+  };
+}
+
+// Site crawl implementation using wget
+async function siteCrawlImpl(params: {
+  workspacePath: string;
+  url: string;
+  maxDepth: number;
+  maxPages: number;
+  sameDomain: boolean;
+  outputDir: string;
+}) {
+  const outputPath = resolve(params.workspacePath, params.outputDir);
+  await mkdir(outputPath, { recursive: true });
+
+  const urlObj = new URL(params.url);
+  const domain = urlObj.hostname;
+
+  const args = [
+    "--recursive",
+    "--level", String(params.maxDepth),
+    "--no-clobber",
+    "--page-requisites",
+    "--html-extension",
+    "--convert-links",
+    "--restrict-file-names=unix",
+    "--no-parent",
+    "--robots=on",
+    "--tries=3",
+    "--timeout=30",
+    "--user-agent=Mozilla/5.0 (compatible; SecretaryBot/1.0)",
+  ];
+
+  if (params.sameDomain) {
+    args.push("--domains", domain);
+  }
+
+  // Limit number of pages with quota
+  args.push("--quota", `${params.maxPages}m`);
+
+  args.push("-P", outputPath, params.url);
+
+  const { execa } = await import("execa");
+  try {
+    const result = await execa("wget", args, {
+      timeout: 300_000, // 5 minute timeout
+      reject: false,
+    });
+
+    return {
+      success: result.exitCode === 0 || result.exitCode === 8, // 8 is partial success in wget
+      url: params.url,
+      outputDir: params.outputDir,
+      exitCode: result.exitCode,
+      stdout: truncateText(result.stdout, 2000),
+      stderr: truncateText(result.stderr, 2000),
+    };
+  } catch (error) {
+    const err = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      url: params.url,
+      outputDir: params.outputDir,
+      exitCode: -1,
+      error: err,
+    };
+  }
+}
+
 function createBuildAgent(params: {
   inference: InferenceRuntimeConfig;
   settings: AgentJobSettingsRecord;
@@ -1143,6 +1344,60 @@ function createBuildAgent(params: {
           url,
           waitForText,
           timeoutMs,
+        }),
+    }),
+    web_search: tool({
+      description: "Search the web using SearXNG for current information, documentation, or research.",
+      inputSchema: z.object({
+        query: z.string().describe("Search query to look up."),
+        maxResults: z.number().int().min(1).max(10).optional().describe("Maximum results to return (default: 5)."),
+      }),
+      needsApproval: !params.settings.allowNetworkAccess,
+      execute: async ({ query, maxResults }) => webSearchImpl(query, maxResults ?? 5),
+    }),
+    fetch_url: tool({
+      description: "Fetch and extract text content from a URL (useful for reading docs, articles, etc.)",
+      inputSchema: z.object({
+        url: z.string().url().describe("URL to fetch content from."),
+        maxLength: z.number().int().min(100).max(50000).optional().describe("Maximum characters to return (default: 10000)."),
+      }),
+      needsApproval: !params.settings.allowNetworkAccess,
+      execute: async ({ url, maxLength }) => fetchUrlImpl(url, maxLength ?? 10000),
+    }),
+    download_url: tool({
+      description: "Download a file from a URL and save it to the workspace.",
+      inputSchema: z.object({
+        url: z.string().url().describe("URL of the file to download."),
+        filename: z.string().optional().describe("Optional filename to save as (defaults to URL basename)."),
+        path: z.string().optional().describe("Optional subdirectory within workspace to save to."),
+      }),
+      needsApproval: !params.settings.allowNetworkAccess,
+      execute: async ({ url, filename, path }) =>
+        downloadUrlImpl({
+          workspacePath: params.workspacePath,
+          url,
+          filename,
+          subdir: path,
+        }),
+    }),
+    site_crawl: tool({
+      description: "Crawl a website and save pages locally using wget (respects robots.txt by default).",
+      inputSchema: z.object({
+        url: z.string().url().describe("Starting URL to crawl."),
+        maxDepth: z.number().int().min(1).max(5).optional().describe("Maximum crawl depth (default: 2)."),
+        maxPages: z.number().int().min(1).max(100).optional().describe("Maximum pages to download (default: 50)."),
+        sameDomain: z.boolean().optional().describe("Only crawl same domain (default: true)."),
+        outputDir: z.string().optional().describe("Output directory name (default: 'crawled-site')."),
+      }),
+      needsApproval: !params.settings.allowNetworkAccess,
+      execute: async ({ url, maxDepth, maxPages, sameDomain, outputDir }) =>
+        siteCrawlImpl({
+          workspacePath: params.workspacePath,
+          url,
+          maxDepth: maxDepth ?? 2,
+          maxPages: maxPages ?? 50,
+          sameDomain: sameDomain ?? true,
+          outputDir: outputDir ?? "crawled-site",
         }),
     }),
   };
@@ -1379,7 +1634,17 @@ export async function runDraftingAgent(params: {
       inspectionSummary: params.inspectionSummary,
     }),
     messages: params.messages,
-    activeTools: ["list_directory", "search_files", "read_file", "run_command"],
+    activeTools: [
+      "list_directory",
+      "search_files",
+      "read_file",
+      "write_file",
+      "run_command",
+      "web_search",
+      "fetch_url",
+      "download_url",
+      "site_crawl",
+    ],
   });
 }
 
