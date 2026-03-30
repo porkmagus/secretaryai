@@ -36,6 +36,10 @@ const appConfigSchema = z.object({
     emptyStringToUndefined,
     z.string().url().optional(),
   ),
+  FIRECRAWL_BASE_URL: z.preprocess(
+    emptyStringToUndefined,
+    z.string().url().optional(),
+  ),
   TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
   TELEGRAM_BOT_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
   TELEGRAM_WEBHOOK_SECRET: z.preprocess(
@@ -118,6 +122,9 @@ export type AppConfig = {
   search: {
     searxngBaseUrl: string | null;
   };
+  firecrawl: {
+    baseUrl: string | null;
+  };
   speech: {
     sttBaseUrl: string | null;
     ttsBaseUrl: string | null;
@@ -178,6 +185,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     redisUrl: parsed.REDIS_URL,
     search: {
       searxngBaseUrl: parsed.SEARXNG_BASE_URL ?? null,
+    },
+    firecrawl: {
+      baseUrl: parsed.FIRECRAWL_BASE_URL ?? null,
     },
     speech: {
       sttBaseUrl: parsed.STT_BASE_URL ?? null,

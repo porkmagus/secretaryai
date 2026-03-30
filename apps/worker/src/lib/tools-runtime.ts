@@ -72,6 +72,7 @@ type ToolIntent = {
     | "task_list"
     | "task_update"
     | "web_search"
+    | "web_scrape"
     | "file_read"
     | "file_write"
     | "document_create"
@@ -93,6 +94,12 @@ const builtInTools: BuiltInTool[] = [
     name: "Web Search",
     description: "Look up current public information through the local SearXNG search wrapper.",
     approvalMode: "always_allow",
+  },
+  {
+    key: "web_scrape",
+    name: "Web Scrape",
+    description: "Scrape and extract content from a web page using the local Firecrawl service.",
+    approvalMode: "ask_first",
   },
   {
     key: "file_read",
@@ -464,6 +471,25 @@ function parseSearchIntent(text: string) {
   };
 }
 
+function parseScrapeIntent(text: string) {
+  const url = parseInlineUrl(text);
+  if (!url) {
+    return null;
+  }
+
+  // Match patterns like "scrape", "extract content from", "get content of", "fetch page"
+  const hasScrapeIntent = /\b(?:scrape|extract content from|get content of|fetch page|pull content from|read this page|summarize this)\b/i.test(text);
+  if (!hasScrapeIntent) {
+    return null;
+  }
+
+  return {
+    requestJson: { url },
+    summary: `Scrape content from ${url}`,
+    toolKey: "web_scrape" as const,
+  };
+}
+
 function parseFileIntent(text: string) {
   if (!/\b(?:read|open|show|inspect)\b/i.test(text)) {
     return null;
@@ -823,6 +849,7 @@ function detectToolIntent(text: string): ToolIntent | null {
     parseTaskUpdateIntent(text) ??
     parseMemoryReadIntent(text) ??
     parseSearchIntent(text) ??
+    parseScrapeIntent(text) ??
     parseBrowserOpenIntent(text) ??
     parseEmailSendIntent(text) ??
     parseFileWriteIntent(text) ??
@@ -1136,6 +1163,66 @@ function resolveWorkspacePath(inputPath: string) {
   }
 
   return candidate;
+}
+
+async function executeWebScrape(config: AppConfig, url: string) {
+  if (!config.firecrawl?.baseUrl) {
+    throw new Error("Firecrawl is not configured.");
+  }
+
+  const scrapeUrl = new URL("/v2/scrape", config.firecrawl.baseUrl);
+  const response = await fetch(scrapeUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url,
+      formats: ["markdown", "html"],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Firecrawl scrape failed with ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as {
+    success?: boolean;
+    data?: {
+      markdown?: string;
+      html?: string;
+      metadata?: {
+        title?: string;
+        description?: string;
+        sourceURL?: string;
+      };
+    };
+    error?: string;
+  };
+
+  if (!payload.success || !payload.data) {
+    throw new Error(payload.error || "Firecrawl scrape returned no data.");
+  }
+
+  const markdown = payload.data.markdown ?? "";
+  const metadata = payload.data.metadata ?? {};
+  const title = metadata.title ?? "Untitled Page";
+  const sourceUrl = metadata.sourceURL ?? url;
+
+  // Truncate content if too long
+  const maxLength = 8000;
+  const truncated = markdown.length > maxLength;
+  const content = truncated ? `${markdown.slice(0, maxLength)}...\n\n[Content truncated]` : markdown;
+
+  return {
+    responseJson: {
+      url: sourceUrl,
+      title,
+      contentLength: markdown.length,
+      truncated,
+    },
+    text: `Scraped "${title}" from ${sourceUrl}:\n\n${content}`,
+  };
 }
 
 async function executeWebSearch(config: AppConfig, query: string) {
@@ -1954,6 +2041,8 @@ async function executeToolRequest(params: {
   switch (params.toolKey) {
     case "web_search":
       return executeWebSearch(params.config, String(params.requestJson.query ?? ""));
+    case "web_scrape":
+      return executeWebScrape(params.config, String(params.requestJson.url ?? ""));
     case "file_read":
       return executeFileRead(String(params.requestJson.path ?? ""));
     case "file_write":

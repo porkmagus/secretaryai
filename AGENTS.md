@@ -1,5 +1,12 @@
 # AGENTS
 
+## Infrastructure Services
+The following Docker containers are automatically started by the orchestrator (`secretary.cmd`):
+- **Postgres** (port 5432) - Main database with pgvector extension
+- **Redis** (port 6379) - Cache and job queue
+- **SearXNG** (port 8080) - Web search aggregator
+- **Firecrawl** (port 3002) - Web scraping service
+
 ## Repository Notes
 - Fallback replies are now reason-based. Inference outages return: "Inference provider unavailable. Update your provider settings to continue."
 - Prompt-leakage guard fallback returns: "Response unavailable due to a safety guard. Please try again."

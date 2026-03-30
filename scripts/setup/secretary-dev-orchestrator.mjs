@@ -90,12 +90,14 @@ const infrastructureContainers = [
   "secretary-postgres",
   "secretary-redis",
   "secretary-searxng",
+  "secretary-firecrawl",
 ];
 const infrastructureNetwork = "compose_default";
 const infrastructureServices = [
   { label: "Postgres", port: 5432, startupTimeoutMs: 60_000 },
   { label: "Redis", port: 6379, startupTimeoutMs: 30_000 },
   { label: "SearXNG", port: 8080, startupTimeoutMs: 60_000 },
+  { label: "Firecrawl", port: 3002, startupTimeoutMs: 120_000 },
 ];
 
 function parseArgs(argv) {
