@@ -49,5 +49,8 @@
   "dependencies": {
     "ai": "^6.0.141",
     "ai-sdk-provider-opencode-sdk": "^3.0.1"
+  },
+  "optionalDependencies": {
+    "@esbuild/linux-x64": "^0.27.4"
   }
 }

@@ -9,7 +9,6 @@
  * Note: Moonshot/Kimi uses the `openai_compatible` runtimeKind because
  * it is configured via createOpenAICompatible in the registry.
  */
-import { OpencodeModels } from "ai-sdk-provider-opencode-sdk";
 import type {
   InferenceProviderAuthMode,
   InferenceProviderCatalogAccessMode,
@@ -273,7 +272,7 @@ const opencodeDef: InferenceProviderDefinition = {
   accessMode: "linked_account",
   availableInApp: true,
   defaultBaseUrl: "http://127.0.0.1:4096",
-  defaultModel: OpencodeModels["claude-sonnet-4-5"],
+  defaultModel: "anthropic/claude-sonnet-4-5-20250929",
   defaultMaxOutputTokens: 1000,
   supportsModelFetch: true,
   supportsReasoningEffort: false,

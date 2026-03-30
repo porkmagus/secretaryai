@@ -21,7 +21,8 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createCodexCli } from "ai-sdk-provider-codex-cli";
 import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
-import { createOpencode } from "ai-sdk-provider-opencode-sdk";
+// Deferred: ai-sdk-provider-opencode-sdk is loaded lazily to avoid TDZ on repoRoot
+// import { createOpencode } from "ai-sdk-provider-opencode-sdk";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
 import type { InferenceProviderId } from "@secretary/core-runtime";
@@ -195,7 +196,9 @@ function createProviderForDefinition(
       });
 
     // ── Agentic CLI tools ───────────────────────────────────────────────────
-    case "opencode":
+    case "opencode": {
+      // Lazy require to avoid TDZ — repoRoot must be initialized first
+      const { createOpencode } = require("ai-sdk-provider-opencode-sdk");
       return createOpencode({
         baseUrl: inference.baseUrl ?? undefined,
         autoStartServer: true,
@@ -205,6 +208,7 @@ function createProviderForDefinition(
           cwd: isAgentJob ? workspacePath : undefined,
         },
       });
+    }
     case "codex_cli":
       return createCodexCli({
         defaultSettings: {
