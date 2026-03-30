@@ -130,11 +130,17 @@ export function getSecretaryPersonaFilePath() {
 
 export function createPersonaAvatarStorageKey(filename: string) {
   const normalized = filename.replace(/[^a-zA-Z0-9._-]+/g, "-");
-  return join("persona", "avatars", normalized);
+  // Use forward slashes for storageKey (virtual path) to ensure
+  // cross-platform consistency. The key is a logical identifier,
+  // not a platform-specific filesystem path.
+  return `persona/avatars/${normalized}`;
 }
 
 export function resolvePersonaStoragePath(storageKey: string) {
-  return resolve(getRuntimeRoot(), storageKey);
+  // Normalize storage key to handle legacy entries that may contain
+  // backslashes from when createPersonaAvatarStorageKey used path.join()
+  const normalizedKey = storageKey.replace(/\\/g, "/");
+  return resolve(getRuntimeRoot(), normalizedKey);
 }
 
 export function resolveManagedPersonaStoragePath(storageKey: string) {
