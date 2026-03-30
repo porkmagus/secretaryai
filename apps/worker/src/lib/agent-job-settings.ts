@@ -120,10 +120,14 @@ export async function getAgentJobSettings(): Promise<AgentJobSettingsResponse> {
 }
 
 // Lock file path for serializing settings updates across concurrent worker processes.
-const SETTINGS_LOCK_PATH = join(repoRoot, "runtime", ".settings.lock");
+// Lazily resolved so it is never evaluated during module initialization,
+// avoiding any possibility of a TDZ hit if repoRoot is somehow accessed prematurely.
+function getSettingsLockPath() {
+  return join(repoRoot, "runtime", ".settings.lock");
+}
 
 async function withSettingsLock<T>(fn: () => Promise<T>): Promise<T> {
-  const lockDir = SETTINGS_LOCK_PATH;
+  const lockDir = getSettingsLockPath();
   let acquired = false;
   const maxAttempts = 50;
   const delayMs = 100;

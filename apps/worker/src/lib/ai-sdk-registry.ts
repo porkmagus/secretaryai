@@ -1,25 +1,22 @@
+/**
+ * AI SDK provider registry — lean edition.
+ *
+ * Only includes providers that are actually usable in this codebase:
+ *   - Cloud / API providers:  OpenAI, Anthropic, HuggingFace, OpenRouter,
+ *     Moonshot/Kimi (via OpenAI-compatible), OpenCode Zen/Go (via OAI-compatible)
+ *   - Local runtimes:        Ollama, LM Studio, llama.cpp
+ *   - Agentic CLI tools:     Claude Code, Codex CLI, Gemini CLI, OpenCode SDK
+ *
+ * All other providers that were previously imported and case-handled have been removed
+ * to reduce bundle size, startup import cost, and compilation overhead. To re-add any
+ * removed provider, restore its import and case statement here and its definition in
+ * `inference-provider-definitions.ts`.
+ */
 import { createProviderRegistry } from "ai";
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { createAzure } from "@ai-sdk/azure";
-import { createBaseten } from "@ai-sdk/baseten";
-import { createCerebras } from "@ai-sdk/cerebras";
-import { createCohere } from "@ai-sdk/cohere";
-import { createDeepInfra } from "@ai-sdk/deepinfra";
-import { createDeepSeek } from "@ai-sdk/deepseek";
-import { createFireworks } from "@ai-sdk/fireworks";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createVertex } from "@ai-sdk/google-vertex";
-import { createGroq } from "@ai-sdk/groq";
 import { createHuggingFace } from "@ai-sdk/huggingface";
-import { createMistral } from "@ai-sdk/mistral";
-// Moonshot/Kimi Code now uses @ai-sdk/openai-compatible
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createPerplexity } from "@ai-sdk/perplexity";
-import { createTogetherAI } from "@ai-sdk/togetherai";
-import { createVercel } from "@ai-sdk/vercel";
-import { createXai } from "@ai-sdk/xai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createCodexCli } from "ai-sdk-provider-codex-cli";
@@ -92,27 +89,6 @@ function buildProviderOptions(
               reasoningEffort: inference.reasoningEffort,
             },
           } satisfies SharedV3ProviderOptions);
-    case "azure":
-      return inference.reasoningEffort === "minimal"
-        ? undefined
-        : ({
-            azure: {
-              reasoningEffort: inference.reasoningEffort,
-            },
-          } satisfies SharedV3ProviderOptions);
-    case "xai":
-      return inference.reasoningEffort === "minimal"
-        ? ({
-            xai: {
-              reasoningEffort: "low",
-            },
-          } satisfies SharedV3ProviderOptions)
-        : ({
-            xai: {
-              reasoningEffort:
-                inference.reasoningEffort === "high" ? "high" : "medium",
-            },
-          } satisfies SharedV3ProviderOptions);
     case "openai_compatible":
       return inference.reasoningEffort === "minimal"
         ? undefined
@@ -140,6 +116,7 @@ function createProviderForDefinition(
   const isAgentJob = options.purpose === "agent_job";
 
   switch (definition.id) {
+    // ── Cloud / API providers ────────────────────────────────────────────────
     case "openai":
       return createOpenAI({
         apiKey: inference.apiKey ?? undefined,
@@ -147,92 +124,6 @@ function createProviderForDefinition(
       });
     case "anthropic":
       return createAnthropic({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "google":
-      return createGoogleGenerativeAI({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "google_vertex":
-      return createVertex({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "xai":
-      return createXai({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "moonshot":
-      return createOpenAICompatible({
-        name: "moonshot",
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? "https://api.kimi.com/coding/v1",
-      });
-    case "mistral":
-      return createMistral({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "togetherai":
-      return createTogetherAI({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "cohere":
-      return createCohere({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "fireworks":
-      return createFireworks({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "deepinfra":
-      return createDeepInfra({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "deepseek":
-      return createDeepSeek({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "cerebras":
-      return createCerebras({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "groq":
-      return createGroq({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "perplexity":
-      return createPerplexity({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "azure":
-      return createAzure({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "amazon_bedrock":
-      return createAmazonBedrock({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "baseten":
-      return createBaseten({
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? undefined,
-      });
-    case "vercel":
-      return createVercel({
         apiKey: inference.apiKey ?? undefined,
         baseURL: inference.baseUrl ?? undefined,
       });
@@ -247,30 +138,63 @@ function createProviderForDefinition(
         baseURL: inference.baseUrl ?? undefined,
         compatibility: "strict",
       });
+
+    // ── OpenAI-compatible providers ─────────────────────────────────────────
+    // Moonshot / Kimi Code — use OpenAI-compatible with the Kimi endpoint.
+    case "moonshot":
+      return createOpenAICompatible({
+        name: "moonshot",
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? "https://api.kimi.com/coding/v1",
+      });
+    // OpenCode Zen — curated pay-as-you-go models via OpenAI-compatible.
+    // See https://opencode.ai/docs/zen/
+    case "opencode_zen":
+      return createOpenAICompatible({
+        name: "opencode-zen",
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? "https://opencode.ai/zen/v1",
+      });
+    // OpenCode Go — low-cost subscription models via OpenAI-compatible.
+    // See https://opencode.ai/docs/go/
+    case "opencode_go":
+      return createOpenAICompatible({
+        name: "opencode-go",
+        apiKey: inference.apiKey ?? undefined,
+        baseURL: inference.baseUrl ?? "https://opencode.ai/zen/go/v1",
+      });
+
+    // ── Local runtimes (Ollama, LM Studio, llama.cpp) ───────────────────────
+    // Direct Ollama local server — no API key required.
     case "ollama_local":
       return createOllama({
         baseURL: inference.baseUrl ?? undefined,
         compatibility: "strict",
         name: "ollama",
       });
+    // Ollama Cloud — hosted Ollama account via OpenAI-compatible API.
     case "ollama_cloud":
       return createOpenAICompatible({
         name: "ollama-cloud",
         baseURL: inference.baseUrl ?? "https://ollama.com/v1",
         apiKey: inference.apiKey ?? undefined,
       });
+    // LM Studio — local model server via OpenAI-compatible.
     case "lmstudio":
       return createOpenAICompatible({
         name: "lmstudio",
         baseURL: inference.baseUrl ?? "http://127.0.0.1:1234/v1",
         apiKey: inference.apiKey ?? undefined,
       });
+    // llama.cpp server — local GGUF serving via OpenAI-compatible.
     case "llama_cpp":
       return createOpenAICompatible({
         name: "llama-cpp",
         baseURL: inference.baseUrl ?? "http://127.0.0.1:8080/v1",
         apiKey: inference.apiKey ?? undefined,
       });
+
+    // ── Agentic CLI tools ───────────────────────────────────────────────────
     case "opencode":
       return createOpencode({
         baseUrl: inference.baseUrl ?? undefined,
@@ -280,18 +204,6 @@ function createProviderForDefinition(
           directory: isAgentJob ? workspacePath : undefined,
           cwd: isAgentJob ? workspacePath : undefined,
         },
-      });
-    case "opencode_zen":
-      return createOpenAICompatible({
-        name: "opencode-zen",
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? "https://opencode.ai/zen/v1",
-      });
-    case "opencode_go":
-      return createOpenAICompatible({
-        name: "opencode-go",
-        apiKey: inference.apiKey ?? undefined,
-        baseURL: inference.baseUrl ?? "https://opencode.ai/zen/go/v1",
       });
     case "codex_cli":
       return createCodexCli({
@@ -311,6 +223,7 @@ function createProviderForDefinition(
           cwd: workspacePath,
         },
       });
+
     default:
       return null;
   }

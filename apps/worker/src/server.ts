@@ -182,7 +182,50 @@ import {
   resolveManagedPersonaStoragePath,
 } from "./lib/persona-soul.js";
 
+/**
+ * Validate required environment variables before starting the server.
+ * Throws a clear, actionable error message if any are missing or empty.
+ */
+function validateRequiredEnv(): void {
+  const required = [
+    { key: "DATABASE_URL", example: "postgresql://user:password@localhost:5432/secretary" },
+    { key: "REDIS_URL", example: "redis://localhost:6379" },
+    { key: "APP_BASE_URL", example: "http://localhost:3000" },
+    { key: "WORKER_BASE_URL", example: "http://localhost:4000" },
+    { key: "DEFAULT_USER_ID", example: "00000000-0000-0000-0000-000000000000" },
+    { key: "DEFAULT_PERSONA_ID", example: "00000000-0000-0000-0000-000000000001" },
+  ];
+
+  const missing: string[] = [];
+  for (const { key, example } of required) {
+    const val = process.env[key];
+    if (!val || val.trim().length === 0) {
+      missing.push(`  ${key}=${example}`);
+    }
+  }
+
+  if (missing.length > 0) {
+    const lines = [
+      "",
+      "╔══════════════════════════════════════════════════════════════╗",
+      "║             SECRETARY WORKER — MISSING ENV VARS              ║",
+      "╚══════════════════════════════════════════════════════════════╝",
+      "",
+      "The following required environment variables are not set:",
+      "",
+      ...missing,
+      "",
+      "Copy .env.example to .env and fill in the values above.",
+      "Then restart the worker.",
+      "",
+    ];
+    console.error(lines.join("\n"));
+    process.exit(1);
+  }
+}
+
 export async function buildServer() {
+  validateRequiredEnv();
   const config = loadAppConfig(process.env);
   const logger = createLogger("worker");
   const app = Fastify({ logger: false });

@@ -603,14 +603,6 @@ export async function listInferenceModels(
         apiKey,
       });
     case "openai":
-    case "xai":
-    case "moonshot":
-    case "togetherai":
-    case "deepseek":
-    case "fireworks":
-    case "groq":
-    case "opencode_zen":
-    case "opencode_go":
       return listGenericModels({
         providerId: selectedProvider.id,
         baseUrl:
