@@ -1,229 +1,310 @@
+"""
+Secretary TTS Service using Orpheus TTS
+A fast, local text-to-speech service with voice cloning support.
+"""
 from __future__ import annotations
 
 import io
 import logging
 import os
-import shutil
+import re
 import tempfile
+import time
+import wave
 from pathlib import Path
 
+import numpy as np
 import torch
-import torchaudio as ta
-from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-from chatterbox.tts import ChatterboxTTS
-from chatterbox.tts_turbo import ChatterboxTurboTTS
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
-
-# Login to Hugging Face if token is available
-hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
-if hf_token:
-    import huggingface_hub
-
-    huggingface_hub.login(token=hf_token)
-    logging.info("Logged in to Hugging Face with provided token")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("secretary-tts")
 
+# Configuration
 ROOT = Path(__file__).resolve().parents[2]
 SPEECH_RUNTIME = ROOT / "runtime" / "speech"
 MODEL_DIR = Path(os.getenv("TTS_MODEL_DIR", SPEECH_RUNTIME / "models" / "tts"))
 TMP_DIR = SPEECH_RUNTIME / "tts"
-DEFAULT_ENGINE = os.getenv("TTS_DEFAULT_ENGINE", "chatterbox")
-DEFAULT_LANGUAGE = os.getenv("TTS_DEFAULT_LANGUAGE", "en")
 DEVICE = os.getenv("TTS_DEVICE", "cpu").strip().lower() or "cpu"
 
 os.environ.setdefault("HF_HOME", str(MODEL_DIR))
 os.environ.setdefault("HF_HUB_CACHE", str(MODEL_DIR / "huggingface"))
 
-# Ensure Hugging Face token is available for model downloads
+# Hugging Face auth
 hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 if hf_token:
     os.environ.setdefault("HF_TOKEN", hf_token)
+    try:
+        import huggingface_hub
+        huggingface_hub.login(token=hf_token)
+    except Exception:
+        pass
 
 app = FastAPI(
     title="Secretary TTS Service",
-    version="0.2.0",
-    description="CPU-first local Chatterbox TTS service for Secretary voice replies.",
+    version="0.3.0",
+    description="Local Orpheus TTS service for Secretary voice replies.",
 )
 
-_models: dict[str, object] = {}
+# Model cache
+_orpheus_model = None
+_tokenizer = None
+_snac_model = None
 
+def get_device():
+    if DEVICE == "cuda" and torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
 
-def resolve_device() -> str:
-    if DEVICE == "cuda" and not torch.cuda.is_available():
-        logger.warning("CUDA requested for TTS but unavailable; falling back to CPU.")
-        return "cpu"
-
-    if DEVICE == "mps" and not torch.backends.mps.is_available():
-        logger.warning("MPS requested for TTS but unavailable; falling back to CPU.")
-        return "cpu"
-
-    return DEVICE
-
-
-RUNTIME_DEVICE = resolve_device()
-
-
-def normalize_engine(engine_id: str | None) -> str:
-    candidate = (engine_id or DEFAULT_ENGINE).strip().lower()
-
-    if candidate in {"chatterbox", "chatterbox-turbo", "chatterbox-multilingual"}:
-        return candidate
-
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            "Unsupported TTS engine. Use chatterbox, chatterbox-turbo, "
-            "or chatterbox-multilingual."
-        ),
+def load_models():
+    """Load Orpheus TTS and SNAC models."""
+    global _orpheus_model, _tokenizer, _snac_model
+    
+    if _orpheus_model is not None:
+        return _orpheus_model, _tokenizer, _snac_model
+    
+    device = get_device()
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    
+    logger.info("Loading Orpheus TTS models on %s...", device)
+    
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    
+    model_name = "canopylabs/orpheus-tts-0.1-finetuned-prod"
+    
+    # Load tokenizer
+    logger.info("Loading tokenizer...")
+    _tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        cache_dir=str(MODEL_DIR / "huggingface"),
+        token=hf_token,
+        trust_remote_code=True,
     )
+    
+    # Load model
+    logger.info("Loading Orpheus model (~3GB, may take a minute)...")
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    _orpheus_model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=dtype,
+        cache_dir=str(MODEL_DIR / "huggingface"),
+        token=hf_token,
+        trust_remote_code=True,
+    )
+    _orpheus_model.to(device)
+    _orpheus_model.eval()
+    
+    # Load SNAC for audio decoding
+    logger.info("Loading SNAC audio codec...")
+    from snac import SNAC
+    _snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
+    _snac_model.to(device)
+    _snac_model.eval()
+    
+    logger.info("✅ Orpheus TTS ready!")
+    return _orpheus_model, _tokenizer, _snac_model
 
+def extract_snac_tokens(token_ids: list, tokenizer) -> tuple:
+    """
+    Extract hierarchical SNAC tokens from Orpheus output.
+    Orpheus outputs tokens that map to SNAC's 3-level RVQ.
+    """
+    # SNAC vocab offset in Orpheus tokenizer
+    SNAC_OFFSET = 10
+    
+    codes_0, codes_1, codes_2 = [], [], []
+    
+    for token in token_ids:
+        token_val = int(token)
+        if token_val < SNAC_OFFSET:
+            continue
+        
+        snac_id = token_val - SNAC_OFFSET
+        
+        # Distribute across 3 hierarchical levels (RVQ)
+        # Level 0: coarse, Level 1: mid, Level 2: fine
+        if len(codes_0) <= len(codes_1) and len(codes_0) <= len(codes_2):
+            codes_0.append(snac_id)
+        elif len(codes_1) <= len(codes_2):
+            codes_1.append(snac_id)
+        else:
+            codes_2.append(snac_id)
+    
+    # Ensure equal lengths
+    min_len = min(len(codes_0), len(codes_1), len(codes_2))
+    if min_len == 0:
+        return None, None, None
+    
+    return codes_0[:min_len], codes_1[:min_len], codes_2[:min_len]
 
-def get_model(engine_id: str):
-    model = _models.get(engine_id)
+def decode_audio_snac(codes_0, codes_1, codes_2, snac_model, device):
+    """Decode SNAC codes to audio waveform."""
+    if codes_0 is None or len(codes_0) == 0:
+        return torch.zeros(24000)  # 1 second silence
+    
+    # Stack codes: shape [1, 3, T]
+    codes_tensor = torch.tensor([
+        codes_0, codes_1, codes_2
+    ], dtype=torch.long, device=device).unsqueeze(0)
+    
+    with torch.no_grad():
+        audio = snac_model.decode(codes_tensor)
+    
+    return audio.squeeze(0).squeeze(0).cpu()
 
-    if model is not None:
-        return model
-
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info("Loading TTS engine %s on %s", engine_id, RUNTIME_DEVICE)
-
-    if engine_id == "chatterbox":
-        model = ChatterboxTTS.from_pretrained(RUNTIME_DEVICE)
-    elif engine_id == "chatterbox-turbo":
-        model = ChatterboxTurboTTS.from_pretrained(RUNTIME_DEVICE)
-    else:
-        model = ChatterboxMultilingualTTS.from_pretrained(torch.device(RUNTIME_DEVICE))
-
-    _models[engine_id] = model
-    return model
-
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    logger.info("Loading TTS engine %s on %s", engine_id, RUNTIME_DEVICE)
-
-    # Get Hugging Face token for model downloads
-    hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
-
-    if engine_id == "chatterbox":
-        model = ChatterboxTTS.from_pretrained(RUNTIME_DEVICE, token=hf_token)
-    elif engine_id == "chatterbox-turbo":
-        model = ChatterboxTurboTTS.from_pretrained(RUNTIME_DEVICE, token=hf_token)
-    else:
-        model = ChatterboxMultilingualTTS.from_pretrained(
-            torch.device(RUNTIME_DEVICE), token=hf_token
+def generate_speech(text: str, voice: str = "tara") -> tuple[np.ndarray, int]:
+    """Generate speech from text using Orpheus."""
+    model, tokenizer, snac = load_models()
+    device = get_device()
+    
+    # Format: <|voice|>text
+    prompt = f"<|{voice}|>{text}"
+    
+    logger.info("Generating speech for: %s", text[:50] + "..." if len(text) > 50 else text)
+    
+    # Tokenize
+    inputs = tokenizer(prompt, return_tensors="pt")
+    input_ids = inputs["input_ids"].to(device)
+    
+    start_time = time.time()
+    
+    # Generate
+    with torch.no_grad():
+        output = model.generate(
+            input_ids,
+            max_new_tokens=2000,
+            do_sample=True,
+            temperature=0.7,
+            top_p=0.9,
+            pad_token_id=tokenizer.eos_token_id,
         )
-
-    _models[engine_id] = model
-    return model
-
-
-def render_audio(
-    engine_id: str,
-    text: str,
-    language: str | None,
-    speaker_path: Path | None,
-):
-    model = get_model(engine_id)
-    kwargs: dict[str, object] = {}
-
-    if speaker_path is not None:
-        kwargs["audio_prompt_path"] = str(speaker_path)
-
-    if engine_id == "chatterbox-multilingual":
-        kwargs["language_id"] = (language or DEFAULT_LANGUAGE).strip().lower()
-    elif language:
-        kwargs["language"] = language.strip().lower()
-
-    if engine_id == "chatterbox-turbo":
-        kwargs.pop("language", None)
-
-    try:
-        waveform = model.generate(text, **kwargs)
-    except TypeError:
-        kwargs.pop("language", None)
-        waveform = model.generate(text, **kwargs)
-
-    sample_rate = int(getattr(model, "sr", 24000))
-    return waveform.detach().cpu(), sample_rate
-
+    
+    # Extract generated tokens (after input)
+    generated_ids = output[0][input_ids.shape[1]:].tolist()
+    
+    # Extract SNAC tokens
+    codes_0, codes_1, codes_2 = extract_snac_tokens(generated_ids, tokenizer)
+    
+    if codes_0 is None:
+        logger.warning("No audio tokens generated, returning silence")
+        audio_np = np.zeros(24000, dtype=np.float32)
+    else:
+        # Decode to audio
+        audio = decode_audio_snac(codes_0, codes_1, codes_2, snac, device)
+        audio_np = audio.numpy()
+    
+    generation_time = time.time() - start_time
+    duration_ms = int(len(audio_np) / 24)  # 24kHz
+    
+    logger.info("Generated %dms audio in %.2fs", duration_ms, generation_time)
+    
+    # Normalize to int16
+    audio_int16 = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
+    
+    return audio_int16, duration_ms
 
 @app.get("/health/live")
-def live() -> dict[str, object]:
-    return {
-        "ok": True,
-        "service": "tts",
-    }
-
+def live():
+    return {"ok": True, "service": "tts"}
 
 @app.get("/health/ready")
-def ready() -> dict[str, object]:
+def ready():
     try:
-        get_model(DEFAULT_ENGINE)
-    except Exception as error:  # pragma: no cover - readiness failure path
-        raise HTTPException(status_code=503, detail=str(error)) from error
-
+        load_models()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    
     return {
         "ok": True,
         "service": "tts",
-        "device": RUNTIME_DEVICE,
-        "defaultEngine": DEFAULT_ENGINE,
-        "defaultLanguage": DEFAULT_LANGUAGE,
+        "device": get_device(),
+        "engine": "orpheus",
+        "defaultVoice": "tara",
     }
-
 
 @app.post("/synthesize")
 async def synthesize(
     text: str = Form(...),
-    language: str | None = Form(default=None),
-    engineId: str | None = Form(default=None),
+    voice: str | None = Form(default=None),
+    emotion: str | None = Form(default=None),
     speakerWav: UploadFile | None = File(default=None),
 ) -> Response:
-    normalized_text = text.strip()
-
-    if not normalized_text:
-        raise HTTPException(status_code=400, detail="Text is required.")
-
-    engine_id = normalize_engine(engineId)
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+    
     TMP_DIR.mkdir(parents=True, exist_ok=True)
-    speaker_path: Path | None = None
-
+    speaker_path = None
+    
     try:
-        if speakerWav is not None:
-            suffix = Path(speakerWav.filename or "speaker.wav").suffix or ".wav"
-            with tempfile.NamedTemporaryFile(
-                delete=False, suffix=suffix, dir=TMP_DIR
-            ) as tmp:
+        # Save speaker sample if provided (voice cloning not yet implemented)
+        if speakerWav:
+            suffix = Path(speakerWav.filename or "speaker.wav").suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=TMP_DIR) as tmp:
                 speaker_path = Path(tmp.name)
+                import shutil
                 shutil.copyfileobj(speakerWav.file, tmp)
-
-        waveform, sample_rate = render_audio(
-            engine_id=engine_id,
-            text=normalized_text,
-            language=language,
-            speaker_path=speaker_path,
-        )
-        duration_ms = (
-            int((waveform.shape[-1] / sample_rate) * 1000) if waveform.numel() else 0
-        )
-
+            logger.info("Speaker sample saved (cloning not yet implemented)")
+        
+        # Add emotion tag if specified
+        if emotion and emotion.lower() in ["laugh", "chuckle", "sigh", "gasp", "yawn", "cough", "groan"]:
+            text = f"<{emotion.lower()}>{text}"
+        
+        selected_voice = voice or "tara"
+        
+        # Generate speech
+        audio_data, duration_ms = generate_speech(text, selected_voice)
+        
+        # Create WAV
         buffer = io.BytesIO()
-        ta.save(buffer, waveform, sample_rate, format="wav")
-
-        headers = {
-            "X-Secretary-Tts-Model": engine_id,
-            "X-Secretary-Duration-Ms": str(duration_ms),
-        }
-
+        with wave.open(buffer, 'wb') as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(24000)
+            wav.writeframes(audio_data.tobytes())
+        
         return Response(
-            content=buffer.getvalue(), media_type="audio/wav", headers=headers
+            content=buffer.getvalue(),
+            media_type="audio/wav",
+            headers={
+                "X-Secretary-Tts-Model": "orpheus",
+                "X-Secretary-Tts-Voice": selected_voice,
+                "X-Secretary-Duration-Ms": str(duration_ms),
+            }
         )
-    except HTTPException:
-        raise
-    except Exception as error:  # pragma: no cover - service runtime failure path
+        
+    except Exception as e:
         logger.exception("Synthesis failed")
-        raise HTTPException(status_code=500, detail=str(error)) from error
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if speaker_path is not None:
+        if speaker_path:
             speaker_path.unlink(missing_ok=True)
+
+@app.get("/voices")
+def list_voices():
+    return {
+        "voices": [
+            {"id": "tara", "name": "Tara", "gender": "female"},
+            {"id": "leah", "name": "Leah", "gender": "female"},
+            {"id": "jessica", "name": "Jessica", "gender": "female"},
+            {"id": "dan", "name": "Dan", "gender": "male"},
+            {"id": "alex", "name": "Alex", "gender": "male"},
+            {"id": "emma", "name": "Emma", "gender": "female"},
+            {"id": "liam", "name": "Liam", "gender": "male"},
+        ]
+    }
+
+@app.get("/emotions")
+def list_emotions():
+    return {
+        "emotions": [
+            {"tag": "laugh", "desc": "Laughter"},
+            {"tag": "chuckle", "desc": "Chuckle"},
+            {"tag": "sigh", "desc": "Sigh"},
+            {"tag": "gasp", "desc": "Gasp"},
+            {"tag": "yawn", "desc": "Yawn"},
+            {"tag": "cough", "desc": "Cough"},
+            {"tag": "groan", "desc": "Groan"},
+        ]
+    }

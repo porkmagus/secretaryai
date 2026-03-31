@@ -38,8 +38,9 @@ async function main() {
   const pythonCommand =
     process.env.PYTHON ??
     (process.platform === "win32" ? "py" : "python");
+  // Use -3.13 on Windows, or let PYTHON env var override
   const pythonArgs =
-    process.platform === "win32" && !process.env.PYTHON ? ["-3.11"] : [];
+    process.platform === "win32" && !process.env.PYTHON ? ["-3.13"] : [];
 
   if (!existsSync(resolveVenvPython())) {
     console.log(`Creating TTS virtual environment at ${venvDir}`);
@@ -49,11 +50,21 @@ async function main() {
   }
 
   const venvPython = resolveVenvPython();
+  
+  // Upgrade pip first
+  console.log("Upgrading pip...");
   await run(venvPython, ["-m", "pip", "install", "--upgrade", "pip"]);
+  
+  // Install requirements
+  console.log("Installing TTS requirements...");
   await run(venvPython, ["-m", "pip", "install", "-r", requirementsPath]);
 
-  console.log("TTS service dependencies are ready.");
-  console.log("Run the local service with: npm run dev:tts");
+  console.log("");
+  console.log("✅ TTS service dependencies are ready!");
+  console.log("   Run the local service with: npm run dev:tts");
+  console.log("");
+  console.log("Note: First run will download the Orpheus model (~3GB)");
+  console.log("      Models are cached in: runtime/speech/models/tts/");
 }
 
 void main().catch((error) => {
