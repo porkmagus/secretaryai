@@ -36,7 +36,7 @@ const appConfigSchema = z.object({
     emptyStringToUndefined,
     z.string().url().optional(),
   ),
-  FIRECRAWL_BASE_URL: z.preprocess(
+  CRAWL4AI_BASE_URL: z.preprocess(
     emptyStringToUndefined,
     z.string().url().optional(),
   ),
@@ -122,7 +122,7 @@ export type AppConfig = {
   search: {
     searxngBaseUrl: string | null;
   };
-  firecrawl: {
+  crawl4ai: {
     baseUrl: string | null;
   };
   speech: {
@@ -186,8 +186,8 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     search: {
       searxngBaseUrl: parsed.SEARXNG_BASE_URL ?? null,
     },
-    firecrawl: {
-      baseUrl: parsed.FIRECRAWL_BASE_URL ?? null,
+    crawl4ai: {
+      baseUrl: parsed.CRAWL4AI_BASE_URL ?? null,
     },
     speech: {
       sttBaseUrl: parsed.STT_BASE_URL ?? null,

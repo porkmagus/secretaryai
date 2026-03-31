@@ -2066,8 +2066,16 @@ async function executeToolRequest(params: {
   switch (params.toolKey) {
     case "web_search":
       return executeWebSearch(params.config, String(params.requestJson.query ?? ""));
-    case "web_scrape":
-      return executeWebScrape(params.config, String(params.requestJson.url ?? ""));
+    case "crawl4ai_light":
+      return executeCrawl4aiLight(params.config, String(params.requestJson.url ?? ""));
+    case "crawl4ai_deep":
+      return executeCrawl4aiDeep(params.config, String(params.requestJson.url ?? ""));
+    case "crawl4ai_variable":
+      return executeCrawl4aiVariable(
+        params.config,
+        String(params.requestJson.url ?? ""),
+        (params.requestJson.options && typeof params.requestJson.options === "object") ? params.requestJson.options as Record<string, unknown> : {}
+      );
     case "file_read":
       return executeFileRead(String(params.requestJson.path ?? ""));
     case "file_write":
