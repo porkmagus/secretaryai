@@ -66,7 +66,7 @@ export async function createTelegramVoiceReply(params: {
   }
 
   const activeVoiceProfile = await getActiveVoiceProfile(params.dbClient);
-  const engineId = activeVoiceProfile?.engineId ?? "orpheus";
+  const engineId = activeVoiceProfile?.engineId ?? "kokoro";
   const synthesis = await synthesizeSpeech({
     config: params.config,
     text: params.replyText,
