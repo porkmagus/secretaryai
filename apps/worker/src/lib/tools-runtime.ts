@@ -96,9 +96,21 @@ const builtInTools: BuiltInTool[] = [
     approvalMode: "always_allow",
   },
   {
-    key: "web_scrape",
-    name: "Web Scrape",
-    description: "Scrape and extract content from a web page using the local Firecrawl service.",
+    key: "crawl4ai_light",
+    name: "Crawl4AI Light Crawl",
+    description: "Quickly extract basic content from a web page using the local Crawl4AI service (light mode).",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "crawl4ai_deep",
+    name: "Crawl4AI Deep Crawl",
+    description: "Extract full content and metadata from a web page using Crawl4AI's deep extraction mode.",
+    approvalMode: "ask_first",
+  },
+  {
+    key: "crawl4ai_variable",
+    name: "Crawl4AI Variable Crawl",
+    description: "Extract content from a web page using Crawl4AI with custom options (strategy, hooks, etc.).",
     approvalMode: "ask_first",
   },
   {
@@ -1165,63 +1177,76 @@ function resolveWorkspacePath(inputPath: string) {
   return candidate;
 }
 
-async function executeWebScrape(config: AppConfig, url: string) {
-  if (!config.firecrawl?.baseUrl) {
-    throw new Error("Firecrawl is not configured.");
-  }
 
-  const scrapeUrl = new URL("/v2/scrape", config.firecrawl.baseUrl);
-  const response = await fetch(scrapeUrl, {
+async function executeCrawl4aiLight(config: AppConfig, url: string) {
+  if (!config.crawl4ai?.baseUrl) {
+    throw new Error("Crawl4AI is not configured.");
+  }
+  const apiUrl = new URL("/crawl", config.crawl4ai.baseUrl);
+  const response = await fetch(apiUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      url,
-      formats: ["markdown", "html"],
+      urls: [url],
+      crawler_config: { type: "CrawlerRunConfig", params: { stream: false, cache_mode: "bypass" } },
+      browser_config: { type: "BrowserConfig", params: { headless: true } },
     }),
   });
-
-  if (!response.ok) {
-    throw new Error(`Firecrawl scrape failed with ${response.status}.`);
-  }
-
-  const payload = (await response.json()) as {
-    success?: boolean;
-    data?: {
-      markdown?: string;
-      html?: string;
-      metadata?: {
-        title?: string;
-        description?: string;
-        sourceURL?: string;
-      };
-    };
-    error?: string;
-  };
-
-  if (!payload.success || !payload.data) {
-    throw new Error(payload.error || "Firecrawl scrape returned no data.");
-  }
-
-  const markdown = payload.data.markdown ?? "";
-  const metadata = payload.data.metadata ?? {};
-  const title = metadata.title ?? "Untitled Page";
-  const sourceUrl = metadata.sourceURL ?? url;
-
-  // Truncate content if too long
-  const maxLength = 8000;
-  const truncated = markdown.length > maxLength;
-  const content = truncated ? `${markdown.slice(0, maxLength)}...\n\n[Content truncated]` : markdown;
-
+  if (!response.ok) throw new Error(`Crawl4AI Light Crawl failed: ${response.status}`);
+  const result = await response.json();
+  const data = result.results?.[0] || result;
+  const content = data.markdown || data.html || "";
+  const title = data.title || "Untitled Page";
   return {
-    responseJson: {
-      url: sourceUrl,
-      title,
-      contentLength: markdown.length,
-      truncated,
-    },
-    text: `Scraped "${title}" from ${sourceUrl}:\n\n${content}`,
+    responseJson: data,
+    text: `Crawl4AI Light: "${title}"\n\n${content.slice(0, 8000)}${content.length > 8000 ? "...\n\n[Content truncated]" : ""}`,
+  };
+}
+
+async function executeCrawl4aiDeep(config: AppConfig, url: string) {
+  if (!config.crawl4ai?.baseUrl) {
+    throw new Error("Crawl4AI is not configured.");
+  }
+  const apiUrl = new URL("/crawl", config.crawl4ai.baseUrl);
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      urls: [url],
+      crawler_config: { type: "CrawlerRunConfig", params: { stream: false, cache_mode: "bypass", extraction_strategy: { type: "JsonCssExtractionStrategy", params: {} } } },
+      browser_config: { type: "BrowserConfig", params: { headless: true, viewport: { type: "dict", value: { width: 1920, height: 1080 } } } },
+    }),
+  });
+  if (!response.ok) throw new Error(`Crawl4AI Deep Crawl failed: ${response.status}`);
+  const result = await response.json();
+  const data = result.results?.[0] || result;
+  const content = data.markdown || data.html || "";
+  const title = data.title || "Untitled Page";
+  return {
+    responseJson: data,
+    text: `Crawl4AI Deep: "${title}"\n\n${content.slice(0, 8000)}${content.length > 8000 ? "...\n\n[Content truncated]" : ""}`,
+  };
+}
+
+async function executeCrawl4aiVariable(config: AppConfig, url: string, options: Record<string, unknown>) {
+  if (!config.crawl4ai?.baseUrl) {
+    throw new Error("Crawl4AI is not configured.");
+  }
+  const apiUrl = new URL("/crawl", config.crawl4ai.baseUrl);
+  const payload = Object.assign({ urls: [url] }, options);
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`Crawl4AI Variable Crawl failed: ${response.status}`);
+  const result = await response.json();
+  const data = result.results?.[0] || result;
+  const content = data.markdown || data.html || "";
+  const title = data.title || "Untitled Page";
+  return {
+    responseJson: data,
+    text: `Crawl4AI Variable: "${title}"\n\n${content.slice(0, 8000)}${content.length > 8000 ? "...\n\n[Content truncated]" : ""}`,
   };
 }
 

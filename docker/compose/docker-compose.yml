@@ -50,22 +50,20 @@ services:
     volumes:
       - ../searxng/settings.yml:/etc/searxng/settings.yml:ro
 
-  firecrawl:
-    image: ghcr.io/mendableai/firecrawl:latest
-    container_name: secretary-firecrawl
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: secretary-crawl4ai
     restart: unless-stopped
     ports:
-      - "3002:3002"
-    environment:
-      - PORT=3002
-      - HOST=0.0.0.0
-      - USE_DB_AUTHENTICATION=false
-      - BULL_AUTH_KEY=CHANGEME
-      - PLAYWRIGHT_MICROSERVICE_URL=http://localhost:3000/scrape
-      - REDIS_URL=redis://redis:6379
-      - REDIS_RATE_LIMIT_URL=redis://redis:6379
+      - "11235:11235"
+    shm_size: 1g
+    # Uncomment and configure the following if you want LLM support
+    # env_file:
+    #   - ../../.llm.env
+    # volumes:
+    #   - ./my-custom-config.yml:/app/config.yml
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:11235/health"]
       interval: 30s
       timeout: 10s
       retries: 3
