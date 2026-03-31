@@ -54,7 +54,7 @@ type PushToTalkResult = {
 
 type SpeechStatusState = SpeechServiceStatusResponse["services"] | null;
 
-const engines = ["chatterbox", "chatterbox-turbo", "chatterbox-multilingual"] as const;
+const engines = ["orpheus", "orpheus-fast"] as const;
 const qualityPresets = [
   { value: "balanced", label: "Balanced" },
   { value: "clear", label: "Clear" },

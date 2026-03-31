@@ -192,7 +192,7 @@ export async function ensureGenderVoiceProfile(
   await dbClient.db.insert(voiceProfiles).values({
     id,
     name: definition.name,
-    engineId: "chatterbox",
+    engineId: "orpheus",
     sampleStorageKey: null,
     sampleMimeType: null,
     sampleDurationMs: null,

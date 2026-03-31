@@ -7,7 +7,6 @@ from __future__ import annotations
 import io
 import logging
 import os
-import re
 import tempfile
 import time
 import wave
@@ -31,15 +30,13 @@ DEVICE = os.getenv("TTS_DEVICE", "cpu").strip().lower() or "cpu"
 os.environ.setdefault("HF_HOME", str(MODEL_DIR))
 os.environ.setdefault("HF_HUB_CACHE", str(MODEL_DIR / "huggingface"))
 
-# Hugging Face auth
+# Hugging Face auth from env
 hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
 if hf_token:
     os.environ.setdefault("HF_TOKEN", hf_token)
-    try:
-        import huggingface_hub
-        huggingface_hub.login(token=hf_token)
-    except Exception:
-        pass
+    logger.info("HF_TOKEN is set")
+else:
+    logger.warning("HF_TOKEN not set - Orpheus model download may fail")
 
 app = FastAPI(
     title="Secretary TTS Service",
@@ -51,6 +48,8 @@ app = FastAPI(
 _orpheus_model = None
 _tokenizer = None
 _snac_model = None
+_model_loading = False
+_model_error = None
 
 def get_device():
     if DEVICE == "cuda" and torch.cuda.is_available():
@@ -59,71 +58,79 @@ def get_device():
 
 def load_models():
     """Load Orpheus TTS and SNAC models."""
-    global _orpheus_model, _tokenizer, _snac_model
+    global _orpheus_model, _tokenizer, _snac_model, _model_loading, _model_error
     
     if _orpheus_model is not None:
         return _orpheus_model, _tokenizer, _snac_model
     
-    device = get_device()
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    if _model_loading:
+        raise RuntimeError("Model is still loading, please retry shortly")
     
-    logger.info("Loading Orpheus TTS models on %s...", device)
+    if _model_error:
+        raise _model_error
     
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    _model_loading = True
     
-    model_name = "canopylabs/orpheus-tts-0.1-finetuned-prod"
+    try:
+        device = get_device()
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        
+        logger.info("Loading Orpheus TTS models on %s...", device)
+        
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        
+        model_name = "canopylabs/orpheus-tts-0.1-finetune-prod"
+        
+        # Load tokenizer
+        logger.info("Loading tokenizer...")
+        _tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            cache_dir=str(MODEL_DIR / "huggingface"),
+            token=hf_token,
+            trust_remote_code=True,
+        )
+        
+        # Load model
+        logger.info("Loading Orpheus model (~3GB, may take a few minutes on first run)...")
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        _orpheus_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=dtype,
+            cache_dir=str(MODEL_DIR / "huggingface"),
+            token=hf_token,
+            trust_remote_code=True,
+        )
+        _orpheus_model.to(device)
+        _orpheus_model.eval()
+        
+        # Load SNAC for audio decoding
+        logger.info("Loading SNAC audio codec...")
+        from snac import SNAC
+        _snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
+        _snac_model.to(device)
+        _snac_model.eval()
+        
+        logger.info("✅ Orpheus TTS ready!")
+        
+    except Exception as e:
+        logger.error("Failed to load models: %s", e)
+        _model_error = e
+        raise
+    finally:
+        _model_loading = False
     
-    # Load tokenizer
-    logger.info("Loading tokenizer...")
-    _tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
-        cache_dir=str(MODEL_DIR / "huggingface"),
-        token=hf_token,
-        trust_remote_code=True,
-    )
-    
-    # Load model
-    logger.info("Loading Orpheus model (~3GB, may take a minute)...")
-    dtype = torch.float16 if device == "cuda" else torch.float32
-    _orpheus_model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=dtype,
-        cache_dir=str(MODEL_DIR / "huggingface"),
-        token=hf_token,
-        trust_remote_code=True,
-    )
-    _orpheus_model.to(device)
-    _orpheus_model.eval()
-    
-    # Load SNAC for audio decoding
-    logger.info("Loading SNAC audio codec...")
-    from snac import SNAC
-    _snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz")
-    _snac_model.to(device)
-    _snac_model.eval()
-    
-    logger.info("✅ Orpheus TTS ready!")
     return _orpheus_model, _tokenizer, _snac_model
 
 def extract_snac_tokens(token_ids: list, tokenizer) -> tuple:
-    """
-    Extract hierarchical SNAC tokens from Orpheus output.
-    Orpheus outputs tokens that map to SNAC's 3-level RVQ.
-    """
-    # SNAC vocab offset in Orpheus tokenizer
+    """Extract hierarchical SNAC tokens from Orpheus output."""
     SNAC_OFFSET = 10
-    
     codes_0, codes_1, codes_2 = [], [], []
     
     for token in token_ids:
         token_val = int(token)
         if token_val < SNAC_OFFSET:
             continue
-        
         snac_id = token_val - SNAC_OFFSET
-        
-        # Distribute across 3 hierarchical levels (RVQ)
-        # Level 0: coarse, Level 1: mid, Level 2: fine
         if len(codes_0) <= len(codes_1) and len(codes_0) <= len(codes_2):
             codes_0.append(snac_id)
         elif len(codes_1) <= len(codes_2):
@@ -131,7 +138,6 @@ def extract_snac_tokens(token_ids: list, tokenizer) -> tuple:
         else:
             codes_2.append(snac_id)
     
-    # Ensure equal lengths
     min_len = min(len(codes_0), len(codes_1), len(codes_2))
     if min_len == 0:
         return None, None, None
@@ -141,9 +147,8 @@ def extract_snac_tokens(token_ids: list, tokenizer) -> tuple:
 def decode_audio_snac(codes_0, codes_1, codes_2, snac_model, device):
     """Decode SNAC codes to audio waveform."""
     if codes_0 is None or len(codes_0) == 0:
-        return torch.zeros(24000)  # 1 second silence
+        return torch.zeros(24000)
     
-    # Stack codes: shape [1, 3, T]
     codes_tensor = torch.tensor([
         codes_0, codes_1, codes_2
     ], dtype=torch.long, device=device).unsqueeze(0)
@@ -158,18 +163,15 @@ def generate_speech(text: str, voice: str = "tara") -> tuple[np.ndarray, int]:
     model, tokenizer, snac = load_models()
     device = get_device()
     
-    # Format: <|voice|>text
     prompt = f"<|{voice}|>{text}"
     
     logger.info("Generating speech for: %s", text[:50] + "..." if len(text) > 50 else text)
     
-    # Tokenize
     inputs = tokenizer(prompt, return_tensors="pt")
     input_ids = inputs["input_ids"].to(device)
     
     start_time = time.time()
     
-    # Generate
     with torch.no_grad():
         output = model.generate(
             input_ids,
@@ -180,26 +182,21 @@ def generate_speech(text: str, voice: str = "tara") -> tuple[np.ndarray, int]:
             pad_token_id=tokenizer.eos_token_id,
         )
     
-    # Extract generated tokens (after input)
     generated_ids = output[0][input_ids.shape[1]:].tolist()
-    
-    # Extract SNAC tokens
     codes_0, codes_1, codes_2 = extract_snac_tokens(generated_ids, tokenizer)
     
     if codes_0 is None:
         logger.warning("No audio tokens generated, returning silence")
         audio_np = np.zeros(24000, dtype=np.float32)
     else:
-        # Decode to audio
         audio = decode_audio_snac(codes_0, codes_1, codes_2, snac, device)
         audio_np = audio.numpy()
     
     generation_time = time.time() - start_time
-    duration_ms = int(len(audio_np) / 24)  # 24kHz
+    duration_ms = int(len(audio_np) / 24)
     
     logger.info("Generated %dms audio in %.2fs", duration_ms, generation_time)
     
-    # Normalize to int16
     audio_int16 = (audio_np * 32767).clip(-32768, 32767).astype(np.int16)
     
     return audio_int16, duration_ms
@@ -210,22 +207,30 @@ def live():
 
 @app.get("/health/ready")
 def ready():
-    try:
-        load_models()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    
-    return {
+    """Ready check - returns ok even if model not loaded yet (lazy loading)."""
+    device = get_device()
+    status = {
         "ok": True,
         "service": "tts",
-        "device": get_device(),
+        "device": device,
         "engine": "orpheus",
         "defaultVoice": "tara",
+        "modelLoaded": _orpheus_model is not None,
+        "modelLoading": _model_loading,
+        "hfTokenSet": hf_token is not None,
     }
+    
+    if _model_error:
+        status["modelError"] = str(_model_error)
+        status["ok"] = False
+        raise HTTPException(status_code=503, detail=status)
+    
+    return status
 
 @app.post("/synthesize")
 async def synthesize(
     text: str = Form(...),
+    engineId: str | None = Form(default=None),
     voice: str | None = Form(default=None),
     emotion: str | None = Form(default=None),
     speakerWav: UploadFile | None = File(default=None),
@@ -238,7 +243,6 @@ async def synthesize(
     speaker_path = None
     
     try:
-        # Save speaker sample if provided (voice cloning not yet implemented)
         if speakerWav:
             suffix = Path(speakerWav.filename or "speaker.wav").suffix
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, dir=TMP_DIR) as tmp:
@@ -247,16 +251,13 @@ async def synthesize(
                 shutil.copyfileobj(speakerWav.file, tmp)
             logger.info("Speaker sample saved (cloning not yet implemented)")
         
-        # Add emotion tag if specified
         if emotion and emotion.lower() in ["laugh", "chuckle", "sigh", "gasp", "yawn", "cough", "groan"]:
             text = f"<{emotion.lower()}>{text}"
         
-        selected_voice = voice or "tara"
+        selected_voice = voice or engineId or "tara"
         
-        # Generate speech
         audio_data, duration_ms = generate_speech(text, selected_voice)
         
-        # Create WAV
         buffer = io.BytesIO()
         with wave.open(buffer, 'wb') as wav:
             wav.setnchannels(1)
@@ -274,6 +275,8 @@ async def synthesize(
             }
         )
         
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.exception("Synthesis failed")
         raise HTTPException(status_code=500, detail=str(e))

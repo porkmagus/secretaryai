@@ -6,7 +6,7 @@
   "providers": {
     "opencode_zen": {
       "baseUrl": "https://opencode.ai/zen/v1",
-      "model": "minimax-m2.5",
+      "model": "mimo-v2-pro-free",
       "maxOutputTokens": 1000
     }
   }
