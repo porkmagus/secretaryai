@@ -1,0 +1,3 @@
+## 2026-03-31 - [Enhanced Accessibility and Semantics of the Desk Interface]
+**Learning:** UX and accessibility should prioritize semantic HTML and ARIA attributes for interactive elements to improve the experience for keyboard and screen reader users. This includes using `<label>` for form fields, `aria-describedby` for help text, and `aria-live` for dynamic status updates.
+**Action:** Always check for missing `<label>` tags for inputs and ensure toggle buttons (like "Speak") have state-aware `aria-label` attributes. Use `aria-live="polite"` for status messages to ensure they are announced without interruption.

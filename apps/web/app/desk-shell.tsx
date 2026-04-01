@@ -436,6 +436,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     onClick={() => props.onSpeakMessage(message)}
                     className="button-secondary"
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    aria-label={props.speakingMessageId === message.id ? "Stop speaking message" : "Speak message"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
@@ -451,11 +452,12 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
-            <p className="desk-composer-title">Write to {composerTarget}</p>
+            <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
           </div>
-          <p className="desk-composer-note">Ctrl+Enter to send</p>
+          <p id="composer-shortcut-hint" className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
+          id="desk-composer-textarea"
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -463,6 +465,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           }}
           placeholder={`Ask ${composerTarget} something...`}
           rows={4}
+          aria-describedby="composer-shortcut-hint"
         />
         {activeNotice ? (
           <div className="desk-stage-notice desk-stage-notice--composer">
@@ -493,7 +496,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </div>
         ) : null}
         <div className="desk-composer-foot">
-          <p className="desk-composer-status">{composerStatus}</p>
+          <p className="desk-composer-status" aria-live="polite">{composerStatus}</p>
           <div className="desk-composer-actions">
             {(status === "submitted" || status === "streaming") ? (
               <button type="button" onClick={() => stop()} className="button-secondary">
@@ -963,7 +966,12 @@ export function DeskShell() {
                 <p className="desk-panel-eyebrow">Correspondence</p>
                 <h2 className="desk-panel-title">Recent correspondence</h2>
               </div>
-              <button type="button" onClick={startFreshConversation} className="button-secondary">
+              <button
+                type="button"
+                onClick={startFreshConversation}
+                className="button-secondary"
+                aria-label="Start a new correspondence"
+              >
                 New
               </button>
             </div>
