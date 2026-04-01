@@ -136,6 +136,7 @@ type DeskConversationPaneProps = {
 function DeskConversationPane(props: DeskConversationPaneProps) {
   const [input, setInput] = useState("");
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
   const secretaryName = props.secretaryName.trim() || "Secretary";
   const secretaryReference =
@@ -451,17 +452,24 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
-            <p className="desk-composer-title">Write to {composerTarget}</p>
+            <label htmlFor="composer-input" className="desk-composer-title">
+              Write to {composerTarget}
+            </label>
           </div>
-          <p className="desk-composer-note">Ctrl+Enter to send</p>
+          <p id="composer-note" className="desk-composer-note">
+            Ctrl+Enter to send
+          </p>
         </div>
         <textarea
+          id="composer-input"
+          ref={textareaRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             void onComposerKeyDown(event);
           }}
           placeholder={`Ask ${composerTarget} something...`}
+          aria-describedby="composer-note"
           rows={4}
         />
         {activeNotice ? (
@@ -516,7 +524,10 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 key={suggestion}
                 type="button"
                 className="desk-followup-chip"
-                onClick={() => setInput(suggestion)}
+                onClick={() => {
+                  setInput(suggestion);
+                  textareaRef.current?.focus();
+                }}
               >
                 {suggestion}
               </button>
