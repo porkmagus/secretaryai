@@ -369,7 +369,13 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ))}
                 {reasoningParts.length > 0 ? (
                   <details className="desk-reasoning">
-                    <summary>
+                    <summary
+                      aria-label={
+                        reasoningParts.some((part) => part.state === "streaming")
+                          ? "Secretary is thinking"
+                          : "View secretary's reasoning"
+                      }
+                    >
                       Thinking
                       {reasoningParts.some((part) => part.state === "streaming") ? "..." : ""}
                     </summary>
@@ -436,6 +442,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     onClick={() => props.onSpeakMessage(message)}
                     className="button-secondary"
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    aria-label={props.speakingMessageId === message.id ? "Stop reading message aloud" : "Read message aloud"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
