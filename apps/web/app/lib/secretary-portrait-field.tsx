@@ -186,6 +186,7 @@ export function SecretaryPortraitField({
         type="button"
         className="secretary-portrait-trigger"
         aria-label="Set secretary portrait"
+        title="Set secretary portrait"
         onClick={() => {
           setInlineError(null);
           setIsOpen((current) => !current);
