@@ -403,7 +403,11 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ) : null}
               </div>
               {isStreamingAssistant ? (
-                <div className="desk-streaming-indicator" aria-hidden="true">
+                <div
+                  className="desk-streaming-indicator"
+                  role="status"
+                  aria-label={`${secretaryName} is typing...`}
+                >
                   <span />
                   <span />
                   <span />
@@ -436,6 +440,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     onClick={() => props.onSpeakMessage(message)}
                     className="button-secondary"
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    aria-label={props.speakingMessageId === message.id ? "Stop speaking message" : "Speak message"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
