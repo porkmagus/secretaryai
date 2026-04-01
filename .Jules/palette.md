@@ -1,0 +1,3 @@
+## 2026-03-31 - [Micro-UX: Improving Chat and Nav Accessibility]
+**Learning:** Screen reader users need explicit context for dynamic status changes and implicit keyboard shortcuts. Using `aria-live` and `aria-describedby` provides this bridge without cluttering the visual UI. Additionally, marking active navigation links with `aria-current="page"` is a critical standard for accessible wayfinding.
+**Action:** Always link shortcut hints (like "Ctrl+Enter") to their respective inputs using `aria-describedby` and wrap status text in `aria-live="polite"` regions. Ensure navigation components have a clean way to apply `aria-current`.

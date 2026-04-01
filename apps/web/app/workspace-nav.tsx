@@ -63,6 +63,7 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
                   key={link.href}
                   href={link.href}
                   className={`workspace-nav__link ${active ? "is-active" : ""}`}
+                  aria-current={active ? "page" : undefined}
                 >
                   {link.label}
                 </Link>
