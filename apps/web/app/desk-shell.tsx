@@ -436,6 +436,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     onClick={() => props.onSpeakMessage(message)}
                     className="button-secondary"
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    title={props.speakingMessageId === message.id ? "Stop playback" : "Speak message"}
+                    aria-label={props.speakingMessageId === message.id ? "Stop playback" : "Speak message"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
