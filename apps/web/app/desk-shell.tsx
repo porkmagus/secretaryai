@@ -135,7 +135,9 @@ type DeskConversationPaneProps = {
 
 function DeskConversationPane(props: DeskConversationPaneProps) {
   const [input, setInput] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
   const secretaryName = props.secretaryName.trim() || "Secretary";
   const secretaryReference =
@@ -144,6 +146,15 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     secretaryName === "SetAgentName" ? "The secretary" : secretaryName;
   const composerTarget =
     secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
+
+  const copyToClipboard = useCallback((message: DeskChatMessage) => {
+    const text = extractText(message);
+    if (!text) return;
+
+    void navigator.clipboard.writeText(text);
+    setCopiedMessageId(message.id);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  }, []);
 
   useEffect(() => {
     conversationIdRef.current = props.activeConversationId;
@@ -409,28 +420,28 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   <span />
                 </div>
               ) : null}
-              {!isUser ? (
-                <div className="desk-message-actions">
-                  {showLaunchPromptActions ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void respondToAgentJobPrompt("yes")}
-                        className="button-primary"
-                        style={{ padding: "6px 10px", fontSize: 11 }}
-                      >
-                        Start job
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void respondToAgentJobPrompt("no")}
-                        className="button-secondary"
-                        style={{ padding: "6px 10px", fontSize: 11 }}
-                      >
-                        Keep in chat
-                      </button>
-                    </>
-                  ) : null}
+              <div className="desk-message-actions">
+                {showLaunchPromptActions ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void respondToAgentJobPrompt("yes")}
+                      className="button-primary"
+                      style={{ padding: "6px 10px", fontSize: 11 }}
+                    >
+                      Start job
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void respondToAgentJobPrompt("no")}
+                      className="button-secondary"
+                      style={{ padding: "6px 10px", fontSize: 11 }}
+                    >
+                      Keep in chat
+                    </button>
+                  </>
+                ) : null}
+                {!isUser ? (
                   <button
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}
@@ -439,8 +450,16 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(message)}
+                  className="button-secondary"
+                  style={{ padding: "6px 10px", fontSize: 11 }}
+                >
+                  {copiedMessageId === message.id ? "Copied!" : "Copy"}
+                </button>
+              </div>
             </article>
           );
         })}
@@ -456,12 +475,14 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           <p className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
+          ref={textareaRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             void onComposerKeyDown(event);
           }}
           placeholder={`Ask ${composerTarget} something...`}
+          aria-label="Composer input"
           rows={4}
         />
         {activeNotice ? (
@@ -516,7 +537,10 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 key={suggestion}
                 type="button"
                 className="desk-followup-chip"
-                onClick={() => setInput(suggestion)}
+                onClick={() => {
+                  setInput(suggestion);
+                  textareaRef.current?.focus();
+                }}
               >
                 {suggestion}
               </button>
