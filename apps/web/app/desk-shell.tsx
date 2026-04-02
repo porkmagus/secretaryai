@@ -136,6 +136,7 @@ type DeskConversationPaneProps = {
 function DeskConversationPane(props: DeskConversationPaneProps) {
   const [input, setInput] = useState("");
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
   const secretaryName = props.secretaryName.trim() || "Secretary";
   const secretaryReference =
@@ -403,7 +404,11 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ) : null}
               </div>
               {isStreamingAssistant ? (
-                <div className="desk-streaming-indicator" aria-hidden="true">
+                <div
+                  className="desk-streaming-indicator"
+                  role="status"
+                  aria-label={`${composerTarget} is typing...`}
+                >
                   <span />
                   <span />
                   <span />
@@ -451,11 +456,14 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
-            <p className="desk-composer-title">Write to {composerTarget}</p>
+            <p id="composer-title" className="desk-composer-title">Write to {composerTarget}</p>
           </div>
-          <p className="desk-composer-note">Ctrl+Enter to send</p>
+          <p id="composer-note" className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
+          ref={textareaRef}
+          aria-labelledby="composer-title"
+          aria-describedby="composer-note"
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -516,7 +524,10 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 key={suggestion}
                 type="button"
                 className="desk-followup-chip"
-                onClick={() => setInput(suggestion)}
+                onClick={() => {
+                  setInput(suggestion);
+                  textareaRef.current?.focus();
+                }}
               >
                 {suggestion}
               </button>
