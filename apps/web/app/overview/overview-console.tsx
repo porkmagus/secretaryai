@@ -198,10 +198,20 @@ export function OverviewConsole() {
             <StatCard label="Heartbeat" value={nextHeartbeatLabel} detail="Next scheduled sweep" tone="soft" />
           </StatGrid>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" className="button-secondary" onClick={() => void refresh()}>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => void refresh()}
+              disabled={isRefreshing || isRunningHeartbeat}
+            >
               {isRefreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <button type="button" className="button-primary" onClick={() => void runHeartbeatNow()}>
+            <button
+              type="button"
+              className="button-primary"
+              onClick={() => void runHeartbeatNow()}
+              disabled={isRefreshing || isRunningHeartbeat}
+            >
               {isRunningHeartbeat ? "Running..." : "Run Heartbeat"}
             </button>
           </div>
