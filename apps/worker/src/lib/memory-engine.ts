@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   activityTraces,
   jobs,
@@ -921,10 +921,21 @@ export async function processMemoryCandidateJob(params: {
   const createdMemoryIds: string[] = [];
   const createdTaskIds: string[] = [];
 
+  const canonicalKeys = unique(candidates.map((c) => c.canonicalKey));
+  const existingEntries = canonicalKeys.length > 0
+    ? await dbClient.db.query.memoryEntries.findMany({
+        where: inArray(memoryEntries.canonicalKey, canonicalKeys),
+      })
+    : [];
+
+  const existingMap = new Map(
+    existingEntries
+      .filter((e) => e.canonicalKey !== null)
+      .map((e) => [e.canonicalKey as string, e]),
+  );
+
   for (const candidate of candidates) {
-    const existing = await dbClient.db.query.memoryEntries.findFirst({
-      where: eq(memoryEntries.canonicalKey, candidate.canonicalKey),
-    });
+    const existing = existingMap.get(candidate.canonicalKey);
 
     const memoryId = existing?.id ?? createMessageId();
 
