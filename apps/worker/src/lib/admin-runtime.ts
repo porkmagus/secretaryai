@@ -1,6 +1,6 @@
 import { access, rm, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
   type AdminMaintenanceAction,
@@ -1409,32 +1409,29 @@ export async function importSettingsSnapshot(params: {
       }
     }
 
-    for (const tool of snapshot.tools) {
-      const existing = await tx.query.tools.findFirst({
-        where: eq(tools.key, tool.key),
-      });
-
-      if (existing) {
-        await tx
-          .update(tools)
-          .set({
+    if (snapshot.tools.length > 0) {
+      await tx
+        .insert(tools)
+        .values(
+          snapshot.tools.map((tool) => ({
+            id: tool.id || createMessageId(),
+            key: tool.key,
+            name: tool.key,
+            description: `${tool.key} imported from settings snapshot.`,
             enabled: tool.enabled,
             approvalMode: tool.approvalMode,
+            configSchemaJson: {},
+            healthStatus: "ok",
+          })),
+        )
+        .onConflictDoUpdate({
+          target: tools.key,
+          set: {
+            enabled: sql`excluded.enabled`,
+            approvalMode: sql`excluded.approval_mode`,
             updatedAt: new Date(),
-          })
-          .where(eq(tools.id, existing.id));
-      } else {
-        await tx.insert(tools).values({
-          id: tool.id || createMessageId(),
-          key: tool.key,
-          name: tool.key,
-          description: `${tool.key} imported from settings snapshot.`,
-          enabled: tool.enabled,
-          approvalMode: tool.approvalMode,
-          configSchemaJson: {},
-          healthStatus: "ok",
+          },
         });
-      }
     }
 
     for (const voiceProfile of snapshot.voiceProfiles) {
