@@ -135,6 +135,7 @@ type DeskConversationPaneProps = {
 
 function DeskConversationPane(props: DeskConversationPaneProps) {
   const [input, setInput] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
@@ -145,6 +146,15 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     secretaryName === "SetAgentName" ? "The secretary" : secretaryName;
   const composerTarget =
     secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
+
+  const copyToClipboard = useCallback((message: DeskChatMessage) => {
+    const text = extractText(message);
+    if (!text) return;
+
+    void navigator.clipboard.writeText(text);
+    setCopiedMessageId(message.id);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  }, []);
 
   useEffect(() => {
     conversationIdRef.current = props.activeConversationId;
@@ -370,7 +380,13 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ))}
                 {reasoningParts.length > 0 ? (
                   <details className="desk-reasoning">
-                    <summary>
+                    <summary
+                      aria-label={
+                        reasoningParts.some((part) => part.state === "streaming")
+                          ? "Secretary is thinking"
+                          : "View secretary's reasoning"
+                      }
+                    >
                       Thinking
                       {reasoningParts.some((part) => part.state === "streaming") ? "..." : ""}
                     </summary>
@@ -410,38 +426,47 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   <span />
                 </div>
               ) : null}
-              {!isUser ? (
-                <div className="desk-message-actions">
-                  {showLaunchPromptActions ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void respondToAgentJobPrompt("yes")}
-                        className="button-primary"
-                        style={{ padding: "6px 10px", fontSize: 11 }}
-                      >
-                        Start job
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void respondToAgentJobPrompt("no")}
-                        className="button-secondary"
-                        style={{ padding: "6px 10px", fontSize: 11 }}
-                      >
-                        Keep in chat
-                      </button>
-                    </>
-                  ) : null}
+              <div className="desk-message-actions">
+                {showLaunchPromptActions ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void respondToAgentJobPrompt("yes")}
+                      className="button-primary"
+                      style={{ padding: "6px 10px", fontSize: 11 }}
+                    >
+                      Start job
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void respondToAgentJobPrompt("no")}
+                      className="button-secondary"
+                      style={{ padding: "6px 10px", fontSize: 11 }}
+                    >
+                      Keep in chat
+                    </button>
+                  </>
+                ) : null}
+                {!isUser ? (
                   <button
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}
                     className="button-secondary"
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    aria-label={props.speakingMessageId === message.id ? "Stop reading message aloud" : "Read message aloud"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(message)}
+                  className="button-secondary"
+                  style={{ padding: "6px 10px", fontSize: 11 }}
+                >
+                  {copiedMessageId === message.id ? "Copied!" : "Copy"}
+                </button>
+              </div>
             </article>
           );
         })}
