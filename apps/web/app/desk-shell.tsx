@@ -422,7 +422,11 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ) : null}
               </div>
               {isStreamingAssistant ? (
-                <div className="desk-streaming-indicator" aria-hidden="true">
+                <div
+                  className="desk-streaming-indicator"
+                  role="status"
+                  aria-label={`${secretaryName} is typing...`}
+                >
                   <span />
                   <span />
                   <span />

@@ -1,3 +1,6 @@
+## 2026-03-30 - Accessibility Polish Patterns
+**Learning:** Common interactive elements (navigation links, status indicators, and notification banners) lacked standard ARIA attributes, making them less accessible to screen reader users. Specifically, active navigation items should use `aria-current="page"`, dynamic status indicators should use `role="status"`, and global notice banners should use live regions.
+**Action:** Always check for `aria-current` on active navigation components and ensure dynamic UI updates are wrapped in appropriate ARIA live regions and roles.
 ## 2026-03-31 - Dual Accessibility Labels for Dynamic Controls
 **Learning:** For interactive elements with state-dependent labels (like 'Speak'/'Stop') or icon-only buttons, providing both `aria-label` (for screen readers) and `title` (for visual tooltips) ensures a consistent and accessible experience for all users.
 **Action:** Always pair `aria-label` with `title` on dynamic or icon-based controls to provide both technical and visual clarity.
