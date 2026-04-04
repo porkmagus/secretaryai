@@ -491,6 +491,13 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             <label htmlFor="composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
             <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
           </div>
+          <p className="desk-composer-note" id="composer-hint">
+            Ctrl+Enter to send
+          </p>
+        </div>
+        <textarea
+          ref={textareaRef}
+          id="composer-input"
           <p className="desk-composer-note" id="composer-shortcut-note">
             Ctrl+Enter to send
           </p>
@@ -519,6 +526,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           placeholder={`Ask ${composerTarget} something...`}
           aria-describedby="composer-note"
           rows={4}
+          aria-describedby="composer-hint"
           aria-label={`Ask ${composerTarget} something...`}
           aria-describedby="composer-shortcut-note"
           aria-describedby="composer-shortcut-hint"
@@ -552,6 +560,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </div>
         ) : null}
         <div className="desk-composer-foot">
+          <p className="desk-composer-status" role="status" aria-live="polite">
+            {composerStatus}
+          </p>
           <p className="desk-composer-status" aria-live="polite">{composerStatus}</p>
           <div className="desk-composer-actions">
             {(status === "submitted" || status === "streaming") ? (
