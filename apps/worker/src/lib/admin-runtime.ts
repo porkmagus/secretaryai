@@ -1351,24 +1351,13 @@ export async function importSettingsSnapshot(params: {
         },
       });
 
-    for (const persona of snapshot.personas) {
+    if (snapshot.personas.length > 0) {
+      const now = new Date();
       await tx
         .insert(personas)
-        .values({
-          id: persona.id,
-          name: persona.name,
-          promptTemplate: persona.promptTemplate,
-          toneProfile: {
-            mode: persona.toneMode ?? "calm",
-            gender: normalizePersonaGender(persona.gender),
-          },
-          behaviorRules: persona.behaviorRules,
-          voiceProfileId: persona.voiceProfileId,
-          isDefault: persona.isDefault,
-        })
-        .onConflictDoUpdate({
-          target: personas.id,
-          set: {
+        .values(
+          snapshot.personas.map((persona) => ({
+            id: persona.id,
             name: persona.name,
             promptTemplate: persona.promptTemplate,
             toneProfile: {
@@ -1378,38 +1367,56 @@ export async function importSettingsSnapshot(params: {
             behaviorRules: persona.behaviorRules,
             voiceProfileId: persona.voiceProfileId,
             isDefault: persona.isDefault,
-            updatedAt: new Date(),
+          })),
+        )
+        .onConflictDoUpdate({
+          target: personas.id,
+          set: {
+            name: sql`excluded.name`,
+            promptTemplate: sql`excluded.prompt_template`,
+            toneProfile: sql`excluded.tone_profile`,
+            behaviorRules: sql`excluded.behavior_rules`,
+            voiceProfileId: sql`excluded.voice_profile_id`,
+            isDefault: sql`excluded.is_default`,
+            updatedAt: now,
           },
         });
     }
 
-    for (const integration of snapshot.integrations) {
-      const existing = await tx.query.integrations.findFirst({
-        where: eq(integrations.integrationType, integration.integrationType),
-      });
+    if (snapshot.integrations.length > 0) {
+      const existingIntegrations = await tx.select().from(integrations);
+      const integrationMap = new Map(
+        existingIntegrations.map((i) => [i.integrationType, i]),
+      );
+      const now = new Date();
 
-      if (existing) {
-        await tx
-          .update(integrations)
-          .set({
-            enabled: integration.enabled,
-            configJson: integration.configJson,
-            healthStatus: integration.healthStatus,
-            updatedAt: new Date(),
-          })
-          .where(eq(integrations.id, existing.id));
-      } else {
-        await tx.insert(integrations).values({
-          id: integration.id || createMessageId(),
-          integrationType: integration.integrationType,
-          enabled: integration.enabled,
-          configJson: integration.configJson,
-          healthStatus: integration.healthStatus,
+      await tx
+        .insert(integrations)
+        .values(
+          snapshot.integrations.map((integration) => {
+            const existing = integrationMap.get(integration.integrationType);
+            return {
+              id: existing?.id || integration.id || createMessageId(),
+              integrationType: integration.integrationType,
+              enabled: integration.enabled,
+              configJson: integration.configJson,
+              healthStatus: integration.healthStatus,
+            };
+          }),
+        )
+        .onConflictDoUpdate({
+          target: integrations.id,
+          set: {
+            enabled: sql`excluded.enabled`,
+            configJson: sql`excluded.config_json`,
+            healthStatus: sql`excluded.health_status`,
+            updatedAt: now,
+          },
         });
-      }
     }
 
     if (snapshot.tools.length > 0) {
+      const now = new Date();
       await tx
         .insert(tools)
         .values(
@@ -1429,37 +1436,41 @@ export async function importSettingsSnapshot(params: {
           set: {
             enabled: sql`excluded.enabled`,
             approvalMode: sql`excluded.approval_mode`,
+            updatedAt: now,
             updatedAt: new Date(),
           },
         });
     }
 
-    for (const voiceProfile of snapshot.voiceProfiles) {
+    if (snapshot.voiceProfiles.length > 0) {
+      const now = new Date();
       await tx
         .insert(voiceProfiles)
-        .values({
-          id: voiceProfile.id,
-          name: voiceProfile.name,
-          engineId: voiceProfile.engineId,
-          sampleStorageKey: voiceProfile.sampleStorageKey,
-          sampleMimeType: voiceProfile.sampleMimeType,
-          sampleDurationMs: voiceProfile.sampleDurationMs,
-          qualityPreset: voiceProfile.qualityPreset,
-          speakingStyle: voiceProfile.speakingStyle,
-          isActive: voiceProfile.isActive,
-        })
+        .values(
+          snapshot.voiceProfiles.map((vp) => ({
+            id: vp.id,
+            name: vp.name,
+            engineId: vp.engineId,
+            sampleStorageKey: vp.sampleStorageKey,
+            sampleMimeType: vp.sampleMimeType,
+            sampleDurationMs: vp.sampleDurationMs,
+            qualityPreset: vp.qualityPreset,
+            speakingStyle: vp.speakingStyle,
+            isActive: vp.isActive,
+          })),
+        )
         .onConflictDoUpdate({
           target: voiceProfiles.id,
           set: {
-            name: voiceProfile.name,
-            engineId: voiceProfile.engineId,
-            sampleStorageKey: voiceProfile.sampleStorageKey,
-            sampleMimeType: voiceProfile.sampleMimeType,
-            sampleDurationMs: voiceProfile.sampleDurationMs,
-            qualityPreset: voiceProfile.qualityPreset,
-            speakingStyle: voiceProfile.speakingStyle,
-            isActive: voiceProfile.isActive,
-            updatedAt: new Date(),
+            name: sql`excluded.name`,
+            engineId: sql`excluded.engine_id`,
+            sampleStorageKey: sql`excluded.sample_storage_key`,
+            sampleMimeType: sql`excluded.sample_mime_type`,
+            sampleDurationMs: sql`excluded.sample_duration_ms`,
+            qualityPreset: sql`excluded.quality_preset`,
+            speakingStyle: sql`excluded.speaking_style`,
+            isActive: sql`excluded.is_active`,
+            updatedAt: now,
           },
         });
     }
