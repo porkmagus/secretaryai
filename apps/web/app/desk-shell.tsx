@@ -477,11 +477,16 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
-            <p className="desk-composer-title">Write to {composerTarget}</p>
+            <label htmlFor="composer-input" className="desk-composer-title">
+              Write to {composerTarget}
+            </label>
           </div>
-          <p className="desk-composer-note">Ctrl+Enter to send</p>
+          <p id="composer-note" className="desk-composer-note">
+            Ctrl+Enter to send
+          </p>
         </div>
         <textarea
+          id="composer-input"
           ref={textareaRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
@@ -489,7 +494,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             void onComposerKeyDown(event);
           }}
           placeholder={`Ask ${composerTarget} something...`}
-          aria-label="Composer input"
+          aria-describedby="composer-note"
           rows={4}
         />
         {activeNotice ? (

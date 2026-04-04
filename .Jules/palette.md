@@ -1,3 +1,3 @@
-## 2025-05-14 - Chat Interaction Polish
-**Learning:** In a chat-centric interface, the "last mile" of interaction—copying results and transitioning from suggestions to typing—is where most friction occurs. Small touches like auto-focusing after a suggestion and inline copy feedback make the agent feel more like a tool and less like a static page.
-**Action:** Always ensure suggestion chips focus the primary input, and provide "Copy" utilities for any generated long-form content.
+## 2025-05-14 - [Composer Accessibility & Focus Flow]
+**Learning:** Icon-only or instruction-heavy inputs (like chat composers) often lack formal label associations and ARIA descriptions for keyboard shortcut hints (e.g., "Ctrl+Enter"). Additionally, selecting automated suggestions often breaks the focus state of the primary input, creating friction for power users.
+**Action:** Always link instructional text to the input using `aria-describedby` and ensure that clicking any suggestion chips or utility buttons programmatically returns focus to the main input to maintain interaction flow.
