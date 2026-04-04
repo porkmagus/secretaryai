@@ -48,6 +48,7 @@ export function SectionTabs({
               <Link
                 key={tab.href}
                 href={tab.href}
+                aria-current={active ? "page" : undefined}
                 className={`folder-shell__tab folder-shell__tab--${tone}${active ? " is-active" : ""}`}
               >
                 {tab.label}
