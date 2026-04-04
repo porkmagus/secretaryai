@@ -122,6 +122,13 @@ export function NoticeBanner({
   children: ReactNode;
   tone?: "info" | "success" | "warning" | "error";
 }) {
+  const role = tone === "error" ? "alert" : "status";
+
+  return (
+    <div
+      role={role}
+      aria-live="polite"
+      className={joinClasses("notice-banner", `notice-banner--${tone}`)}
   return (
     <div
       className={joinClasses("notice-banner", `notice-banner--${tone}`)}
