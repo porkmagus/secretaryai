@@ -1,3 +1,6 @@
+## 2026-03-31 - [Composer and Notice Accessibility]
+**Learning:** Accessibility in dynamic chat interfaces requires explicit roles and labels. Status messages (e.g., "is typing...") and notice banners should use `role="status"` or `role="alert"` with `aria-live="polite"` to ensure they are announced by screen readers. Additionally, linking form inputs (like the chat composer) to their visual labels using `aria-labelledby` and providing descriptive `aria-label` and `title` attributes for icon-only or ambiguous text buttons (e.g., dynamic "Speak"/"Stop" buttons) significantly improves the experience for users relying on assistive technology.
+**Action:** Always provide descriptive `aria-label` AND `title` (tooltip) for icon-only buttons, ambiguous text buttons, and `<summary>` elements. Ensure all dynamic status feedback uses appropriate ARIA roles and `aria-live` regions.
 # Palette's Journal - Critical UX/Accessibility Learnings
 
 This journal records critical UX and accessibility insights discovered during the development of the Secretary-First Personal Assistant.

@@ -380,6 +380,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ))}
                 {reasoningParts.length > 0 ? (
                   <details className="desk-reasoning">
+                    <summary title="View thinking process">
                     <summary
                       aria-label="View reasoning"
                       title="View reasoning"
@@ -458,6 +459,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   <button
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}
+                    aria-label={props.speakingMessageId === message.id ? "Stop reading" : "Read message aloud"}
+                    title={props.speakingMessageId === message.id ? "Stop reading" : "Read message aloud"}
                     className="button-secondary"
                     aria-label={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     title={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
@@ -489,6 +492,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
+            <p className="desk-composer-title" id="composer-title">Write to {composerTarget}</p>
+          </div>
+          <p className="desk-composer-note" id="composer-note">Ctrl+Enter to send</p>
             <p id="composer-title" className="desk-composer-title">Write to {composerTarget}</p>
           </div>
           <p id="composer-note" className="desk-composer-note">Ctrl+Enter to send</p>
@@ -532,6 +538,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           onKeyDown={(event) => {
             void onComposerKeyDown(event);
           }}
+          aria-labelledby="composer-title"
+          aria-describedby="composer-note"
           placeholder={`Ask ${composerTarget} something...`}
           aria-describedby="composer-note"
           rows={4}
@@ -569,6 +577,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </div>
         ) : null}
         <div className="desk-composer-foot">
+          <p className="desk-composer-status" role="status" aria-live="polite">{composerStatus}</p>
           <p className="desk-composer-status" role="status" aria-live="polite">
             {composerStatus}
           </p>
@@ -578,6 +587,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
               <button
                 type="button"
                 onClick={() => stop()}
+                aria-label={`Stop ${secretaryReference}`}
+                title={`Stop ${secretaryReference}`}
+                className="button-secondary"
                 className="button-secondary"
                 aria-label="Stop generating response"
                 title="Stop generating response"
