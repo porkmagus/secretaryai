@@ -425,6 +425,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 <div
                   className="desk-streaming-indicator"
                   role="status"
+                  aria-label={`${composerTarget} is typing...`}
                   aria-label={`${secretaryName} is typing...`}
                 >
                   <span />
@@ -488,6 +489,14 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
+            <p id="composer-title" className="desk-composer-title">Write to {composerTarget}</p>
+          </div>
+          <p id="composer-note" className="desk-composer-note">Ctrl+Enter to send</p>
+        </div>
+        <textarea
+          ref={textareaRef}
+          aria-labelledby="composer-title"
+          aria-describedby="composer-note"
             <label htmlFor="composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
             <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
           </div>
