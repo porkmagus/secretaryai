@@ -187,6 +187,8 @@ export function SecretaryPortraitField({
         className="secretary-portrait-trigger"
         aria-label="Set secretary portrait"
         title="Set secretary portrait"
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         onClick={() => {
           setInlineError(null);
           setIsOpen((current) => !current);
@@ -207,7 +209,12 @@ export function SecretaryPortraitField({
             }}
             onClick={() => setIsOpen(false)}
           />
-          <div className="secretary-portrait-popover">
+          <div
+            className="secretary-portrait-popover"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Set secretary portrait"
+          >
             <div className="secretary-portrait-popover__copy">
             <p className="secretary-portrait-popover__title">Set portrait</p>
             <p className="secretary-portrait-popover__text">

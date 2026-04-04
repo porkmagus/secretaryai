@@ -135,7 +135,9 @@ type DeskConversationPaneProps = {
 
 function DeskConversationPane(props: DeskConversationPaneProps) {
   const [input, setInput] = useState("");
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
   const secretaryName = props.secretaryName.trim() || "Secretary";
   const secretaryReference =
@@ -144,6 +146,15 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     secretaryName === "SetAgentName" ? "The secretary" : secretaryName;
   const composerTarget =
     secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
+
+  const copyToClipboard = useCallback((message: DeskChatMessage) => {
+    const text = extractText(message);
+    if (!text) return;
+
+    void navigator.clipboard.writeText(text);
+    setCopiedMessageId(message.id);
+    setTimeout(() => setCopiedMessageId(null), 2000);
+  }, []);
 
   useEffect(() => {
     conversationIdRef.current = props.activeConversationId;
@@ -372,6 +383,11 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <summary
                       aria-label="View reasoning"
                       title="View reasoning"
+                      aria-label={
+                        reasoningParts.some((part) => part.state === "streaming")
+                          ? "Secretary is thinking"
+                          : "View secretary's reasoning"
+                      }
                     >
                       Thinking
                       {reasoningParts.some((part) => part.state === "streaming") ? "..." : ""}
@@ -412,28 +428,28 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   <span />
                 </div>
               ) : null}
-              {!isUser ? (
-                <div className="desk-message-actions">
-                  {showLaunchPromptActions ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => void respondToAgentJobPrompt("yes")}
-                        className="button-primary"
-                        style={{ padding: "6px 10px", fontSize: 11 }}
-                      >
-                        Start job
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void respondToAgentJobPrompt("no")}
-                        className="button-secondary"
-                        style={{ padding: "6px 10px", fontSize: 11 }}
-                      >
-                        Keep in chat
-                      </button>
-                    </>
-                  ) : null}
+              <div className="desk-message-actions">
+                {showLaunchPromptActions ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void respondToAgentJobPrompt("yes")}
+                      className="button-primary"
+                      style={{ padding: "6px 10px", fontSize: 11 }}
+                    >
+                      Start job
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void respondToAgentJobPrompt("no")}
+                      className="button-secondary"
+                      style={{ padding: "6px 10px", fontSize: 11 }}
+                    >
+                      Keep in chat
+                    </button>
+                  </>
+                ) : null}
+                {!isUser ? (
                   <button
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}
@@ -441,11 +457,21 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     aria-label={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     title={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    aria-label={props.speakingMessageId === message.id ? "Stop speaking message" : "Speak message"}
+                    aria-label={props.speakingMessageId === message.id ? "Stop reading message aloud" : "Read message aloud"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
-                </div>
-              ) : null}
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(message)}
+                  className="button-secondary"
+                  style={{ padding: "6px 10px", fontSize: 11 }}
+                >
+                  {copiedMessageId === message.id ? "Copied!" : "Copy"}
+                </button>
+              </div>
             </article>
           );
         })}
@@ -456,19 +482,35 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
+            <label htmlFor="composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
             <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
           </div>
-          <p className="desk-composer-note">Ctrl+Enter to send</p>
+          <p id="composer-shortcut-hint" className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
           id="desk-composer-textarea"
+          id="composer-textarea"
+          id="desk-composer-textarea"
+            <label htmlFor="composer-input" className="desk-composer-title">
+              Write to {composerTarget}
+            </label>
+          </div>
+          <p id="composer-note" className="desk-composer-note">
+            Ctrl+Enter to send
+          </p>
+        </div>
+        <textarea
+          id="composer-input"
+          ref={textareaRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             void onComposerKeyDown(event);
           }}
           placeholder={`Ask ${composerTarget} something...`}
+          aria-describedby="composer-note"
           rows={4}
+          aria-describedby="composer-shortcut-hint"
         />
         {activeNotice ? (
           <div className="desk-stage-notice desk-stage-notice--composer">
@@ -499,7 +541,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </div>
         ) : null}
         <div className="desk-composer-foot">
-          <p className="desk-composer-status">{composerStatus}</p>
+          <p className="desk-composer-status" aria-live="polite">{composerStatus}</p>
           <div className="desk-composer-actions">
             {(status === "submitted" || status === "streaming") ? (
               <button
@@ -528,7 +570,10 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 key={suggestion}
                 type="button"
                 className="desk-followup-chip"
-                onClick={() => setInput(suggestion)}
+                onClick={() => {
+                  setInput(suggestion);
+                  textareaRef.current?.focus();
+                }}
               >
                 {suggestion}
               </button>
@@ -975,7 +1020,12 @@ export function DeskShell() {
                 <p className="desk-panel-eyebrow">Correspondence</p>
                 <h2 className="desk-panel-title">Recent correspondence</h2>
               </div>
-              <button type="button" onClick={startFreshConversation} className="button-secondary">
+              <button
+                type="button"
+                onClick={startFreshConversation}
+                className="button-secondary"
+                aria-label="Start a new correspondence"
+              >
                 New
               </button>
             </div>
