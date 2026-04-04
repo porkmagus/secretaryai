@@ -14,6 +14,9 @@ import {
 } from "./ai-sdk-registry.js";
 import { logFallbackTriggered } from "./utils/index.js";
 
+const TASK_INTENT_REGEX =
+  /\b(task|tasks|todo|to-do|remind|reminder|schedule|scheduled|due|deadline|checklist|meeting|time|when|what do i have)\b/i;
+
 type ConversationReplyResult = {
   mode: "model" | "fallback";
   model?: string;
@@ -184,9 +187,7 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
          .filter(Boolean);
 
   const tasks = context.activeTasks.slice(0, 4).map((task) => task.title);
-  const shouldSurfaceTasks =
-    tasks.length > 0 &&
-    /\b(task|tasks|todo|to-do|remind|reminder|schedule|scheduled|due|deadline|checklist|meeting|time|when|what do i have)\b/i.test(lastUserMessage);
+  const shouldSurfaceTasks = tasks.length > 0 && TASK_INTENT_REGEX.test(lastUserMessage);
 
   // Proactive upcoming reminder notice - more natural phrasing
   const now = Date.now();

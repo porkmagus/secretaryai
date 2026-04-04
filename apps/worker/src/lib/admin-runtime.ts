@@ -1437,6 +1437,7 @@ export async function importSettingsSnapshot(params: {
             enabled: sql`excluded.enabled`,
             approvalMode: sql`excluded.approval_mode`,
             updatedAt: now,
+            updatedAt: new Date(),
           },
         });
     }

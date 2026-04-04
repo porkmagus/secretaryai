@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import {
   createSessionToken,
@@ -15,14 +15,10 @@ type LoginRequest = {
 };
 
 function passwordsMatch(input: string, expected: string) {
-  const inputBuffer = Buffer.from(input);
-  const expectedBuffer = Buffer.from(expected);
+  const inputHash = createHash("sha256").update(input).digest();
+  const expectedHash = createHash("sha256").update(expected).digest();
 
-  if (inputBuffer.length !== expectedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(inputBuffer, expectedBuffer);
+  return timingSafeEqual(inputHash, expectedHash);
 }
 
 export async function POST(request: Request) {

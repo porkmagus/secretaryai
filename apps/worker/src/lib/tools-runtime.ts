@@ -1132,10 +1132,12 @@ async function createExecution(params: {
 }
 
 async function ensureToolRegistry(dbClient: DbClient) {
-  for (const tool of builtInTools) {
-    await dbClient.db
-      .insert(tools)
-      .values({
+  if (builtInTools.length === 0) return;
+
+  await dbClient.db
+    .insert(tools)
+    .values(
+      builtInTools.map((tool) => ({
         id: createMessageId(),
         key: tool.key,
         name: tool.name,
@@ -1144,19 +1146,19 @@ async function ensureToolRegistry(dbClient: DbClient) {
         approvalMode: tool.approvalMode,
         configSchemaJson: {},
         healthStatus: tool.healthStatus ?? "ok",
-      })
-      .onConflictDoUpdate({
-        target: tools.key,
-        set: {
-          description: tool.description,
-          enabled: sql`case when ${tools.healthStatus} = 'not_configured' then ${tool.enabled ?? true} else ${tools.enabled} end`,
-          healthStatus: tool.healthStatus ?? "ok",
-          name: tool.name,
-          approvalMode: sql`case when ${tools.healthStatus} = 'not_configured' then ${tool.approvalMode} else ${tools.approvalMode} end`,
-          updatedAt: new Date(),
-        },
-      });
-  }
+      })),
+    )
+    .onConflictDoUpdate({
+      target: tools.key,
+      set: {
+        description: sql`excluded.description`,
+        enabled: sql`case when ${tools.healthStatus} = 'not_configured' then excluded.enabled else ${tools.enabled} end`,
+        healthStatus: sql`excluded.health_status`,
+        name: sql`excluded.name`,
+        approvalMode: sql`case when ${tools.healthStatus} = 'not_configured' then excluded.approval_mode else ${tools.approvalMode} end`,
+        updatedAt: new Date(),
+      },
+    });
 }
 
 async function getToolByKey(dbClient: DbClient, key: string) {

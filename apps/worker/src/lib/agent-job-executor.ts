@@ -1174,7 +1174,8 @@ async function siteCrawlImpl(params: {
   // Limit number of pages with quota
   args.push("--quota", `${params.maxPages}m`);
 
-  args.push("-P", outputPath, params.url);
+  // Use -- to separate options from arguments to prevent command injection
+  args.push("-P", outputPath, "--", params.url);
 
   const { execa } = await import("execa");
   try {

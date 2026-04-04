@@ -122,7 +122,27 @@ export function NoticeBanner({
   children: ReactNode;
   tone?: "info" | "success" | "warning" | "error";
 }) {
-  return <div className={joinClasses("notice-banner", `notice-banner--${tone}`)}>{children}</div>;
+  return (
+    <div
+      role={tone === "error" ? "alert" : "status"}
+      aria-live="polite"
+      className={joinClasses("notice-banner", `notice-banner--${tone}`)}
+  const role = tone === "error" ? "alert" : "status";
+
+  return (
+    <div
+      role={role}
+      aria-live="polite"
+      className={joinClasses("notice-banner", `notice-banner--${tone}`)}
+  return (
+    <div
+      className={joinClasses("notice-banner", `notice-banner--${tone}`)}
+      role={tone === "error" ? "alert" : "status"}
+      aria-live="polite"
+    >
+      {children}
+    </div>
+  );
 }
 
 export function EmptyState({

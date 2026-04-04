@@ -21,8 +21,6 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createCodexCli } from "ai-sdk-provider-codex-cli";
 import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
-// Deferred: ai-sdk-provider-opencode-sdk is loaded lazily to avoid TDZ on repoRoot
-// import { createOpencode } from "ai-sdk-provider-opencode-sdk";
 import { createOllama } from "ollama-ai-provider-v2";
 import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
 import type { InferenceProviderId } from "@secretary/core-runtime";
