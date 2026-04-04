@@ -359,17 +359,53 @@ async function insertRequirement(params: {
   metadataJson?: Record<string, unknown>;
   resolutionText?: string | null;
 }) {
-  await params.dbClient.db.insert(agentJobRequirements).values({
-    id: createMessageId(),
-    jobId: params.jobId,
-    stepId: params.stepId,
-    requirementKind: params.kind,
-    label: params.label,
-    detail: params.detail,
-    status: params.status ?? "pending",
-    resolutionText: params.resolutionText ?? null,
-    metadataJson: params.metadataJson ?? {},
+  await insertRequirements({
+    dbClient: params.dbClient,
+    requirements: [
+      {
+        jobId: params.jobId,
+        stepId: params.stepId,
+        kind: params.kind,
+        label: params.label,
+        detail: params.detail,
+        status: params.status,
+        metadataJson: params.metadataJson,
+        resolutionText: params.resolutionText,
+      },
+    ],
   });
+}
+
+async function insertRequirements(params: {
+  dbClient: DbClient;
+  requirements: Array<{
+    jobId: string;
+    stepId: string | null;
+    kind: AgentJobRequirementKind;
+    label: string;
+    detail: string | null;
+    status?: AgentJobRequirementStatus;
+    metadataJson?: Record<string, unknown>;
+    resolutionText?: string | null;
+  }>;
+}) {
+  if (params.requirements.length === 0) {
+    return;
+  }
+
+  await params.dbClient.db.insert(agentJobRequirements).values(
+    params.requirements.map((req) => ({
+      id: createMessageId(),
+      jobId: req.jobId,
+      stepId: req.stepId,
+      requirementKind: req.kind,
+      label: req.label,
+      detail: req.detail,
+      status: req.status ?? "pending",
+      resolutionText: req.resolutionText ?? null,
+      metadataJson: req.metadataJson ?? {},
+    })),
+  );
 }
 
 function getRequestFromRow(row: JobRow): CreateAgentJobRequest {
@@ -870,17 +906,17 @@ async function syncDetectedRequirements(params: {
     eq(agentJobRequirements.status, "pending"),
   ));
 
-  for (const requirement of params.detected) {
-    await insertRequirement({
-      dbClient: params.dbClient,
+  await insertRequirements({
+    dbClient: params.dbClient,
+    requirements: params.detected.map((requirement) => ({
       jobId: params.jobId,
       stepId: params.stepId,
       kind: requirement.kind,
       label: requirement.label,
       detail: requirement.detail,
       metadataJson: requirement.metadataJson,
-    });
-  }
+    })),
+  });
 }
 
 async function storeVerificationEvidenceArtifacts(params: {
@@ -976,6 +1012,15 @@ function collectVerificationBlockers(params: {
     .filter((entry) => entry.exitCode !== 0)
     .map((entry) => `${entry.command} exited with ${entry.exitCode}`);
 
+  const requirements: Array<{
+    jobId: string;
+    stepId: string | null;
+    kind: AgentJobRequirementKind;
+    label: string;
+    detail: string | null;
+    metadataJson?: Record<string, unknown>;
+  }> = [];
+
   for (const step of params.stepSnapshots) {
     for (const result of step.toolResults) {
       if (!result.output || typeof result.output !== "object") {
@@ -1033,8 +1078,7 @@ async function syncVerificationRequirements(params: {
       if (result.toolName === "check_port" && output.open === false) {
         const host = typeof output.host === "string" ? output.host : "127.0.0.1";
         const port = typeof output.port === "number" ? output.port : null;
-        await insertRequirement({
-          dbClient: params.dbClient,
+        requirements.push({
           jobId: params.jobId,
           stepId: params.stepId,
           kind: "port",
@@ -1052,8 +1096,7 @@ async function syncVerificationRequirements(params: {
         const status = typeof output.status === "number" ? output.status : null;
         const ok = output.ok === true;
         if (status !== null && (!ok || status >= 400)) {
-          await insertRequirement({
-            dbClient: params.dbClient,
+          requirements.push({
             jobId: params.jobId,
             stepId: params.stepId,
             kind: "network",
@@ -1068,6 +1111,11 @@ async function syncVerificationRequirements(params: {
       }
     }
   }
+
+  await insertRequirements({
+    dbClient: params.dbClient,
+    requirements,
+  });
 }
 
 async function recoverInterruptedStep(params: {
