@@ -1,3 +1,10 @@
+## 2026-03-31 - Dual Accessibility Labels for Dynamic Controls
+**Learning:** For interactive elements with state-dependent labels (like 'Speak'/'Stop') or icon-only buttons, providing both `aria-label` (for screen readers) and `title` (for visual tooltips) ensures a consistent and accessible experience for all users.
+**Action:** Always pair `aria-label` with `title` on dynamic or icon-based controls to provide both technical and visual clarity.
+
+## 2026-03-31 - Semantic Labeling for Form Accessibility
+**Learning:** Using a proper `<label>` with `htmlFor` linked to an input's `id` is superior to using a simple `<p>` or `<span>` for field descriptions, as it provides a larger click target and correctly associates the text for assistive technologies.
+**Action:** Ensure all form inputs (including textareas) are explicitly linked to a `<label>` element.
 ## 2025-05-14 - [Accessibility: Improving Chat Composer Context]
 **Learning:** Standard text elements used as headers for input fields (like "Write to...") are often not programmatically linked to the input, leaving screen reader users without context when they focus the field. Additionally, dynamic status messages (like "is replying...") need explicit ARIA live regions to be useful for assistive technology.
 **Action:** Always use semantic `<label htmlFor="...">` tags to associate titles with inputs, and apply `aria-live="polite"` to status regions that update asynchronously.

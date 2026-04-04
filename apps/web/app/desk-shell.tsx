@@ -381,6 +381,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 {reasoningParts.length > 0 ? (
                   <details className="desk-reasoning">
                     <summary
+                      aria-label="View reasoning"
+                      title="View reasoning"
                       aria-label={
                         reasoningParts.some((part) => part.state === "streaming")
                           ? "Secretary is thinking"
@@ -452,6 +454,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}
                     className="button-secondary"
+                    aria-label={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
+                    title={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     style={{ padding: "6px 10px", fontSize: 11 }}
                     aria-label={props.speakingMessageId === message.id ? "Stop speaking message" : "Speak message"}
                     aria-label={props.speakingMessageId === message.id ? "Stop reading message aloud" : "Read message aloud"}
@@ -484,6 +488,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           <p id="composer-shortcut-hint" className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
+          id="desk-composer-textarea"
           id="composer-textarea"
           id="desk-composer-textarea"
             <label htmlFor="composer-input" className="desk-composer-title">
@@ -539,7 +544,13 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           <p className="desk-composer-status" aria-live="polite">{composerStatus}</p>
           <div className="desk-composer-actions">
             {(status === "submitted" || status === "streaming") ? (
-              <button type="button" onClick={() => stop()} className="button-secondary">
+              <button
+                type="button"
+                onClick={() => stop()}
+                className="button-secondary"
+                aria-label="Stop generating response"
+                title="Stop generating response"
+              >
                 Stop
               </button>
             ) : null}
