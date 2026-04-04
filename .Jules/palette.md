@@ -1,3 +1,6 @@
+## 2026-03-31 - [Micro-UX: Improving Chat and Nav Accessibility]
+**Learning:** Screen reader users need explicit context for dynamic status changes and implicit keyboard shortcuts. Using `aria-live` and `aria-describedby` provides this bridge without cluttering the visual UI. Additionally, marking active navigation links with `aria-current="page"` is a critical standard for accessible wayfinding.
+**Action:** Always link shortcut hints (like "Ctrl+Enter") to their respective inputs using `aria-describedby` and wrap status text in `aria-live="polite"` regions. Ensure navigation components have a clean way to apply `aria-current`.
 ## 2026-04-01 - [Action-Oriented Button Tooltips]
 **Learning:** In a UI with custom action-oriented buttons (like "Speak" or "+"), users benefit significantly from descriptive tooltips (`title`) and ARIA labels. This provides immediate hover feedback and ensures screen readers convey the button's intent, especially when the icon or text might be generic or state-dependent.
 **Action:** Always include both `title` and `aria-label` for buttons that perform specific actions or toggle states, ensuring they describe the *result* or *action* clearly.

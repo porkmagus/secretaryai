@@ -491,6 +491,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             <label htmlFor="composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
             <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
           </div>
+          <p className="desk-composer-note" id="composer-shortcut-note">
+            Ctrl+Enter to send
+          </p>
           <p id="composer-shortcut-hint" className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
@@ -516,6 +519,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           placeholder={`Ask ${composerTarget} something...`}
           aria-describedby="composer-note"
           rows={4}
+          aria-label={`Ask ${composerTarget} something...`}
+          aria-describedby="composer-shortcut-note"
           aria-describedby="composer-shortcut-hint"
         />
         {activeNotice ? (
