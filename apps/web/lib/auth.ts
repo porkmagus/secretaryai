@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 const AUTH_COOKIE_NAME = "secretary_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 14;
 
@@ -25,17 +27,10 @@ async function signValue(value: string, secret: string) {
 }
 
 function constantTimeEqual(left: string, right: string) {
-  if (left.length !== right.length) {
-    return false;
-  }
+  const leftHash = createHash("sha256").update(left).digest();
+  const rightHash = createHash("sha256").update(right).digest();
 
-  let mismatch = 0;
-
-  for (let index = 0; index < left.length; index += 1) {
-    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-
-  return mismatch === 0;
+  return timingSafeEqual(leftHash, rightHash);
 }
 
 export function getAuthCookieName() {
