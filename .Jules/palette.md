@@ -1,3 +1,6 @@
+## 2026-04-01 - [Action-Oriented Button Tooltips]
+**Learning:** In a UI with custom action-oriented buttons (like "Speak" or "+"), users benefit significantly from descriptive tooltips (`title`) and ARIA labels. This provides immediate hover feedback and ensures screen readers convey the button's intent, especially when the icon or text might be generic or state-dependent.
+**Action:** Always include both `title` and `aria-label` for buttons that perform specific actions or toggle states, ensuring they describe the *result* or *action* clearly.
 ## 2026-03-30 - Accessibility Polish Patterns
 **Learning:** Common interactive elements (navigation links, status indicators, and notification banners) lacked standard ARIA attributes, making them less accessible to screen reader users. Specifically, active navigation items should use `aria-current="page"`, dynamic status indicators should use `role="status"`, and global notice banners should use live regions.
 **Action:** Always check for `aria-current` on active navigation components and ensure dynamic UI updates are wrapped in appropriate ARIA live regions and roles.

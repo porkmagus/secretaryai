@@ -461,6 +461,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     aria-label={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     title={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     style={{ padding: "6px 10px", fontSize: 11 }}
+                    title={props.speakingMessageId === message.id ? "Stop playback" : "Speak message"}
+                    aria-label={props.speakingMessageId === message.id ? "Stop playback" : "Speak message"}
                     aria-label={props.speakingMessageId === message.id ? "Stop speaking message" : "Speak message"}
                     aria-label={props.speakingMessageId === message.id ? "Stop reading message aloud" : "Read message aloud"}
                   >
