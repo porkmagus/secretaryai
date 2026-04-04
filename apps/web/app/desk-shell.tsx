@@ -380,10 +380,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 ))}
                 {reasoningParts.length > 0 ? (
                   <details className="desk-reasoning">
-                    <summary title="View thinking process">
                     <summary
-                      aria-label="View reasoning"
-                      title="View reasoning"
+                      title="View thinking process"
                       aria-label={
                         reasoningParts.some((part) => part.state === "streaming")
                           ? "Secretary is thinking"
@@ -426,7 +424,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 <div
                   className="desk-streaming-indicator"
                   role="status"
-                  aria-label={`${composerTarget} is typing...`}
                   aria-label={`${secretaryName} is typing...`}
                 >
                   <span />
@@ -459,16 +456,18 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   <button
                     type="button"
                     onClick={() => props.onSpeakMessage(message)}
-                    aria-label={props.speakingMessageId === message.id ? "Stop reading" : "Read message aloud"}
-                    title={props.speakingMessageId === message.id ? "Stop reading" : "Read message aloud"}
+                    aria-label={
+                      props.speakingMessageId === message.id
+                        ? "Stop reading message aloud"
+                        : "Read message aloud"
+                    }
+                    title={
+                      props.speakingMessageId === message.id
+                        ? "Stop reading message aloud"
+                        : "Read message aloud"
+                    }
                     className="button-secondary"
-                    aria-label={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
-                    title={props.speakingMessageId === message.id ? "Stop speaking" : "Speak message"}
                     style={{ padding: "6px 10px", fontSize: 11 }}
-                    title={props.speakingMessageId === message.id ? "Stop playback" : "Speak message"}
-                    aria-label={props.speakingMessageId === message.id ? "Stop playback" : "Speak message"}
-                    aria-label={props.speakingMessageId === message.id ? "Stop speaking message" : "Speak message"}
-                    aria-label={props.speakingMessageId === message.id ? "Stop reading message aloud" : "Read message aloud"}
                   >
                     {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                   </button>
@@ -476,6 +475,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 <button
                   type="button"
                   onClick={() => copyToClipboard(message)}
+                  aria-label={copiedMessageId === message.id ? "Message copied" : "Copy message text"}
+                  title={copiedMessageId === message.id ? "Message copied" : "Copy message text"}
                   className="button-secondary"
                   style={{ padding: "6px 10px", fontSize: 11 }}
                 >
@@ -492,36 +493,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
-            <p className="desk-composer-title" id="composer-title">Write to {composerTarget}</p>
-          </div>
-          <p className="desk-composer-note" id="composer-note">Ctrl+Enter to send</p>
-            <p id="composer-title" className="desk-composer-title">Write to {composerTarget}</p>
-          </div>
-          <p id="composer-note" className="desk-composer-note">Ctrl+Enter to send</p>
-        </div>
-        <textarea
-          ref={textareaRef}
-          aria-labelledby="composer-title"
-          aria-describedby="composer-note"
-            <label htmlFor="composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
-            <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
-          </div>
-          <p className="desk-composer-note" id="composer-hint">
-            Ctrl+Enter to send
-          </p>
-        </div>
-        <textarea
-          ref={textareaRef}
-          id="composer-input"
-          <p className="desk-composer-note" id="composer-shortcut-note">
-            Ctrl+Enter to send
-          </p>
-          <p id="composer-shortcut-hint" className="desk-composer-note">Ctrl+Enter to send</p>
-        </div>
-        <textarea
-          id="desk-composer-textarea"
-          id="composer-textarea"
-          id="desk-composer-textarea"
             <label htmlFor="composer-input" className="desk-composer-title">
               Write to {composerTarget}
             </label>
@@ -538,15 +509,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           onKeyDown={(event) => {
             void onComposerKeyDown(event);
           }}
-          aria-labelledby="composer-title"
           aria-describedby="composer-note"
           placeholder={`Ask ${composerTarget} something...`}
-          aria-describedby="composer-note"
           rows={4}
-          aria-describedby="composer-hint"
-          aria-label={`Ask ${composerTarget} something...`}
-          aria-describedby="composer-shortcut-note"
-          aria-describedby="composer-shortcut-hint"
         />
         {activeNotice ? (
           <div className="desk-stage-notice desk-stage-notice--composer">
@@ -577,22 +542,17 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
           </div>
         ) : null}
         <div className="desk-composer-foot">
-          <p className="desk-composer-status" role="status" aria-live="polite">{composerStatus}</p>
           <p className="desk-composer-status" role="status" aria-live="polite">
             {composerStatus}
           </p>
-          <p className="desk-composer-status" aria-live="polite">{composerStatus}</p>
           <div className="desk-composer-actions">
-            {(status === "submitted" || status === "streaming") ? (
+            {status === "submitted" || status === "streaming" ? (
               <button
                 type="button"
                 onClick={() => stop()}
                 aria-label={`Stop ${secretaryReference}`}
                 title={`Stop ${secretaryReference}`}
                 className="button-secondary"
-                className="button-secondary"
-                aria-label="Stop generating response"
-                title="Stop generating response"
               >
                 Stop
               </button>
