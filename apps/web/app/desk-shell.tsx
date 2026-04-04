@@ -478,11 +478,13 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <div className="desk-composer-head">
           <div className="desk-composer-copy">
             <p className="desk-composer-eyebrow">Compose</p>
+            <label htmlFor="composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
             <label htmlFor="desk-composer-textarea" className="desk-composer-title">Write to {composerTarget}</label>
           </div>
           <p id="composer-shortcut-hint" className="desk-composer-note">Ctrl+Enter to send</p>
         </div>
         <textarea
+          id="composer-textarea"
           id="desk-composer-textarea"
             <label htmlFor="composer-input" className="desk-composer-title">
               Write to {composerTarget}
