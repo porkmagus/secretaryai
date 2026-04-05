@@ -136,6 +136,7 @@ type DeskConversationPaneProps = {
 function DeskConversationPane(props: DeskConversationPaneProps) {
   const [input, setInput] = useState("");
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
   const streamRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
@@ -228,14 +229,41 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         return;
       }
 
-      node.scrollTo({
-        top: node.scrollHeight,
-        behavior: status === "ready" ? "smooth" : "auto",
-      });
+      // Only auto-scroll if we are near the bottom or it is a new message from user
+      const isNearBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 150;
+      if (isNearBottom || status === "submitted") {
+        node.scrollTo({
+          top: node.scrollHeight,
+          behavior: status === "ready" ? "smooth" : "auto",
+        });
+      }
     });
 
     return () => window.cancelAnimationFrame(nextFrame);
   }, [messages, status]);
+
+  useEffect(() => {
+    const node = streamRef.current;
+    if (!node) return;
+
+    const handleScroll = () => {
+      const isFarFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight > 300;
+      setShowScrollButton(isFarFromBottom);
+    };
+
+    node.addEventListener("scroll", handleScroll);
+    return () => node.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const scrollToBottom = () => {
+    const node = streamRef.current;
+    if (node) {
+      node.scrollTo({
+        top: node.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  };
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -325,8 +353,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         </div>
       </header>
 
-      <div className="desk-message-stream" ref={streamRef}>
-        {messages.map((message) => {
+      <div style={{ position: "relative", minHeight: 0, display: "grid" }}>
+        <div className="desk-message-stream" ref={streamRef}>
+          {messages.map((message) => {
           const text = extractText(message);
           const metadata = extractMetadata(message);
           const isUser = message.role === "user";
@@ -484,8 +513,30 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 </button>
               </div>
             </article>
-          );
-        })}
+            );
+          })}
+        </div>
+        {showScrollButton && (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="button-secondary"
+            aria-label="Scroll to latest messages"
+            title="Scroll to bottom"
+            style={{
+              position: "absolute",
+              bottom: "20px",
+              right: "20px",
+              zIndex: 10,
+              borderRadius: "999px",
+              padding: "8px 12px",
+              fontSize: "11px",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+            }}
+          >
+            ↓ Latest
+          </button>
+        )}
       </div>
 
       <form onSubmit={onSubmit} className="desk-composer">
