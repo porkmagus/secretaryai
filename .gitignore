@@ -16,6 +16,7 @@ drizzle/
 apps/worker/runtime/
 runtime/generated/documents/*
 runtime/secrets/*
+apps/runtime/secrets/*
 runtime/postgres-mounttest/
 runtime/chmod-test/
 runtime/perm-repro/
