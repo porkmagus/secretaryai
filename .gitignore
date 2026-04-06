@@ -45,3 +45,5 @@ runtime/config/dev-orchestrator.json
 .DS_Store
 Thumbs.db
 .idea/
+# Conversation logs
+hermes_conversation_*.json
