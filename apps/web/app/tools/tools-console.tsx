@@ -476,11 +476,17 @@ export function ToolsConsole() {
                 className={preset === "full_access" ? "button-danger" : "button-secondary"}
                 disabled={presetBusy !== null}
                 title={presetHint(preset)}
+                aria-label={`Apply ${presetLabel(preset)} preset`}
               >
                 {presetBusy === preset ? "Applying..." : presetLabel(preset)}
               </button>
             ))}
-            <button type="button" onClick={() => void load()} className="button-secondary">
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="button-secondary"
+              aria-label="Refresh tool registry and execution history"
+            >
               {isLoading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
@@ -515,7 +521,12 @@ export function ToolsConsole() {
                   ? "Nothing is waiting for approval."
                   : `${pending.length} execution${pending.length === 1 ? "" : "s"} waiting for approval.`}
               </p>
-              <button type="button" onClick={() => void load()} className="button-secondary">
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="button-secondary"
+                aria-label="Refresh tool registry and execution history"
+              >
                 Refresh
               </button>
             </ActionRow>
@@ -685,7 +696,11 @@ export function ToolsConsole() {
                     alignItems: "center",
                   }}
                 >
+                  <label htmlFor="policy-approval-mode" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                    Approval mode
+                  </label>
                   <select
+                    id="policy-approval-mode"
                     value={selectedDraft.approvalMode}
                     onChange={(event) =>
                       setDrafts((current) => ({
@@ -762,12 +777,20 @@ export function ToolsConsole() {
                     gridTemplateColumns: "minmax(0, 1.2fr) minmax(180px, 220px) minmax(160px, 180px)",
                   }}
                 >
+                  <label htmlFor="execution-search" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                    Search executions
+                  </label>
                   <input
+                    id="execution-search"
                     value={filterText}
                     onChange={(event) => setFilterText(event.target.value)}
                     placeholder="Search tool, summary, request, or error"
                   />
+                  <label htmlFor="execution-tool-filter" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                    Filter by tool
+                  </label>
                   <select
+                    id="execution-tool-filter"
                     value={filterToolKey}
                     onChange={(event) => setFilterToolKey(event.target.value)}
                   >
@@ -778,7 +801,11 @@ export function ToolsConsole() {
                       </option>
                     ))}
                   </select>
+                  <label htmlFor="execution-state-filter" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                    Filter by state
+                  </label>
                   <select
+                    id="execution-state-filter"
                     value={filterState}
                     onChange={(event) => setFilterState(event.target.value as ExecutionFilter)}
                   >
