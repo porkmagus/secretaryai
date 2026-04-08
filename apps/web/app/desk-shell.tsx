@@ -555,6 +555,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <textarea
           id="composer-input"
           ref={textareaRef}
+          autoFocus
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -577,6 +578,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
                   className="button-primary"
+                  aria-label="Approve tool execution"
+                  title="Approve tool execution"
                 >
                   {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
                 </button>
@@ -585,6 +588,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
                   className="button-danger"
+                  aria-label="Deny tool execution"
+                  title="Deny tool execution"
                 >
                   Deny
                 </button>
@@ -612,6 +617,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
               type="submit"
               disabled={status === "submitted" || status === "streaming" || input.trim().length === 0}
               className="button-primary"
+              aria-label="Send message"
+              title="Send message (Ctrl+Enter)"
             >
               {status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
             </button>
@@ -1079,6 +1086,7 @@ export function DeskShell() {
                 onClick={startFreshConversation}
                 className="button-secondary"
                 aria-label="Start a new correspondence"
+                title="Start a new correspondence"
               >
                 New
               </button>
@@ -1122,6 +1130,8 @@ export function DeskShell() {
                     key={conversation.id}
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
+                    aria-current={conversationId === conversation.id ? "page" : undefined}
+                    title={`Open correspondence: ${conversation.title ?? "Untitled"}`}
                     className={`desk-correspondence-item ${
                       conversationId === conversation.id ? "is-active" : ""
                     }`}

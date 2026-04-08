@@ -45,3 +45,7 @@ This journal records critical UX and accessibility insights discovered during th
 ## 2025-05-14 - [Composer Accessibility & Focus Flow]
 **Learning:** Icon-only or instruction-heavy inputs (like chat composers) often lack formal label associations and ARIA descriptions for keyboard shortcut hints (e.g., "Ctrl+Enter"). Additionally, selecting automated suggestions often breaks the focus state of the primary input, creating friction for power users.
 **Action:** Always link instructional text to the input using `aria-describedby` and ensure that clicking any suggestion chips or utility buttons programmatically returns focus to the main input to maintain interaction flow.
+
+## 2026-04-02 - [Desk Focus and Nav Wayfinding]
+**Learning:** In a productivity-focused desk interface, using `autoFocus` on the primary composer ensures immediate readiness for power users. Pairing this with `aria-current="page"` on active sidebar items provides critical orientation for assistive technology users navigating between multiple work streams.
+**Action:** Always enable `autoFocus` on primary input fields in task-oriented views and use `aria-current="page"` to mark the active context in navigation or history lists.
