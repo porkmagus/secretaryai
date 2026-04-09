@@ -1,3 +1,7 @@
+## 2026-04-01 - [Standardizing Component Tooltips]
+**Learning:** Shared UI components like toggles often lack a direct way to provide visual tooltips (`title`) without wrapping them in extra elements. Extending the component interface to accept and pass through a `title` prop ensures consistent tooltip behavior across the app while maintaining the semantic button structure.
+**Action:** When creating or updating shared interactive components, always include a passthrough `title` prop to support the "dual accessibility" pattern (aria-label + tooltip).
+
 ## 2025-03-27 - [Performance Optimization: Batch Upserts in Drizzle]
 **Learning:** Replacing N+1 loops with batched `onConflictDoUpdate` (upsert) operations significantly reduces database round-trips. For entities without unique natural keys (like `integrations`), fetching existing records once and using a Map for ID resolution in memory is an efficient middle ground.
 **Action:** Always prefer batched operations over individual queries in loops. When a natural key isn't unique, pre-fetch and map IDs to enable batched upserts.

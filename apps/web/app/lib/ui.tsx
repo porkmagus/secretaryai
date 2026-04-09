@@ -206,6 +206,7 @@ export function ToggleField({
   disabled = false,
   hint,
   className,
+  title,
 }: {
   checked: boolean;
   label: ReactNode;
@@ -213,6 +214,7 @@ export function ToggleField({
   disabled?: boolean;
   hint?: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
     <button
@@ -221,6 +223,7 @@ export function ToggleField({
       aria-checked={checked}
       aria-disabled={disabled}
       disabled={disabled}
+      title={title}
       onClick={() => onChange(!checked)}
       className={joinClasses(
         "toggle-field",
