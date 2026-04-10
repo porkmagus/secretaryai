@@ -466,6 +466,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <button
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("yes")}
+                      aria-label="Start this as an agent job"
+                      title="Start this as an agent job"
                       className="button-primary"
                       style={{ padding: "6px 10px", fontSize: 11 }}
                     >
@@ -474,6 +476,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <button
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("no")}
+                      aria-label="Keep this in the current chat"
+                      title="Keep this in the current chat"
                       className="button-secondary"
                       style={{ padding: "6px 10px", fontSize: 11 }}
                     >
@@ -576,6 +580,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   type="button"
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
+                  aria-label={props.approvalBusyId === props.pendingApproval.id ? "Working on approval..." : "Approve this tool execution"}
+                  title={props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
                   className="button-primary"
                 >
                   {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
@@ -584,6 +590,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   type="button"
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
+                  aria-label="Deny this tool execution"
+                  title="Deny"
                   className="button-danger"
                 >
                   Deny
@@ -611,6 +619,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             <button
               type="submit"
               disabled={status === "submitted" || status === "streaming" || input.trim().length === 0}
+              aria-label={status === "submitted" || status === "streaming" ? "Message sending..." : "Send message"}
+              title={status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
               className="button-primary"
             >
               {status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
@@ -1122,6 +1132,9 @@ export function DeskShell() {
                     key={conversation.id}
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
+                    aria-current={conversationId === conversation.id ? "true" : undefined}
+                    aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
+                    title={`Reopen: ${conversation.title ?? "Untitled conversation"}`}
                     className={`desk-correspondence-item ${
                       conversationId === conversation.id ? "is-active" : ""
                     }`}
