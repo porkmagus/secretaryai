@@ -1125,6 +1125,9 @@ export function DeskShell() {
                     className={`desk-correspondence-item ${
                       conversationId === conversation.id ? "is-active" : ""
                     }`}
+                    aria-current={conversationId === conversation.id ? "true" : undefined}
+                    aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
+                    title={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                   >
                     <p className="desk-correspondence-title">
                       {conversation.title ?? "Untitled conversation"}

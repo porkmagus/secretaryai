@@ -45,3 +45,7 @@ This journal records critical UX and accessibility insights discovered during th
 ## 2025-05-14 - [Composer Accessibility & Focus Flow]
 **Learning:** Icon-only or instruction-heavy inputs (like chat composers) often lack formal label associations and ARIA descriptions for keyboard shortcut hints (e.g., "Ctrl+Enter"). Additionally, selecting automated suggestions often breaks the focus state of the primary input, creating friction for power users.
 **Action:** Always link instructional text to the input using `aria-describedby` and ensure that clicking any suggestion chips or utility buttons programmatically returns focus to the main input to maintain interaction flow.
+
+## 2026-04-01 - [Surgical Accessibility Enhancements]
+**Learning:** In a codebase with significant formatting debt, global auto-formatting (e.g., Prettier) can easily exceed PR line limits and obscure meaningful UX changes. Surgical insertion of ARIA attributes and titles is preferred to maintain focus on the micro-UX improvement.
+**Action:** Always verify the diff size after formatting; if it exceeds 50 lines due to whitespace, restore the file and apply changes manually to specific elements.
