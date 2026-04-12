@@ -467,6 +467,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("yes")}
                       className="button-primary"
+                      aria-label="Start as an automated agent job"
+                      title="Start as an automated agent job"
                       style={{ padding: "6px 10px", fontSize: 11 }}
                     >
                       Start job
@@ -475,6 +477,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("no")}
                       className="button-secondary"
+                      aria-label="Keep this conversation in the chat interface"
+                      title="Keep this conversation in the chat interface"
                       style={{ padding: "6px 10px", fontSize: 11 }}
                     >
                       Keep in chat
@@ -555,6 +559,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <textarea
           id="composer-input"
           ref={textareaRef}
+          autoFocus
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -1079,6 +1084,7 @@ export function DeskShell() {
                 onClick={startFreshConversation}
                 className="button-secondary"
                 aria-label="Start a new correspondence"
+                title="Start a new correspondence"
               >
                 New
               </button>
@@ -1122,6 +1128,9 @@ export function DeskShell() {
                     key={conversation.id}
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
+                    aria-current={conversationId === conversation.id ? "true" : undefined}
+                    aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
+                    title={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     className={`desk-correspondence-item ${
                       conversationId === conversation.id ? "is-active" : ""
                     }`}
