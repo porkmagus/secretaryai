@@ -206,6 +206,8 @@ export function ToggleField({
   disabled = false,
   hint,
   className,
+  title,
+  id,
 }: {
   checked: boolean;
   label: ReactNode;
@@ -213,13 +215,20 @@ export function ToggleField({
   disabled?: boolean;
   hint?: ReactNode;
   className?: string;
+  title?: string;
+  id?: string;
 }) {
+  const hintId = hint && id ? `${id}-hint` : undefined;
+
   return (
     <button
       type="button"
+      id={id}
       role="switch"
       aria-checked={checked}
       aria-disabled={disabled}
+      aria-describedby={hintId}
+      title={title}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={joinClasses(
@@ -234,7 +243,11 @@ export function ToggleField({
       </span>
       <span className="toggle-field__copy">
         <span className="toggle-field__label">{label}</span>
-        {hint ? <span className="toggle-field__hint">{hint}</span> : null}
+        {hint ? (
+          <span id={hintId} className="toggle-field__hint">
+            {hint}
+          </span>
+        ) : null}
       </span>
     </button>
   );

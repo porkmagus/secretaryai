@@ -468,6 +468,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                       onClick={() => void respondToAgentJobPrompt("yes")}
                       className="button-primary"
                       style={{ padding: "6px 10px", fontSize: 11 }}
+                      aria-label="Start agent job"
+                      title="Start agent job"
                     >
                       Start job
                     </button>
@@ -476,6 +478,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                       onClick={() => void respondToAgentJobPrompt("no")}
                       className="button-secondary"
                       style={{ padding: "6px 10px", fontSize: 11 }}
+                      aria-label="Keep as chat conversation"
+                      title="Keep as chat conversation"
                     >
                       Keep in chat
                     </button>
@@ -1079,6 +1083,7 @@ export function DeskShell() {
                 onClick={startFreshConversation}
                 className="button-secondary"
                 aria-label="Start a new correspondence"
+                title="Start a new correspondence"
               >
                 New
               </button>
@@ -1122,6 +1127,9 @@ export function DeskShell() {
                     key={conversation.id}
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
+                    aria-current={conversationId === conversation.id ? "true" : undefined}
+                    aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
+                    title={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     className={`desk-correspondence-item ${
                       conversationId === conversation.id ? "is-active" : ""
                     }`}
