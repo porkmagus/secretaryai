@@ -279,12 +279,20 @@ export function MemoryBrowser() {
                 gap: 10,
               }}
             >
+              <label htmlFor="memory-search" className="sr-only">
+                Search memories
+              </label>
               <input
+                id="memory-search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search memory text, summaries, or tags"
               />
+              <label htmlFor="memory-type-filter" className="sr-only">
+                Filter by memory type
+              </label>
               <select
+                id="memory-type-filter"
                 value={typeFilter}
                 onChange={(event) => setTypeFilter(event.target.value as MemoryType | "all")}
               >
@@ -313,6 +321,9 @@ export function MemoryBrowser() {
                     key={memory.id}
                     type="button"
                     onClick={() => setSelectedMemoryId(memory.id)}
+                    aria-label={`Open memory: ${memory.title ?? "Untitled memory"}`}
+                    title={`Open memory: ${memory.title ?? "Untitled memory"}`}
+                    aria-current={selectedMemory?.id === memory.id ? "true" : undefined}
                     className="inspector-list-row"
                     style={{
                       textAlign: "left",
@@ -446,63 +457,87 @@ export function MemoryBrowser() {
                     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                   }}
                 >
-                  <input
-                    value={selectedDraft.title}
+                  <div>
+                    <label htmlFor="memory-title" className="sr-only">
+                      Memory title
+                    </label>
+                    <input
+                      id="memory-title"
+                      value={selectedDraft.title}
+                      onChange={(event) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [selectedMemory.id]: {
+                            ...current[selectedMemory.id],
+                            title: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder="Title"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="memory-tags" className="sr-only">
+                      Memory tags
+                    </label>
+                    <input
+                      id="memory-tags"
+                      value={selectedDraft.tags}
+                      onChange={(event) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [selectedMemory.id]: {
+                            ...current[selectedMemory.id],
+                            tags: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder="tags, comma, separated"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="memory-summary" className="sr-only">
+                    Memory summary
+                  </label>
+                  <textarea
+                    id="memory-summary"
+                    value={selectedDraft.summary}
                     onChange={(event) =>
                       setDrafts((current) => ({
                         ...current,
                         [selectedMemory.id]: {
                           ...current[selectedMemory.id],
-                          title: event.target.value,
+                          summary: event.target.value,
                         },
                       }))
                     }
-                    placeholder="Title"
-                  />
-                  <input
-                    value={selectedDraft.tags}
-                    onChange={(event) =>
-                      setDrafts((current) => ({
-                        ...current,
-                        [selectedMemory.id]: {
-                          ...current[selectedMemory.id],
-                          tags: event.target.value,
-                        },
-                      }))
-                    }
-                    placeholder="tags, comma, separated"
+                    rows={3}
+                    placeholder="Summary"
                   />
                 </div>
 
-                <textarea
-                  value={selectedDraft.summary}
-                  onChange={(event) =>
-                    setDrafts((current) => ({
-                      ...current,
-                      [selectedMemory.id]: {
-                        ...current[selectedMemory.id],
-                        summary: event.target.value,
-                      },
-                    }))
-                  }
-                  rows={3}
-                  placeholder="Summary"
-                />
-
-                <textarea
-                  value={selectedDraft.contentText}
-                  onChange={(event) =>
-                    setDrafts((current) => ({
-                      ...current,
-                      [selectedMemory.id]: {
-                        ...current[selectedMemory.id],
-                        contentText: event.target.value,
-                      },
-                    }))
-                  }
-                  rows={9}
-                  placeholder="Memory content"
-                />
+                <div>
+                  <label htmlFor="memory-content" className="sr-only">
+                    Memory content
+                  </label>
+                  <textarea
+                    id="memory-content"
+                    value={selectedDraft.contentText}
+                    onChange={(event) =>
+                      setDrafts((current) => ({
+                        ...current,
+                        [selectedMemory.id]: {
+                          ...current[selectedMemory.id],
+                          contentText: event.target.value,
+                        },
+                      }))
+                    }
+                    rows={9}
+                    placeholder="Memory content"
+                  />
+                </div>
 
                 <div
                   style={{
@@ -512,7 +547,11 @@ export function MemoryBrowser() {
                     alignItems: "center",
                   }}
                 >
+                  <label htmlFor="memory-type" className="sr-only">
+                    Memory type
+                  </label>
                   <select
+                    id="memory-type"
                     value={selectedDraft.memoryType}
                     onChange={(event) =>
                       setDrafts((current) => ({
