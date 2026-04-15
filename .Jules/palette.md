@@ -42,6 +42,10 @@ This journal records critical UX and accessibility insights discovered during th
 **Learning:** UX and accessibility should prioritize semantic HTML and ARIA attributes for interactive elements to improve the experience for keyboard and screen reader users. This includes using `<label>` for form fields, `aria-describedby` for help text, and `aria-live` for dynamic status updates.
 **Action:** Always check for missing `<label>` tags for inputs and ensure toggle buttons (like "Speak") have state-aware `aria-label` attributes. Use `aria-live="polite"` for status messages to ensure they are announced without interruption.
 
+## 2026-04-14 - [Global SR-Only and Navigator Accessibility]
+**Learning:** In complex inspector-style interfaces (like the Memory Browser), visually hidden but semantically present labels (`.sr-only`) are essential for bridging the gap between minimalist design and screen reader accessibility. Additionally, list navigators benefit from `aria-current` to clearly signal the active selection to assistive technology.
+**Action:** Ensure a standard `.sr-only` utility is available and used for all form fields that lack visual labels. Apply `aria-current` to active items in sidebar navigators.
+
 ## 2026-04-01 - [Smart Scroll and Jump-to-Bottom Pattern]
 **Learning:** In long-running chat interfaces, forced auto-scrolling can be disruptive if the user is reading history. A "Smart Scroll" approach—auto-scrolling only when the user is already near the bottom or has just sent a message—paired with a "Jump to Latest" floating button provides a superior balance of automation and control.
 **Action:** Implement conditional auto-scroll based on current scroll position and provide a floating "Scroll to bottom" button when the user has scrolled significantly away from the latest content.
@@ -49,3 +53,7 @@ This journal records critical UX and accessibility insights discovered during th
 ## 2025-05-14 - [Composer Accessibility & Focus Flow]
 **Learning:** Icon-only or instruction-heavy inputs (like chat composers) often lack formal label associations and ARIA descriptions for keyboard shortcut hints (e.g., "Ctrl+Enter"). Additionally, selecting automated suggestions often breaks the focus state of the primary input, creating friction for power users.
 **Action:** Always link instructional text to the input using `aria-describedby` and ensure that clicking any suggestion chips or utility buttons programmatically returns focus to the main input to maintain interaction flow.
+
+## 2026-04-02 - [Desk Focus and Nav Wayfinding]
+**Learning:** In a productivity-focused desk interface, using `autoFocus` on the primary composer ensures immediate readiness for power users. Pairing this with `aria-current="page"` on active sidebar items provides critical orientation for assistive technology users navigating between multiple work streams.
+**Action:** Always enable `autoFocus` on primary input fields in task-oriented views and use `aria-current="page"` to mark the active context in navigation or history lists.
