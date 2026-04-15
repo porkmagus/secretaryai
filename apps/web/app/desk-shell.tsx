@@ -588,6 +588,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   aria-label={`Approve ${props.pendingApproval.toolName}`}
                   title={`Approve ${props.pendingApproval.toolName}`}
                   className="button-primary"
+                  aria-label="Approve tool execution"
+                  title="Approve tool execution"
                 >
                   {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
                 </button>
@@ -598,6 +600,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   aria-label={`Deny ${props.pendingApproval.toolName}`}
                   title={`Deny ${props.pendingApproval.toolName}`}
                   className="button-danger"
+                  aria-label="Deny tool execution"
+                  title="Deny tool execution"
                 >
                   Deny
                 </button>
@@ -635,6 +639,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   : "Send message"
               }
               className="button-primary"
+              aria-label="Send message"
+              title="Send message (Ctrl+Enter)"
             >
               {status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
             </button>
@@ -1146,6 +1152,8 @@ export function DeskShell() {
                     key={conversation.id}
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
+                    aria-current={conversationId === conversation.id ? "page" : undefined}
+                    title={`Open correspondence: ${conversation.title ?? "Untitled"}`}
                     aria-current={conversationId === conversation.id ? "true" : undefined}
                     aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     title={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
