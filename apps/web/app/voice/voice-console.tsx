@@ -494,6 +494,8 @@ export function VoiceConsole() {
           <button
             type="button"
             onClick={() => void refreshCore()}
+            aria-label="Refresh voice core data"
+            title="Refresh voice workspace"
             style={{ ...primaryButton, cursor: isLoading ? "wait" : "pointer" }}
           >
             {isLoading ? "Refreshing..." : "Refresh"}
@@ -678,6 +680,16 @@ export function VoiceConsole() {
                       type="button"
                       onClick={() => sampleInputRef.current?.click()}
                       disabled={isUploadingSample}
+                      aria-label={
+                        activeProfile.sampleStorageKey && !clearSampleOnSave
+                          ? "Replace current voice sample"
+                          : "Upload new voice sample"
+                      }
+                      title={
+                        activeProfile.sampleStorageKey && !clearSampleOnSave
+                          ? "Replace voice sample"
+                          : "Upload voice sample"
+                      }
                       style={{ ...ghostButton, cursor: isUploadingSample ? "wait" : "pointer" }}
                     >
                       {isUploadingSample
@@ -690,6 +702,8 @@ export function VoiceConsole() {
                       type="button"
                       onClick={() => setClearSampleOnSave(true)}
                       disabled={activeVoiceMode === "default"}
+                      aria-label="Use engine default voice"
+                      title="Revert to default voice"
                       style={{ ...ghostButton, cursor: activeVoiceMode === "default" ? "not-allowed" : "pointer" }}
                     >
                       Use default voice
@@ -700,6 +714,7 @@ export function VoiceConsole() {
                 {activeProfile.sampleStorageKey && !clearSampleOnSave ? (
                   <audio
                     controls
+                    title="Custom voice sample"
                     src={buildFileUrl(activeProfile.sampleStorageKey, activeProfile.sampleMimeType)}
                     style={{ width: "100%" }}
                   />
@@ -727,6 +742,8 @@ export function VoiceConsole() {
                   type="button"
                   onClick={() => void saveActiveVoice()}
                   disabled={isSaving}
+                aria-label="Save active voice settings"
+                title="Save active voice"
                   style={{ ...primaryButton, cursor: isSaving ? "wait" : "pointer" }}
                 >
                   {isSaving ? "Saving..." : "Save voice"}
@@ -767,13 +784,17 @@ export function VoiceConsole() {
                 type="button"
                 onClick={() => void previewVoice()}
                 disabled={isPreviewing}
+                aria-label="Generate voice preview from script"
+                title="Generate preview"
                 style={{ ...primaryButton, cursor: isPreviewing ? "wait" : "pointer" }}
               >
                 {isPreviewing ? "Synthesizing..." : "Generate preview"}
               </button>
             </ActionRow>
 
-            {previewUrl ? <audio controls src={previewUrl} style={{ width: "100%" }} /> : null}
+            {previewUrl ? (
+              <audio controls title="Voice preview" src={previewUrl} style={{ width: "100%" }} />
+            ) : null}
 
             <div className="section-rule" />
 
@@ -783,7 +804,11 @@ export function VoiceConsole() {
                 This records in the browser, transcribes through STT, and sends the text through the
                 normal secretary chat path.
               </FieldHint>
+              <label htmlFor="push-to-talk-conversation" className="sr-only">
+                Target conversation for push to talk
+              </label>
               <select
+                id="push-to-talk-conversation"
                 value={recordingConversationId}
                 onChange={(event) => setRecordingConversationId(event.target.value)}
                 style={input}
@@ -800,6 +825,8 @@ export function VoiceConsole() {
                   type="button"
                   onClick={() => void startRecording()}
                   disabled={isRecording || isSubmittingRecording}
+                  aria-label="Start recording for push-to-talk"
+                  title="Start recording"
                   style={{
                     ...ghostButton,
                     cursor: isRecording || isSubmittingRecording ? "not-allowed" : "pointer",
@@ -811,6 +838,8 @@ export function VoiceConsole() {
                   type="button"
                   onClick={stopRecording}
                   disabled={!isRecording}
+                  aria-label="Stop recording and send voice turn"
+                  title="Stop and send"
                   style={{
                     ...primaryButton,
                     cursor: isRecording ? "pointer" : "not-allowed",
@@ -951,6 +980,7 @@ export function VoiceConsole() {
                     {isAudioMime(artifact.mimeType) ? (
                       <audio
                         controls
+                        title="Recent speech artifact audio"
                         src={buildFileUrl(artifact.storageKey, artifact.mimeType)}
                         style={{ width: "100%" }}
                       />

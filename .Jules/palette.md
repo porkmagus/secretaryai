@@ -42,6 +42,10 @@ This journal records critical UX and accessibility insights discovered during th
 **Learning:** In complex inspector-style interfaces (like the Memory Browser), visually hidden but semantically present labels (`.sr-only`) are essential for bridging the gap between minimalist design and screen reader accessibility. Additionally, list navigators benefit from `aria-current` to clearly signal the active selection to assistive technology.
 **Action:** Ensure a standard `.sr-only` utility is available and used for all form fields that lack visual labels. Apply `aria-current` to active items in sidebar navigators.
 
+## 2026-04-15 - [Voice Console Accessibility Standards]
+**Learning:** For interactive media control panels (Voice Console), buttons that trigger background processes (Refresh, Synthesize, Record) require both `aria-label` for screen reader context and `title` for visual tooltips. Semantic `<label>` elements hidden with `.sr-only` are critical for providing context to form controls that lack a visual header.
+**Action:** Always pair `aria-label` and `title` on process-triggering buttons and ensure all form controls have an associated `<label>`, even if visually hidden.
+
 ## 2026-04-01 - [Smart Scroll and Jump-to-Bottom Pattern]
 **Learning:** In long-running chat interfaces, forced auto-scrolling can be disruptive if the user is reading history. A "Smart Scroll" approach—auto-scrolling only when the user is already near the bottom or has just sent a message—paired with a "Jump to Latest" floating button provides a superior balance of automation and control.
 **Action:** Implement conditional auto-scroll based on current scroll position and provide a floating "Scroll to bottom" button when the user has scrolled significantly away from the latest content.
