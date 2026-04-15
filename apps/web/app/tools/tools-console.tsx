@@ -486,6 +486,7 @@ export function ToolsConsole() {
               onClick={() => void load()}
               className="button-secondary"
               aria-label="Refresh tool registry and execution history"
+              title="Refresh tool registry and execution history"
             >
               {isLoading ? "Refreshing..." : "Refresh"}
             </button>
@@ -526,6 +527,7 @@ export function ToolsConsole() {
                 onClick={() => void load()}
                 className="button-secondary"
                 aria-label="Refresh tool registry and execution history"
+                title="Refresh tool registry and execution history"
               >
                 Refresh
               </button>
@@ -547,6 +549,8 @@ export function ToolsConsole() {
                           type="button"
                           onClick={() => void decide(execution.id, true)}
                           disabled={decisionId === execution.id}
+                          aria-label={`Approve ${execution.toolName}`}
+                          title={`Approve ${execution.toolName}`}
                           className="button-primary"
                         >
                           {decisionId === execution.id ? "Working..." : "Approve"}
@@ -555,6 +559,8 @@ export function ToolsConsole() {
                           type="button"
                           onClick={() => void decide(execution.id, false)}
                           disabled={decisionId === execution.id}
+                          aria-label={`Deny ${execution.toolName}`}
+                          title={`Deny ${execution.toolName}`}
                           className="button-danger"
                         >
                           Deny
