@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 
 function joinClasses(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -207,6 +207,7 @@ export function ToggleField({
   hint,
   className,
   title,
+  id,
 }: {
   checked: boolean;
   label: ReactNode;
@@ -215,17 +216,22 @@ export function ToggleField({
   hint?: ReactNode;
   className?: string;
   title?: string;
+  id?: string;
 }) {
   const effectiveTitle = title ?? (typeof label === "string" ? label : undefined);
+  const baseId = useId();
+  const hintId = id ? `${id}-hint` : `${baseId}-hint`;
 
   return (
     <button
+      id={id}
       type="button"
       role="switch"
       aria-checked={checked}
       aria-disabled={disabled}
       disabled={disabled}
       title={effectiveTitle}
+      aria-describedby={hint ? hintId : undefined}
       onClick={() => onChange(!checked)}
       className={joinClasses(
         "toggle-field",
@@ -239,7 +245,11 @@ export function ToggleField({
       </span>
       <span className="toggle-field__copy">
         <span className="toggle-field__label">{label}</span>
-        {hint ? <span className="toggle-field__hint">{hint}</span> : null}
+        {hint ? (
+          <span id={hintId} className="toggle-field__hint">
+            {hint}
+          </span>
+        ) : null}
       </span>
     </button>
   );
