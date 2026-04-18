@@ -53,3 +53,7 @@ This journal records critical UX and accessibility insights discovered during th
 ## 2026-04-02 - [Desk Focus and Nav Wayfinding]
 **Learning:** In a productivity-focused desk interface, using `autoFocus` on the primary composer ensures immediate readiness for power users. Pairing this with `aria-current="page"` on active sidebar items provides critical orientation for assistive technology users navigating between multiple work streams.
 **Action:** Always enable `autoFocus` on primary input fields in task-oriented views and use `aria-current="page"` to mark the active context in navigation or history lists.
+
+## 2026-04-15 - [Shared Component Accessibility: Hint Associations]
+**Learning:** Shared UI components like `ToggleField` and `FieldHint` often lack programmatic linkage between labels/hints and their controls when used in complex forms. Implementing `useId` in `ToggleField` to automatically link the hint via `aria-describedby` ensures consistent screen reader announcements without requiring manual ID management by the caller.
+**Action:** Ensure all shared form components automatically associate their hints/labels with the interactive control using generated IDs and ARIA attributes.
