@@ -255,6 +255,18 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     return () => node.removeEventListener("scroll", handleScroll);
   }, []);
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName ?? "")) {
+        event.preventDefault();
+        textareaRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
   const scrollToBottom = () => {
     const node = streamRef.current;
     if (node) {
@@ -389,9 +401,21 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 </p>
                 {!isUser && metadata ? (
                   <div className="desk-message-meta">
-                    <span className="desk-model-chip">{formatModelBadge(metadata)}</span>
+                    <span
+                      className="desk-model-chip"
+                      aria-label={`AI Model: ${formatModelBadge(metadata)}`}
+                      title={`AI Model: ${formatModelBadge(metadata)}`}
+                    >
+                      {formatModelBadge(metadata)}
+                    </span>
                     {metadata.totalTokens ? (
-                      <span className="desk-token-chip">{metadata.totalTokens} tokens</span>
+                      <span
+                        className="desk-token-chip"
+                        aria-label={`${metadata.totalTokens} tokens used`}
+                        title="Total tokens used for this turn"
+                      >
+                        {metadata.totalTokens} tokens
+                      </span>
                     ) : null}
                   </div>
                 ) : null}
@@ -466,8 +490,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <button
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("yes")}
-                      aria-label="Start this as an agent job"
-                      title="Start this as an agent job"
                       className="button-primary"
                       aria-label="Start as an automated agent job"
                       title="Start as an automated agent job"
@@ -478,8 +500,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <button
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("no")}
-                      aria-label="Keep this conversation in chat"
-                      title="Keep this conversation in chat"
                       className="button-secondary"
                       aria-label="Keep this conversation in the chat interface"
                       title="Keep this conversation in the chat interface"
@@ -557,7 +577,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             </label>
           </div>
           <p id="composer-note" className="desk-composer-note">
-            Ctrl+Enter to send
+            Ctrl+Enter to send · / to focus
           </p>
         </div>
         <textarea
@@ -585,11 +605,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   type="button"
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
-                  aria-label={`Approve ${props.pendingApproval.toolName}`}
-                  title={`Approve ${props.pendingApproval.toolName}`}
                   className="button-primary"
-                  aria-label="Approve tool execution"
-                  title="Approve tool execution"
+                  aria-label={`Approve ${props.pendingApproval.toolName} tool execution`}
+                  title={`Approve ${props.pendingApproval.toolName}`}
                 >
                   {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
                 </button>
@@ -597,11 +615,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   type="button"
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
-                  aria-label={`Deny ${props.pendingApproval.toolName}`}
-                  title={`Deny ${props.pendingApproval.toolName}`}
                   className="button-danger"
-                  aria-label="Deny tool execution"
-                  title="Deny tool execution"
+                  aria-label={`Deny ${props.pendingApproval.toolName} tool execution`}
+                  title={`Deny ${props.pendingApproval.toolName}`}
                 >
                   Deny
                 </button>
@@ -1153,8 +1169,6 @@ export function DeskShell() {
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
                     aria-current={conversationId === conversation.id ? "page" : undefined}
-                    title={`Open correspondence: ${conversation.title ?? "Untitled"}`}
-                    aria-current={conversationId === conversation.id ? "true" : undefined}
                     aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     title={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     className={`desk-correspondence-item ${

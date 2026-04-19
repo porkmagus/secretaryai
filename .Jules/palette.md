@@ -42,6 +42,10 @@ This journal records critical UX and accessibility insights discovered during th
 **Learning:** In complex inspector-style interfaces (like the Memory Browser), visually hidden but semantically present labels (`.sr-only`) are essential for bridging the gap between minimalist design and screen reader accessibility. Additionally, list navigators benefit from `aria-current` to clearly signal the active selection to assistive technology.
 **Action:** Ensure a standard `.sr-only` utility is available and used for all form fields that lack visual labels. Apply `aria-current` to active items in sidebar navigators.
 
+## 2026-04-15 - [Keyboard Navigation and Attribute Integrity]
+**Learning:** In highly interactive chat interfaces, users benefit from standard shortcuts (like `/` to focus search/composer) that are discoverable via visual hints. Additionally, corrupted DOM structures with duplicated ARIA attributes (e.g., multiple `aria-label` or `aria-current` on the same element) can confuse screen readers and should be audited during UX polish tasks.
+**Action:** Implement `/` shortcut for primary inputs and ensure each interactive element has exactly one descriptive `aria-label` and `title`.
+
 ## 2026-04-01 - [Smart Scroll and Jump-to-Bottom Pattern]
 **Learning:** In long-running chat interfaces, forced auto-scrolling can be disruptive if the user is reading history. A "Smart Scroll" approach—auto-scrolling only when the user is already near the bottom or has just sent a message—paired with a "Jump to Latest" floating button provides a superior balance of automation and control.
 **Action:** Implement conditional auto-scroll based on current scroll position and provide a floating "Scroll to bottom" button when the user has scrolled significantly away from the latest content.
