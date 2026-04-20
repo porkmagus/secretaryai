@@ -494,6 +494,8 @@ export function VoiceConsole() {
           <button
             type="button"
             onClick={() => void refreshCore()}
+            aria-label="Refresh voice workspace"
+            title="Refresh voice workspace"
             style={{ ...primaryButton, cursor: isLoading ? "wait" : "pointer" }}
           >
             {isLoading ? "Refreshing..." : "Refresh"}
@@ -700,6 +702,7 @@ export function VoiceConsole() {
                 {activeProfile.sampleStorageKey && !clearSampleOnSave ? (
                   <audio
                     controls
+                    title="Active voice sample"
                     src={buildFileUrl(activeProfile.sampleStorageKey, activeProfile.sampleMimeType)}
                     style={{ width: "100%" }}
                   />
@@ -727,6 +730,8 @@ export function VoiceConsole() {
                   type="button"
                   onClick={() => void saveActiveVoice()}
                   disabled={isSaving}
+                  aria-label="Save active voice settings"
+                  title="Save active voice settings"
                   style={{ ...primaryButton, cursor: isSaving ? "wait" : "pointer" }}
                 >
                   {isSaving ? "Saving..." : "Save voice"}
@@ -767,13 +772,17 @@ export function VoiceConsole() {
                 type="button"
                 onClick={() => void previewVoice()}
                 disabled={isPreviewing}
+                aria-label="Generate voice preview"
+                title="Generate voice preview"
                 style={{ ...primaryButton, cursor: isPreviewing ? "wait" : "pointer" }}
               >
                 {isPreviewing ? "Synthesizing..." : "Generate preview"}
               </button>
             </ActionRow>
 
-            {previewUrl ? <audio controls src={previewUrl} style={{ width: "100%" }} /> : null}
+            {previewUrl ? (
+              <audio controls title="Voice preview" src={previewUrl} style={{ width: "100%" }} />
+            ) : null}
 
             <div className="section-rule" />
 
@@ -783,7 +792,11 @@ export function VoiceConsole() {
                 This records in the browser, transcribes through STT, and sends the text through the
                 normal secretary chat path.
               </FieldHint>
+              <label htmlFor="recording-conversation-selector" className="sr-only">
+                Target conversation for recording
+              </label>
               <select
+                id="recording-conversation-selector"
                 value={recordingConversationId}
                 onChange={(event) => setRecordingConversationId(event.target.value)}
                 style={input}
@@ -951,6 +964,7 @@ export function VoiceConsole() {
                     {isAudioMime(artifact.mimeType) ? (
                       <audio
                         controls
+                        title={`Speech artifact: ${artifact.artifactKind}`}
                         src={buildFileUrl(artifact.storageKey, artifact.mimeType)}
                         style={{ width: "100%" }}
                       />

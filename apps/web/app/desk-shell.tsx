@@ -466,8 +466,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <button
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("yes")}
-                      aria-label="Start this as an agent job"
-                      title="Start this as an agent job"
                       className="button-primary"
                       aria-label="Start as an automated agent job"
                       title="Start as an automated agent job"
@@ -478,8 +476,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                     <button
                       type="button"
                       onClick={() => void respondToAgentJobPrompt("no")}
-                      aria-label="Keep this conversation in chat"
-                      title="Keep this conversation in chat"
                       className="button-secondary"
                       aria-label="Keep this conversation in the chat interface"
                       title="Keep this conversation in the chat interface"
@@ -585,11 +581,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   type="button"
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, true)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
-                  aria-label={`Approve ${props.pendingApproval.toolName}`}
-                  title={`Approve ${props.pendingApproval.toolName}`}
                   className="button-primary"
-                  aria-label="Approve tool execution"
-                  title="Approve tool execution"
+                  aria-label={`Approve tool execution: ${props.pendingApproval.toolName}`}
+                  title={`Approve tool execution: ${props.pendingApproval.toolName}`}
                 >
                   {props.approvalBusyId === props.pendingApproval.id ? "Working..." : "Approve"}
                 </button>
@@ -597,11 +591,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                   type="button"
                   onClick={() => props.onDecideApproval(props.pendingApproval!.id, false)}
                   disabled={props.approvalBusyId === props.pendingApproval.id}
-                  aria-label={`Deny ${props.pendingApproval.toolName}`}
-                  title={`Deny ${props.pendingApproval.toolName}`}
                   className="button-danger"
-                  aria-label="Deny tool execution"
-                  title="Deny tool execution"
+                  aria-label={`Deny tool execution: ${props.pendingApproval.toolName}`}
+                  title={`Deny tool execution: ${props.pendingApproval.toolName}`}
                 >
                   Deny
                 </button>
@@ -1153,8 +1145,6 @@ export function DeskShell() {
                     type="button"
                     onClick={() => void openConversation(conversation.id)}
                     aria-current={conversationId === conversation.id ? "page" : undefined}
-                    title={`Open correspondence: ${conversation.title ?? "Untitled"}`}
-                    aria-current={conversationId === conversation.id ? "true" : undefined}
                     aria-label={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     title={`Reopen correspondence: ${conversation.title ?? "Untitled conversation"}`}
                     className={`desk-correspondence-item ${
