@@ -323,7 +323,7 @@ export function MemoryBrowser() {
                     onClick={() => setSelectedMemoryId(memory.id)}
                     aria-label={`Open memory: ${memory.title ?? "Untitled memory"}`}
                     title={`Open memory: ${memory.title ?? "Untitled memory"}`}
-                    aria-current={selectedMemory?.id === memory.id ? "true" : undefined}
+                    aria-current={selectedMemory?.id === memory.id ? "page" : undefined}
                     className="inspector-list-row"
                     style={{
                       textAlign: "left",
@@ -626,6 +626,8 @@ export function MemoryBrowser() {
                     onClick={() => void saveMemory(selectedMemory.id)}
                     disabled={savingId === selectedMemory.id}
                     className="button-primary"
+                    aria-label={savingId === selectedMemory.id ? "Saving memory..." : "Save memory changes"}
+                    title={savingId === selectedMemory.id ? "Saving memory..." : "Save memory changes"}
                     style={{ opacity: savingId === selectedMemory.id ? 0.7 : 1 }}
                   >
                     {savingId === selectedMemory.id ? "Saving..." : "Save Memory"}

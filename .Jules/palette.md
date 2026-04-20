@@ -53,3 +53,7 @@ This journal records critical UX and accessibility insights discovered during th
 ## 2026-04-02 - [Desk Focus and Nav Wayfinding]
 **Learning:** In a productivity-focused desk interface, using `autoFocus` on the primary composer ensures immediate readiness for power users. Pairing this with `aria-current="page"` on active sidebar items provides critical orientation for assistive technology users navigating between multiple work streams.
 **Action:** Always enable `autoFocus` on primary input fields in task-oriented views and use `aria-current="page"` to mark the active context in navigation or history lists.
+
+## 2026-04-14 - [Standardizing Dual Markers and Wayfinding]
+**Learning:** Redundant or conflicting ARIA attributes (like multiple `aria-label` or `aria-current` values on a single element) confuse screen readers and degrade the accessibility of the "calm home" experience. Standardizing the "Palette" pattern—exactly one descriptive `aria-label` and one matching `title`—ensures consistent behavior across all assistive technologies.
+**Action:** Always audit interactive elements for duplicate accessibility attributes during UI cleanup. Ensure `aria-current="page"` is used for active selections in lists and navigation to provide clear wayfinding context.
