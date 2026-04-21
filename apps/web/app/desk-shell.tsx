@@ -161,6 +161,22 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     conversationIdRef.current = props.activeConversationId;
   }, [props.activeConversationId]);
 
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key === "/" &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        event.preventDefault();
+        textareaRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
   const { messages, sendMessage, status, stop, error, clearError } =
     useChat<DeskChatMessage>({
       messages: props.initialMessages,
@@ -553,7 +569,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             </label>
           </div>
           <p id="composer-note" className="desk-composer-note">
-            Ctrl+Enter to send
+            Ctrl+Enter to send · / to focus
           </p>
         </div>
         <textarea
@@ -623,16 +639,14 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
               aria-label={
                 status === "submitted" || status === "streaming"
                   ? "Sending message..."
-                  : "Send message"
+                  : "Send message (Ctrl+Enter)"
               }
               title={
                 status === "submitted" || status === "streaming"
                   ? "Sending message..."
-                  : "Send message"
+                  : "Send message (Ctrl+Enter)"
               }
               className="button-primary"
-              aria-label="Send message"
-              title="Send message (Ctrl+Enter)"
             >
               {status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
             </button>
@@ -645,6 +659,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 key={suggestion}
                 type="button"
                 className="desk-followup-chip"
+                title={`Use suggestion: ${suggestion}`}
+                aria-label={`Use suggestion: ${suggestion}`}
                 onClick={() => {
                   setInput(suggestion);
                   textareaRef.current?.focus();
