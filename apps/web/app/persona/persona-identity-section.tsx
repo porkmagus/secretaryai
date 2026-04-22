@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction } from "react";
+import { useId, type Dispatch, type SetStateAction } from "react";
 import type {
   PersonaGender,
   PersonaSettingsResponse,
@@ -47,6 +47,10 @@ export function PersonaIdentitySection({
   handlePortraitResponse,
   handlePortraitStatus,
 }: PersonaIdentitySectionProps) {
+  const nameHintId = useId();
+  const genderHintId = useId();
+  const toneHintId = useId();
+
   return (
     <SurfaceCard
       title="Identity basics"
@@ -80,6 +84,7 @@ export function PersonaIdentitySection({
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ color: "var(--muted)", fontSize: 13 }}>Name</span>
             <input
+              aria-describedby={nameHintId}
               value={draft?.name ?? ""}
               onChange={(event) =>
                 setDraft((current) =>
@@ -97,7 +102,7 @@ export function PersonaIdentitySection({
               }}
               placeholder="SetAgentName"
             />
-            <FieldNote>
+            <FieldNote id={nameHintId}>
               This is the public identity shown on Desk, in chat headers, and across settings.
             </FieldNote>
           </label>
@@ -106,6 +111,7 @@ export function PersonaIdentitySection({
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Gender</span>
               <select
+                aria-describedby={genderHintId}
                 value={draft?.gender ?? "female"}
                 onChange={(event) =>
                   setDraft((current) =>
@@ -126,7 +132,7 @@ export function PersonaIdentitySection({
                 <option value="female">Female</option>
                 <option value="male">Male</option>
               </select>
-              <FieldNote>
+              <FieldNote id={genderHintId}>
                 Sets the default presentation seed used for voice/profile defaults when nothing more specific is configured.
               </FieldNote>
             </label>
@@ -134,6 +140,7 @@ export function PersonaIdentitySection({
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Tone mode</span>
               <input
+                aria-describedby={toneHintId}
                 value={draft?.toneMode ?? ""}
                 onChange={(event) =>
                   setDraft((current) =>
@@ -150,7 +157,7 @@ export function PersonaIdentitySection({
                   font: "inherit",
                 }}
               />
-              <FieldNote>
+              <FieldNote id={toneHintId}>
                 A short internal mood tag for the secretary, like <code>calm</code>, <code>sharp</code>, or <code>warm</code>.
               </FieldNote>
             </label>

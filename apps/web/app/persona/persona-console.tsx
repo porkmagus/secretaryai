@@ -833,6 +833,17 @@ export function PersonaConsole({
 
           <HeartbeatSettingsSection />
 
+          <ActionRow align="start">
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={isSaving}
+              className="button-primary"
+            >
+              {isSaving ? "Saving..." : "Save persona"}
+            </button>
+          </ActionRow>
+
           <input
             ref={importFileRef}
             type="file"

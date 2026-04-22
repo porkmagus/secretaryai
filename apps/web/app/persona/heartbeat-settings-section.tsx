@@ -5,7 +5,7 @@ import type {
   HeartbeatIntegrationStatusResponse,
   HeartbeatRunResponse,
 } from "@secretary/core-runtime";
-import { SurfaceCard, ToggleField } from "../lib/ui";
+import { NoticeBanner, SurfaceCard, ToggleField } from "../lib/ui";
 
 export function HeartbeatSettingsSection() {
   const [heartbeat, setHeartbeat] = useState<HeartbeatIntegrationStatusResponse | null>(null);
@@ -128,20 +128,8 @@ export function HeartbeatSettingsSection() {
         </p>
       }
     >
-      {(error || status) ? (
-        <div
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            background: error ? "var(--warning-soft-bg)" : "var(--success-soft-bg)",
-            border: `1px solid ${error ? "var(--warning-soft-border)" : "var(--success-soft-border)"}`,
-            color: error ? "var(--warning-soft-text)" : "var(--success-soft-text)",
-            fontSize: 13,
-            lineHeight: 1.5,
-          }}
-        >
-          {error ?? status}
-        </div>
+      {error || status ? (
+        <NoticeBanner tone={error ? "error" : "success"}>{error ?? status}</NoticeBanner>
       ) : null}
 
       <div

@@ -393,6 +393,8 @@ export function PersonaWritingSection({
             className="persona-file-pill"
             onClick={() => draft && downloadText("secretary-examples.md", buildSecretaryExamplesMarkdown(draft))}
             disabled={!draft}
+            title="Download secretary-examples.md"
+            aria-label="Download secretary-examples.md"
           >
             secretary-examples.md
           </button>
@@ -504,6 +506,8 @@ export function PersonaWritingSection({
                 className="persona-file-pill"
                 onClick={() => draft && downloadText("secretary-soul.md", draft.promptTemplate)}
                 disabled={!draft}
+                title="Download secretary-soul.md"
+                aria-label="Download secretary-soul.md"
               >
                 secretary-soul.md
               </button>
@@ -538,6 +542,8 @@ export function PersonaWritingSection({
                 className="persona-file-pill"
                 onClick={() => draft && downloadText("secretary-persona.md", draft.personaProfile)}
                 disabled={!draft}
+                title="Download secretary-persona.md"
+                aria-label="Download secretary-persona.md"
               >
                 secretary-persona.md
               </button>
