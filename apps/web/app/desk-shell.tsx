@@ -628,11 +628,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
               title={
                 status === "submitted" || status === "streaming"
                   ? "Sending message..."
-                  : "Send message"
+                  : "Send message (Ctrl+Enter)"
               }
               className="button-primary"
-              aria-label="Send message"
-              title="Send message (Ctrl+Enter)"
             >
               {status === "submitted" || status === "streaming" ? "Sending..." : "Send"}
             </button>
@@ -645,6 +643,8 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
                 key={suggestion}
                 type="button"
                 className="desk-followup-chip"
+                aria-label={`Use suggestion: ${suggestion}`}
+                title={`Use suggestion: ${suggestion}`}
                 onClick={() => {
                   setInput(suggestion);
                   textareaRef.current?.focus();

@@ -28,6 +28,10 @@ This journal records critical UX and accessibility insights discovered during th
 **Learning:** For interactive elements with state-dependent labels (like 'Speak'/'Stop') or icon-only buttons, providing both `aria-label` (for screen readers) and `title` (for visual tooltips) ensures a consistent and accessible experience for all users.
 **Action:** Always pair `aria-label` with `title` on dynamic or icon-based controls to provide both technical and visual clarity.
 
+## 2026-04-15 - Consolidating Redundant Accessibility Markers
+**Learning:** Overlapping or duplicate `aria-label` and `title` attributes on a single element can cause inconsistent screen reader behavior and tooltip flicker. Consolidating these into a single set of dynamic attributes ensures that the most relevant information (like keyboard shortcuts or active states) is conveyed clearly without redundancy.
+**Action:** Avoid declaring multiple `aria-label` or `title` attributes on the same element; use conditional logic within a single attribute declaration instead.
+
 ## 2026-03-31 - Semantic Labeling for Form Accessibility
 **Learning:** Using a proper `<label>` with `htmlFor` linked to an input's `id` is superior to using a simple `<p>` or `<span>` for field descriptions, as it provides a larger click target and correctly associates the text for assistive technologies.
 **Action:** Ensure all form inputs (including textareas) are explicitly linked to a `<label>` element.
