@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { vi } from "vitest";
 
 // Mock @ai-sdk/react hooks
 vi.mock("@ai-sdk/react", () => ({
