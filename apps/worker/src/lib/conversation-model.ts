@@ -1,4 +1,3 @@
-import { generateText, streamText, type TextStreamPart, type ToolSet } from "ai";
 import {
   createTurnResponseFromText,
   generateSecretaryReply,
@@ -7,10 +6,11 @@ import {
   type RuntimeTurnContext,
   type SecretaryFallbackReason,
 } from "@secretary/core-runtime";
+import { generateText, streamText, type TextStreamPart, type ToolSet } from "ai";
 import {
   getInferenceResolutionIssue,
-  resolveInferenceLanguageModel,
   type InferenceRuntimeConfig,
+  resolveInferenceLanguageModel,
 } from "./ai-sdk-registry.js";
 import { logFallbackTriggered } from "./utils/index.js";
 
@@ -52,7 +52,7 @@ function getMaxOutputTokens(inference: InferenceRuntimeConfig) {
   return inference.maxOutputTokens ?? 700;
 }
 
-function formatList(title: string, items: string[]) {
+function _formatList(title: string, items: string[]) {
   if (items.length === 0) {
     return `${title}: none`;
   }
@@ -73,7 +73,8 @@ function formatSecretarySettings(context: RuntimeTurnContext) {
   // Core persona guidance
   if (customization.relationshipRole) {
     const roleDescriptions: Record<string, string> = {
-      private_secretary: "Be a trusted private secretary — discreet, attentive, and genuinely helpful.",
+      private_secretary:
+        "Be a trusted private secretary — discreet, attentive, and genuinely helpful.",
       chief_of_staff: "Act as a chief of staff — organized, strategic, and ready to coordinate.",
       operator: "Be the operator — efficient, reliable, and focused on getting things done.",
       companion: "Be warm and present, like someone who genuinely cares.",
@@ -137,7 +138,9 @@ function formatSecretarySettings(context: RuntimeTurnContext) {
     parts.push(`Tone that doesn't fit: "${customization.antiExampleReply}"`);
   }
 
-  return parts.length > 0 ? `How you should come across:\n${parts.map((p) => "- " + p).join("\n")}` : "";
+  return parts.length > 0
+    ? `How you should come across:\n${parts.map((p) => `- ${p}`).join("\n")}`
+    : "";
 }
 
 function getToneJitter(context: RuntimeTurnContext) {
@@ -164,7 +167,7 @@ function getToneJitter(context: RuntimeTurnContext) {
     hash |= 0;
   }
   const index = Math.abs(hash) % styles.length;
-  
+
   return styles[index];
 }
 
@@ -173,18 +176,17 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
   const soul = context.persona?.soul?.trim() || "";
   const personaProfile = context.persona?.personaProfile?.trim() || "";
   const behaviorRules = context.persona?.behaviorRules ?? [];
-  const lastUserMessage = [...context.recentMessages]
-    .reverse()
-    .find((message) => message.role === "user")?.text ?? "";
+  const lastUserMessage =
+    [...context.recentMessages].reverse().find((message) => message.role === "user")?.text ?? "";
 
-   // Format memories more naturally - as things to keep in mind, not a database dump
-   const memories = context.relevantMemories
-         .slice(0, 4)
-         .map((memory) => {
-           const body = memory.summary || memory.contentText || memory.title || "";
-           return body.length > 400 ? `${body.slice(0, 400)}...` : body;
-         })
-         .filter(Boolean);
+  // Format memories more naturally - as things to keep in mind, not a database dump
+  const memories = context.relevantMemories
+    .slice(0, 4)
+    .map((memory) => {
+      const body = memory.summary || memory.contentText || memory.title || "";
+      return body.length > 400 ? `${body.slice(0, 400)}...` : body;
+    })
+    .filter(Boolean);
 
   const tasks = context.activeTasks.slice(0, 4).map((task) => task.title);
   const shouldSurfaceTasks = tasks.length > 0 && TASK_INTENT_REGEX.test(lastUserMessage);
@@ -249,7 +251,11 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
   }
 
   if (shouldSurfaceTasks && tasks.length > 0) {
-    parts.push("", "Their open items (only if they're asking about tasks):", ...tasks.map((t) => `- ${t}`));
+    parts.push(
+      "",
+      "Their open items (only if they're asking about tasks):",
+      ...tasks.map((t) => `- ${t}`),
+    );
   }
 
   if (upcomingReminder) {
@@ -262,7 +268,6 @@ function buildConversationInstructions(context: RuntimeTurnContext) {
 
   return parts.join("\n");
 }
-
 
 function looksLikePromptLeakage(text: string) {
   const normalized = text.toLowerCase();
@@ -280,12 +285,9 @@ function looksLikePromptLeakage(text: string) {
     "avoid -",
   ];
 
-  const matchedSignals = leakageSignals.filter((signal) =>
-    normalized.includes(signal),
-  );
+  const matchedSignals = leakageSignals.filter((signal) => normalized.includes(signal));
   const bulletHeavy =
-    (text.match(/^\s*[-*]\s+/gm)?.length ?? 0) >= 4 ||
-    (text.match(/^##\s+/gm)?.length ?? 0) >= 1;
+    (text.match(/^\s*[-*]\s+/gm)?.length ?? 0) >= 4 || (text.match(/^##\s+/gm)?.length ?? 0) >= 1;
 
   return matchedSignals.length >= 2 || (matchedSignals.length >= 1 && bulletHeavy);
 }
@@ -330,9 +332,7 @@ function createPromptLeakageTransform(params: {
     let emittedTextStartId: string | null = null;
     let emittedReasoningStartId: string | null = null;
 
-    const flushBuffered = (
-      controller: TransformStreamDefaultController<TextStreamPart<TOOLS>>,
-    ) => {
+    const flushBuffered = (controller: TransformStreamDefaultController<TextStreamPart<TOOLS>>) => {
       if (bufferedDeltas.length === 0) {
         return;
       }
@@ -516,23 +516,6 @@ function logInferenceUnavailable(params: {
   if (!params.inference.enabled) {
     return;
   }
-
-  console.warn(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: "warn",
-      service: "worker",
-      event: "runtime.inference.unavailable",
-      traceId: params.traceId,
-      providerId: params.inference.providerId,
-      model: params.inference.model,
-      reason: params.reason,
-      source: params.source,
-      enabled: params.inference.enabled,
-      apiKeyPresent: Boolean(params.inference.apiKey),
-      baseUrlPresent: Boolean(params.inference.baseUrl),
-    }),
-  );
 }
 
 function normalizeProviderError(error: unknown) {
@@ -673,19 +656,6 @@ export function createConversationReplyStream(params: {
   } catch (error) {
     const providerError = normalizeProviderError(error);
 
-    console.error(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: "error",
-        service: "worker",
-        event: "runtime.inference.stream_failed",
-        traceId: params.traceId,
-        providerId: params.inference.providerId,
-        model: params.inference.model,
-        error: providerError,
-      }),
-    );
-
     logFallbackTriggered(`provider_error: ${providerError.slice(0, 50)}`, "N/A");
 
     return createFallbackStreamPlan({
@@ -729,18 +699,6 @@ export async function generateConversationReply(params: {
     }
   } catch (error) {
     const providerError = normalizeProviderError(error);
-    console.error(
-      JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level: "error",
-        service: "worker",
-        event: "runtime.inference.reply_failed",
-        traceId: params.traceId,
-        providerId: params.inference.providerId,
-        model: params.inference.model,
-        error: providerError,
-      }),
-    );
 
     logFallbackTriggered("inference_error", params.request.message.text);
     const fallbackReply = generateSecretaryReply(params.request, params.context, {

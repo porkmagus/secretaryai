@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type {
   ActivityTraceResponse,
   ConversationListItem,
   ConversationListResponse,
 } from "@secretary/core-runtime";
-import { AppPage, LoadingSurface, PageHero, SurfaceCard } from "../lib/ui";
+import { useEffect, useState } from "react";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
+import { AppPage, LoadingSurface, PageHero, SurfaceCard } from "../lib/ui";
 
 export function ActivityConsole() {
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -129,16 +129,14 @@ export function ActivityConsole() {
         title="Runtime trace inspection"
         description={
           <p>
-            Walk recent conversations, inspect runtime context assembly, and confirm
-            when memory or specialist work shaped a response.
+            Walk recent conversations, inspect runtime context assembly, and confirm when memory or
+            specialist work shaped a response.
           </p>
         }
         tone="dark"
       />
 
-      <section
-        className="activity-grid"
-      >
+      <section className="activity-grid">
         <SurfaceCard
           tone="dark"
           title="Recent conversations"
@@ -214,7 +212,11 @@ export function ActivityConsole() {
                   <div className="stack-sm" style={{ gap: 6 }}>
                     <p
                       className="eyebrow"
-                      style={{ marginBottom: 0, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                      style={{
+                        marginBottom: 0,
+                        color: "var(--accent-strong)",
+                        letterSpacing: "0.08em",
+                      }}
                     >
                       Activity focus
                     </p>
@@ -258,7 +260,11 @@ export function ActivityConsole() {
                   <div>
                     <p
                       className="eyebrow"
-                      style={{ marginBottom: 6, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                      style={{
+                        marginBottom: 6,
+                        color: "var(--accent-strong)",
+                        letterSpacing: "0.08em",
+                      }}
                     >
                       {selectedTrace?.traceType ?? "trace"}
                     </p>
@@ -354,7 +360,14 @@ export function ActivityConsole() {
                           {formatTimestamp(trace.createdAt)}
                         </p>
                       </div>
-                      <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          color: "var(--muted)",
+                          fontSize: 12,
+                          lineHeight: 1.45,
+                        }}
+                      >
                         {snippet(formatTracePayload(trace.payload), 180)}
                       </p>
                     </button>

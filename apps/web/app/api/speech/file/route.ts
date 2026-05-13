@@ -7,10 +7,7 @@ export async function GET(request: Request) {
   const mimeType = url.searchParams.get("mimeType");
 
   if (!storageKey) {
-    return NextResponse.json(
-      { error: "storageKey is required." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "storageKey is required." }, { status: 400 });
   }
 
   return proxyWorkerBinary("/runtime/speech/file", {

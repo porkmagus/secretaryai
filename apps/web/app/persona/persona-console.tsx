@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   InferenceModelListResponse,
   InferenceProviderId,
@@ -24,25 +23,21 @@ import type {
   UpdateInferenceSettingsRequest,
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
-import { ActionRow, AppPage, FieldHint, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ActionRow,
+  AppPage,
+  FieldHint,
+  LoadingSurface,
+  NoticeBanner,
+  StatCard,
+  StatGrid,
+  SurfaceCard,
+} from "../lib/ui";
 import { HeartbeatSettingsSection } from "./heartbeat-settings-section";
 import { InferenceSettingsSection } from "./inference-settings-section";
 import { PersonaIdentitySection } from "./persona-identity-section";
 import { PersonaWritingSection } from "./persona-writing-section";
-import {
-  clarifyingStyles,
-  closingStyles,
-  directnessOptions,
-  greetingStyles,
-  initiativeOptions,
-  planningStyles,
-  presenceStyles,
-  relationshipRoles,
-  reminderStyles,
-  responseLengths,
-  secretaryModes,
-} from "./persona-constants";
-
 
 type PersonaDraft = {
   addressPreference: string;
@@ -80,8 +75,6 @@ type InferenceDraft = {
   reasoningEffort: "minimal" | "low" | "medium" | "high";
   apiKey: string;
 };
-
-
 
 function downloadJson(filename: string, payload: unknown) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -121,13 +114,12 @@ ${draft.antiExampleReply.trim().length > 0 ? draft.antiExampleReply : "_none set
 `;
 }
 
-const FieldNote = FieldHint;
+const _FieldNote = FieldHint;
 
 function createInferenceDraft(response: InferenceSettingsResponse): InferenceDraft | null {
   const selectedProvider =
-    response.providers.find(
-      (provider) => provider.id === response.settings.selectedProviderId,
-    ) ?? response.providers[0];
+    response.providers.find((provider) => provider.id === response.settings.selectedProviderId) ??
+    response.providers[0];
 
   if (!selectedProvider) {
     return null;
@@ -140,9 +132,7 @@ function createInferenceDraft(response: InferenceSettingsResponse): InferenceDra
     baseUrl: selectedProvider.baseUrl ?? "",
     model: selectedProvider.model ?? "",
     maxOutputTokens:
-      selectedProvider.maxOutputTokens != null
-        ? String(selectedProvider.maxOutputTokens)
-        : "",
+      selectedProvider.maxOutputTokens != null ? String(selectedProvider.maxOutputTokens) : "",
     reasoningEffort: response.settings.reasoningEffort,
     apiKey: "",
   };
@@ -175,9 +165,8 @@ export function PersonaConsole({
     }
 
     return (
-      inference.providers.find(
-        (provider) => provider.id === inferenceDraft.selectedProviderId,
-      ) ?? null
+      inference.providers.find((provider) => provider.id === inferenceDraft.selectedProviderId) ??
+      null
     );
   }, [inference, inferenceDraft]);
 
@@ -195,17 +184,13 @@ export function PersonaConsole({
 
   const providerOptions = useMemo(
     () =>
-      (inference?.providers ?? []).filter(
-        (provider) => provider.accessMode !== "local_runtime",
-      ),
+      (inference?.providers ?? []).filter((provider) => provider.accessMode !== "local_runtime"),
     [inference?.providers],
   );
 
   const localProviderOptions = useMemo(
     () =>
-      (inference?.providers ?? []).filter(
-        (provider) => provider.accessMode === "local_runtime",
-      ),
+      (inference?.providers ?? []).filter((provider) => provider.accessMode === "local_runtime"),
     [inference?.providers],
   );
 
@@ -219,9 +204,7 @@ export function PersonaConsole({
       {
         key: "linked" as const,
         title: "Linked accounts",
-        providers: providerOptions.filter(
-          (provider) => provider.accessMode === "linked_account",
-        ),
+        providers: providerOptions.filter((provider) => provider.accessMode === "linked_account"),
       },
       {
         key: "mcp" as const,
@@ -245,7 +228,7 @@ export function PersonaConsole({
     [inference?.providers],
   );
 
-  const inferenceTab = inferenceDraft?.activeTarget ?? "provider";
+  const _inferenceTab = inferenceDraft?.activeTarget ?? "provider";
   const showGeneral = mode !== "secretary";
   const showSecretary = mode !== "general";
   const isLoaded = Boolean(data && draft && (!showGeneral || (inference && inferenceDraft)));
@@ -307,7 +290,7 @@ export function PersonaConsole({
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   function handlePortraitResponse(next: PersonaSettingsResponse) {
     setData((current) =>
@@ -453,12 +436,11 @@ export function PersonaConsole({
 
     const nextProvider =
       nextTab === "local"
-        ? localProviderOptions.find(
+        ? (localProviderOptions.find(
             (provider) => provider.id === inferenceDraft.selectedProviderId,
-          ) ?? localProviderOptions[0]
-        : providerOptions.find(
-            (provider) => provider.id === inferenceDraft.selectedProviderId,
-          ) ?? providerOptions[0];
+          ) ?? localProviderOptions[0])
+        : (providerOptions.find((provider) => provider.id === inferenceDraft.selectedProviderId) ??
+          providerOptions[0]);
 
     if (!nextProvider) {
       return;
@@ -474,9 +456,7 @@ export function PersonaConsole({
             baseUrl: nextProvider.baseUrl ?? "",
             model: nextProvider.model ?? "",
             maxOutputTokens:
-              nextProvider.maxOutputTokens != null
-                ? String(nextProvider.maxOutputTokens)
-                : "",
+              nextProvider.maxOutputTokens != null ? String(nextProvider.maxOutputTokens) : "",
             apiKey: "",
           }
         : current,
@@ -508,9 +488,7 @@ export function PersonaConsole({
               ? Number(inferenceDraft.maxOutputTokens)
               : undefined,
           apiKey:
-            inferenceDraft.apiKey.trim().length > 0
-              ? inferenceDraft.apiKey.trim()
-              : undefined,
+            inferenceDraft.apiKey.trim().length > 0 ? inferenceDraft.apiKey.trim() : undefined,
         },
       };
 
@@ -576,9 +554,7 @@ export function PersonaConsole({
       setInferenceDraft(createInferenceDraft(next));
       setStatus("Saved inference key cleared. The secretary is back on local fallback.");
     } catch (clearError) {
-      setError(
-        clearError instanceof Error ? clearError.message : "Unable to clear inference key.",
-      );
+      setError(clearError instanceof Error ? clearError.message : "Unable to clear inference key.");
     } finally {
       setIsSavingInference(false);
     }
@@ -598,10 +574,7 @@ export function PersonaConsole({
       }
 
       const data = payload as SettingsExportResponse;
-      downloadJson(
-        `secretary-settings-${data.exportedAt.replace(/[:.]/g, "-")}.json`,
-        data,
-      );
+      downloadJson(`secretary-settings-${data.exportedAt.replace(/[:.]/g, "-")}.json`, data);
       setStatus("Settings snapshot exported.");
     } catch (exportError) {
       setError(exportError instanceof Error ? exportError.message : "Unable to export settings.");
@@ -748,16 +721,16 @@ export function PersonaConsole({
             />
           </StatGrid>
 
-          {(error || status) ? (
+          {error || status ? (
             <NoticeBanner tone={error ? "error" : "success"}>{error ?? status}</NoticeBanner>
           ) : (
             <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
               {mode === "secretary"
-                ? (resolvedDraft.name.trim() === "SetAgentName"
-                    ? "The secretary is ready for shaping, but still needs a real public name before the profile feels complete."
-                    : "Shape the portrait, habits, and deeper writing voice from one focused profile surface.")
-                : resolvedData.conversationEngine.summary ??
-                  "Load, tune, export, or import the current settings from one place."}
+                ? resolvedDraft.name.trim() === "SetAgentName"
+                  ? "The secretary is ready for shaping, but still needs a real public name before the profile feels complete."
+                  : "Shape the portrait, habits, and deeper writing voice from one focused profile surface."
+                : (resolvedData.conversationEngine.summary ??
+                  "Load, tune, export, or import the current settings from one place.")}
             </p>
           )}
           {showSecretary ? (
@@ -849,6 +822,5 @@ export function PersonaConsole({
         </>
       ) : null}
     </AppPage>
-
   );
 }

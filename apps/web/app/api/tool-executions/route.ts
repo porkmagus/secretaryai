@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import type { ToolExecutionListResponse } from "@secretary/core-runtime";
+import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
@@ -22,18 +22,12 @@ export async function GET(request: Request) {
     });
 
     if (!response.ok) {
-      return NextResponse.json(
-        { error: "Worker request failed." },
-        { status: 502 },
-      );
+      return NextResponse.json({ error: "Worker request failed." }, { status: 502 });
     }
 
     const data = (await response.json()) as ToolExecutionListResponse;
     return NextResponse.json(data);
   } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "Worker is unavailable." }, { status: 503 });
   }
 }

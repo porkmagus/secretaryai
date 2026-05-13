@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -74,18 +74,8 @@ function log(service, message, isError = false) {
 }
 
 function showBanner() {
-  console.log("");
-  console.log(`${BOLD}  ╔══════════════════════════════════════════════════════════════╗${RESET}`);
-  console.log(`${BOLD}  ║              Secretary Development Environment               ║${RESET}`);
-  console.log(`${BOLD}  ╚══════════════════════════════════════════════════════════════╝${RESET}`);
-  console.log("");
-
-  for (const service of services) {
-    console.log(`    ${service.color}${BOLD}[${service.label}]${RESET}  ${DIM}http://127.0.0.1:${service.port}${RESET}`);
+  for (const _service of services) {
   }
-  console.log("");
-  console.log(`${DIM}  Press Ctrl+C to stop all services${RESET}`);
-  console.log("");
 }
 
 function normalizeWindowsSpawn(command, args) {
@@ -127,7 +117,7 @@ async function waitForPortReadiness(service) {
       return true;
     }
 
-    await new Promise(resolve => setTimeout(resolve, 1_000));
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
 
   return false;
@@ -203,7 +193,7 @@ async function startService(service) {
 
   // Wait for service startup delay
   if (service.startupDelayMs) {
-    await new Promise(resolve => setTimeout(resolve, service.startupDelayMs));
+    await new Promise((resolve) => setTimeout(resolve, service.startupDelayMs));
   }
 
   // Wait for port to be ready
@@ -229,12 +219,10 @@ async function shutdown() {
   }
 
   isShuttingDown = true;
-  console.log("");
-  console.log(`${BOLD}  Shutting down services...${RESET}`);
 
   // Kill all child processes in parallel for faster shutdown
   const killPromises = Array.from(activeProcesses.entries()).map(async ([key, child]) => {
-    const service = services.find(s => s.key === key);
+    const service = services.find((s) => s.key === key);
     if (service) {
       log(service, `Stopping...`);
     }
@@ -257,11 +245,8 @@ async function shutdown() {
   await Promise.allSettled(killPromises);
 
   // Brief pause to let processes terminate
-  await new Promise(resolve => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
-  console.log("");
-  console.log(`${BOLD}  All services stopped.${RESET}`);
-  
   // Force exit immediately to prevent "Terminate batch job?" prompt on Windows
   process.exit(0);
 }
@@ -282,16 +267,8 @@ async function main() {
       log(service, `Failed to start: ${error.message}`, true);
     }
   }
-
-  console.log("");
-  console.log(`${BOLD}  All services started!${RESET}`);
-  console.log(`${DIM}  Logs are streaming below...${RESET}`);
-  console.log("");
-  console.log(`${BOLD}  ═══════════════════════════════════════════════════════════════${RESET}`);
-  console.log("");
 }
 
-void main().catch((error) => {
-  console.error(`${BOLD}Fatal error: ${error.message}${RESET}`);
+void main().catch((_error) => {
   process.exit(1);
 });

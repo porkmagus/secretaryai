@@ -5,10 +5,7 @@
  * - Lowercases
  */
 export function cleanText(text: string): string {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /**

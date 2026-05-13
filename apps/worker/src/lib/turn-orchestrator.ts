@@ -1,13 +1,21 @@
 import type { AppConfig } from "@secretary/config";
+import type {
+  MemoryCandidateJobPayload,
+  RuntimeChatRequest,
+  RuntimeChatResponse,
+} from "@secretary/core-runtime";
 import type { DbClient } from "@secretary/db";
-import type { MemoryCandidateJobPayload, RuntimeChatRequest, RuntimeChatResponse } from "@secretary/core-runtime";
-import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
-import { createQueuedMemoryJob, markMemoryJobEnqueueFailed, persistChatTurn } from "./chat-persistence.js";
 import { maybeHandleAgentJobLaunchTurn } from "./agent-job-launch-intents.js";
+import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { maybeHandleAgentJobRequirementTurn } from "./agent-job-requirement-turns.js";
+import {
+  createQueuedMemoryJob,
+  markMemoryJobEnqueueFailed,
+  persistChatTurn,
+} from "./chat-persistence.js";
+import type { MemoryQueueAdapter } from "./memory-queue.js";
 import { maybeHandleToolApprovalTurn } from "./tool-approval-turns.js";
 import { handleToolAwareTurn } from "./tools-runtime.js";
-import type { MemoryQueueAdapter } from "./memory-queue.js";
 
 export type RuntimeTurnPersistence = {
   memoryPayload: MemoryCandidateJobPayload;

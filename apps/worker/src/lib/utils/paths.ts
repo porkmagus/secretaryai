@@ -1,6 +1,6 @@
+import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { statSync } from "node:fs";
 
 /**
  * Repository root path - resolved once and reused across the codebase.
@@ -53,7 +53,9 @@ try {
   }
 } catch (err) {
   // Re-throw at module load so the crash is loud and immediate, not silent TDZ corruption.
-  throw new Error(`Failed to initialize repoRoot: ${err instanceof Error ? err.message : String(err)}`);
+  throw new Error(
+    `Failed to initialize repoRoot: ${err instanceof Error ? err.message : String(err)}`,
+  );
 }
 
 export const repoRoot = _computedRepoRoot;

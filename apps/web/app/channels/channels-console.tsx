@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import type { OutboundChannelKey } from "@secretary/core-runtime";
+import { useState } from "react";
 import { fetchJson } from "../lib/fetch-json";
 import { ActionRow, AppPage, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 import { OutboundChannelSettings } from "./outbound-channel-settings";
@@ -135,8 +135,8 @@ export function ChannelsConsole() {
           </div>
           <ActionRow align="between">
             <p className="channel-hero-note">
-              Use this when you want the secretary to immediately push any due reminders through
-              the enabled delivery channels instead of waiting for the next reminder sweep.
+              Use this when you want the secretary to immediately push any due reminders through the
+              enabled delivery channels instead of waiting for the next reminder sweep.
             </p>
             <button
               type="button"
@@ -149,11 +149,25 @@ export function ChannelsConsole() {
           </ActionRow>
         </div>
         <StatGrid>
-          <StatCard label="Role" value={selected.role} detail="How this channel fits the secretary workflow" tone="soft" />
-          <StatCard label="Best for" value={selected.bestFor} detail="Use this as the channel’s default strength" tone="soft" />
+          <StatCard
+            label="Role"
+            value={selected.role}
+            detail="How this channel fits the secretary workflow"
+            tone="soft"
+          />
+          <StatCard
+            label="Best for"
+            value={selected.bestFor}
+            detail="Use this as the channel’s default strength"
+            tone="soft"
+          />
           <StatCard
             label="Secretary use"
-            value={selected.key === "telegram" ? "Conversation + reminders" : "Reminders + important updates"}
+            value={
+              selected.key === "telegram"
+                ? "Conversation + reminders"
+                : "Reminders + important updates"
+            }
             detail="You can widen this later once the channel is fully integrated"
             tone="soft"
           />

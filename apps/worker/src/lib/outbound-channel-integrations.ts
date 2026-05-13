@@ -1,6 +1,4 @@
-import { eq } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
-import { integrations, type DbClient } from "@secretary/db";
 import type {
   DiscordTestMessageRequest,
   DiscordTestMessageResponse,
@@ -18,6 +16,8 @@ import type {
   UpdateSlackIntegrationRequest,
   UpdateSmsIntegrationRequest,
 } from "@secretary/core-runtime";
+import { type DbClient, integrations } from "@secretary/db";
+import { eq } from "drizzle-orm";
 
 type DiscordIntegrationConfig = {
   targetLabel: string | null;
@@ -40,19 +40,25 @@ function cleanString(value: unknown) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function parseDiscordConfig(value: Record<string, unknown> | null | undefined): DiscordIntegrationConfig {
+function parseDiscordConfig(
+  value: Record<string, unknown> | null | undefined,
+): DiscordIntegrationConfig {
   return {
     targetLabel: cleanString(value?.targetLabel),
   };
 }
 
-function parseSlackConfig(value: Record<string, unknown> | null | undefined): SlackIntegrationConfig {
+function parseSlackConfig(
+  value: Record<string, unknown> | null | undefined,
+): SlackIntegrationConfig {
   return {
     targetLabel: cleanString(value?.targetLabel),
   };
 }
 
-function parseEmailConfig(value: Record<string, unknown> | null | undefined): EmailIntegrationConfig {
+function parseEmailConfig(
+  value: Record<string, unknown> | null | undefined,
+): EmailIntegrationConfig {
   return {
     defaultRecipient: cleanString(value?.defaultRecipient),
   };
@@ -214,11 +220,7 @@ async function postJson(url: string, body: Record<string, unknown>, init?: Reque
   return response;
 }
 
-async function postForm(
-  url: string,
-  body: URLSearchParams,
-  init?: RequestInit,
-) {
+async function postForm(url: string, body: URLSearchParams, init?: RequestInit) {
   const response = await fetch(url, {
     method: "POST",
     body,
@@ -233,10 +235,7 @@ async function postForm(
   return response;
 }
 
-export async function getDiscordIntegrationStatus(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+export async function getDiscordIntegrationStatus(dbClient: DbClient, config: AppConfig) {
   const record = await ensureIntegrationRecord(dbClient, "discord", {
     targetLabel: null,
   });
@@ -275,7 +274,9 @@ export async function updateDiscordIntegrationSettings(params: {
     enabled: params.patch.enabled ?? record.enabled,
     configJson: {
       targetLabel:
-        params.patch.targetLabel !== undefined ? cleanString(params.patch.targetLabel) : stored.targetLabel,
+        params.patch.targetLabel !== undefined
+          ? cleanString(params.patch.targetLabel)
+          : stored.targetLabel,
     },
   });
 
@@ -305,10 +306,7 @@ export async function sendDiscordTestMessage(params: {
   } satisfies DiscordTestMessageResponse;
 }
 
-export async function getSlackIntegrationStatus(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+export async function getSlackIntegrationStatus(dbClient: DbClient, config: AppConfig) {
   const record = await ensureIntegrationRecord(dbClient, "slack", {
     targetLabel: null,
   });
@@ -347,7 +345,9 @@ export async function updateSlackIntegrationSettings(params: {
     enabled: params.patch.enabled ?? record.enabled,
     configJson: {
       targetLabel:
-        params.patch.targetLabel !== undefined ? cleanString(params.patch.targetLabel) : stored.targetLabel,
+        params.patch.targetLabel !== undefined
+          ? cleanString(params.patch.targetLabel)
+          : stored.targetLabel,
     },
   });
 
@@ -377,10 +377,7 @@ export async function sendSlackTestMessage(params: {
   } satisfies SlackTestMessageResponse;
 }
 
-export async function getEmailIntegrationStatus(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+export async function getEmailIntegrationStatus(dbClient: DbClient, config: AppConfig) {
   const record = await ensureIntegrationRecord(dbClient, "email", {
     defaultRecipient: null,
   });
@@ -542,10 +539,7 @@ export async function sendConfiguredSlackMessage(params: {
   });
 }
 
-export async function getSmsIntegrationStatus(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+export async function getSmsIntegrationStatus(dbClient: DbClient, config: AppConfig) {
   const record = await ensureIntegrationRecord(dbClient, "sms", {
     defaultRecipient: null,
     senderLabel: null,
@@ -570,7 +564,8 @@ export async function getSmsIntegrationStatus(
     defaultRecipient: stored.defaultRecipient ?? config.channels.sms.defaultTo,
     senderIdentity: stored.senderLabel ?? config.channels.sms.fromNumber,
     configuredSummary: "Ready to send urgent SMS updates through Twilio.",
-    missingSummary: "Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER to enable SMS delivery.",
+    missingSummary:
+      "Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER to enable SMS delivery.",
   });
 }
 

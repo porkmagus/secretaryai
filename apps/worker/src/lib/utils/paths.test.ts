@@ -1,13 +1,8 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
 import { statSync } from "node:fs";
-import {
-  repoRoot,
-  resolveRepoPath,
-  sanitizeFileNamePart,
-  sanitizeSegment,
-} from "./paths.js";
+import { resolve } from "node:path";
+import test from "node:test";
+import { repoRoot, resolveRepoPath, sanitizeFileNamePart, sanitizeSegment } from "./paths.js";
 
 test("repoRoot resolves to an existing directory", () => {
   // Should not throw — statSync throws if path doesn't exist
@@ -37,7 +32,10 @@ test("sanitizeFileNamePart collapses dangerous characters", () => {
   // but slashes and backslashes become hyphens
   assert.equal(sanitizeFileNamePart("../../../etc/passwd"), "..-..-..-etc-passwd");
   assert.equal(sanitizeFileNamePart("..\\..\\windows\\system32"), "..-..-windows-system32");
-  assert.equal(sanitizeFileNamePart("file<name>with\"special'chars"), "file-name-with-special-chars");
+  assert.equal(
+    sanitizeFileNamePart("file<name>with\"special'chars"),
+    "file-name-with-special-chars",
+  );
 });
 
 test("sanitizeFileNamePart strips leading/trailing hyphens", () => {

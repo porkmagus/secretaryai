@@ -1,23 +1,18 @@
-import { and, desc, eq } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
-  activityTraces,
-  agentJobLaunchIntents,
-  type DbClient,
-} from "@secretary/db";
-import {
-  createMessageId,
   type AgentExecutionBackend,
+  createMessageId,
   type RuntimeChatRequest,
 } from "@secretary/core-runtime";
-import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
-import { createAgentJob } from "./agent-jobs.js";
-import { loadAgentJobSettings } from "./agent-job-settings.js";
-import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
+import { activityTraces, agentJobLaunchIntents, type DbClient } from "@secretary/db";
+import { and, desc, eq } from "drizzle-orm";
 import { normalizeWorkspacePath } from "./agent-job-executor.js";
+import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
+import { loadAgentJobSettings } from "./agent-job-settings.js";
+import { createAgentJob } from "./agent-jobs.js";
+import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision, extractWorkspacePathHint } from "./conversation-decisions.js";
 import { repoRoot, resolveConversationId } from "./utils/index.js";
-
 
 type MaybeHandleAgentJobLaunchTurnParams = {
   config: AppConfig;
@@ -58,7 +53,11 @@ function deriveJobTitle(goal: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function buildConfirmationText(params: { title: string; workspacePath: string; channel: RuntimeChatRequest["channel"] }) {
+function buildConfirmationText(params: {
+  title: string;
+  workspacePath: string;
+  channel: RuntimeChatRequest["channel"];
+}) {
   const workspaceNote = params.workspacePath ? ` in ${params.workspacePath}` : "";
   return `I can help with "${params.title}"${workspaceNote}. Want me to go ahead with that?`;
 }
@@ -71,14 +70,15 @@ function buildCancellationText() {
   return "Got it — I'll hold off. What would you like to talk about instead?";
 }
 
-function buildStartedText(params: { title: string; workspacePath: string; channel: RuntimeChatRequest["channel"] }) {
+function buildStartedText(params: {
+  title: string;
+  workspacePath: string;
+  channel: RuntimeChatRequest["channel"];
+}) {
   const location = params.workspacePath ? ` Working in ${params.workspacePath}.` : "";
-  const followUp =
-    params.channel === "telegram"
-      ? " I'll update you here as it progresses."
-      : "";
+  const followUp = params.channel === "telegram" ? " I'll update you here as it progresses." : "";
 
-  return `On it — started \"${params.title}\".${location}${followUp}`;
+  return `On it — started "${params.title}".${location}${followUp}`;
 }
 
 async function recordLaunchIntentTrace(params: {
@@ -111,7 +111,11 @@ async function getPendingLaunchIntent(dbClient: DbClient, conversationId: string
   });
 }
 
-async function cancelPendingLaunchIntents(dbClient: DbClient, conversationId: string, resolutionText: string) {
+async function cancelPendingLaunchIntents(
+  dbClient: DbClient,
+  conversationId: string,
+  resolutionText: string,
+) {
   await dbClient.db
     .update(agentJobLaunchIntents)
     .set({
@@ -211,11 +215,14 @@ export async function maybeHandleAgentJobLaunchTurn(params: MaybeHandleAgentJobL
         ? pendingIntent.payloadJson.workspacePath
         : null);
     const resolvedWorkspacePath = workspaceHint
-      ? normalizeWorkspacePath(workspaceHint, pendingIntent.payloadJson?.executionBackend === "host_native" ||
-        pendingIntent.payloadJson?.executionBackend === "docker_sandbox" ||
-        pendingIntent.payloadJson?.executionBackend === "wsl_bash"
-          ? pendingIntent.payloadJson.executionBackend
-          : "host_native")
+      ? normalizeWorkspacePath(
+          workspaceHint,
+          pendingIntent.payloadJson?.executionBackend === "host_native" ||
+            pendingIntent.payloadJson?.executionBackend === "docker_sandbox" ||
+            pendingIntent.payloadJson?.executionBackend === "wsl_bash"
+            ? pendingIntent.payloadJson.executionBackend
+            : "host_native",
+        )
       : pendingIntent.workspacePath;
 
     if (resolvedWorkspacePath !== pendingIntent.workspacePath) {

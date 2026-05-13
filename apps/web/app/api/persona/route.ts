@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
 import type {
   PersonaSettingsResponse,
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";

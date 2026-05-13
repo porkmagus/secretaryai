@@ -3,7 +3,9 @@ import { dirname, resolve } from "node:path";
 import { repoRoot, sanitizeSegment } from "./utils/index.js";
 
 // Lazy initialization to avoid circular dependency issues
-function getArtifactRoot() { return resolve(repoRoot, "runtime/agent-jobs/artifacts"); }
+function getArtifactRoot() {
+  return resolve(repoRoot, "runtime/agent-jobs/artifacts");
+}
 
 export function createAgentJobArtifactStorageKey(jobId: string, fileName: string) {
   const timestamp = Date.now();

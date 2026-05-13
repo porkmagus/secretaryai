@@ -1,13 +1,12 @@
-import { test } from "node:test";
 import { strict as assert } from "node:assert";
+import { test } from "node:test";
 import {
-  defaultSecretaryName,
-  defaultSecretarySoul,
-  defaultSecretaryPersonaProfile,
   createPersonaAvatarStorageKey,
-  resolvePersonaStoragePath,
-  getSecretarySoulFilePath,
+  defaultSecretaryName,
+  defaultSecretaryPersonaProfile,
+  defaultSecretarySoul,
   getSecretaryPersonaFilePath,
+  getSecretarySoulFilePath,
 } from "./persona-soul.js";
 
 test("defaultSecretaryName is SetAgentName", () => {

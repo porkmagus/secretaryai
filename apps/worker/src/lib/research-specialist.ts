@@ -28,11 +28,7 @@ export function runResearchSpecialist(text: string): ResearchSpecialistResult {
       specialist: "research",
       mode: "comparison",
       summary: `I prepared a comparison frame for ${comparisonSubjects[0]} versus ${comparisonSubjects[1]}`,
-      focusAreas: [
-        "decision criteria",
-        "tradeoffs and constraints",
-        "migration or switching cost",
-      ],
+      focusAreas: ["decision criteria", "tradeoffs and constraints", "migration or switching cost"],
       suggestedNextStep:
         "Choose the most important decision criterion and gather evidence against it first",
     };

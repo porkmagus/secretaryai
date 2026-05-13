@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -301,7 +301,7 @@ try {
     throw new Error(`Expected onboarding steps. Got: ${JSON.stringify(onboarding)}`);
   }
 
-  const originalPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
+  const _originalPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
     headers: authHeaders,
   });
   const patchedPersona = await fetchJson(`http://127.0.0.1:${webPort}/api/persona`, {
@@ -383,37 +383,10 @@ try {
     headers: authHeaders,
   });
   if (restoredPersona.persona.name !== "Secretary Prime") {
-    throw new Error(`Backup restore did not restore persona state: ${JSON.stringify(restoredPersona)}`);
+    throw new Error(
+      `Backup restore did not restore persona state: ${JSON.stringify(restoredPersona)}`,
+    );
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        authProtected: true,
-        onboardingSteps: onboarding.steps.length,
-        personaNameBefore: originalPersona.persona.name,
-        personaNameAfterImport: imported.persona.name,
-        personaNameAfterRestore: restoredPersona.persona.name,
-        backupDir,
-      },
-      null,
-      2,
-    ),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

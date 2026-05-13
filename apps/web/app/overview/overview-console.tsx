@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import type {
   HeartbeatIntegrationStatusResponse,
   OnboardingStatusResponse,
   SystemHealthResponse,
 } from "@secretary/core-runtime";
+import { useEffect, useMemo, useState } from "react";
 import { fetchJson } from "../lib/fetch-json";
-import { AppPage, LoadingSurface, NoticeBanner, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
+import {
+  AppPage,
+  LoadingSurface,
+  NoticeBanner,
+  PageHero,
+  StatCard,
+  StatGrid,
+  SurfaceCard,
+} from "../lib/ui";
 
 function statusTone(status: string) {
   switch (status) {
@@ -59,7 +67,9 @@ export function OverviewConsole() {
       const [onboardingPayload, healthPayload, heartbeatPayload] = await Promise.all([
         fetchJson<OnboardingStatusResponse>("/api/onboarding", { cache: "no-store" }),
         fetchJson<SystemHealthResponse>("/api/system/health", { cache: "no-store" }),
-        fetchJson<HeartbeatIntegrationStatusResponse>("/api/integrations/heartbeat", { cache: "no-store" }),
+        fetchJson<HeartbeatIntegrationStatusResponse>("/api/integrations/heartbeat", {
+          cache: "no-store",
+        }),
       ]);
 
       setState({
@@ -77,7 +87,7 @@ export function OverviewConsole() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   const readiness = useMemo(() => {
     if (!state.onboarding) {
@@ -149,8 +159,8 @@ export function OverviewConsole() {
           title="Preparing the overview"
           description={
             <p>
-              Gathering local health, onboarding readiness, heartbeat status, and storage signals
-              so the overview opens as one clean status board.
+              Gathering local health, onboarding readiness, heartbeat status, and storage signals so
+              the overview opens as one clean status board.
             </p>
           }
           blocks={3}
@@ -163,7 +173,12 @@ export function OverviewConsole() {
     <AppPage width="1220px">
       <PageHero
         title="Overview"
-        description={<p>A calm, compact snapshot of what is healthy, what is connected, and what is actually worth your attention.</p>}
+        description={
+          <p>
+            A calm, compact snapshot of what is healthy, what is connected, and what is actually
+            worth your attention.
+          </p>
+        }
         tone="dark"
       />
 
@@ -191,11 +206,49 @@ export function OverviewConsole() {
           description={<p>Runtime health and storage visibility in one compact place.</p>}
         >
           <StatGrid>
-            <StatCard label="Readiness" value={state.onboarding ? `${state.onboarding.completedSteps}/${state.onboarding.totalSteps}` : "..."} detail="Setup steps completed" tone="soft" />
-            <StatCard label="Conversation" value={state.health?.services.conversation.status === "ok" ? "model-backed" : "fallback"} detail="Current reply path" tone="soft" />
-            <StatCard label="Channels" value={state.health?.services.telegram.status === "ok" ? "web + telegram" : "web only"} detail="Active conversational reach" tone="soft" />
-            <StatCard label="Voice" value={state.health?.services.stt.status === "ok" && state.health?.services.tts.status === "ok" ? "stt + tts ready" : "needs attention"} detail="Speech path status" tone="soft" />
-            <StatCard label="Heartbeat" value={nextHeartbeatLabel} detail="Next scheduled sweep" tone="soft" />
+            <StatCard
+              label="Readiness"
+              value={
+                state.onboarding
+                  ? `${state.onboarding.completedSteps}/${state.onboarding.totalSteps}`
+                  : "..."
+              }
+              detail="Setup steps completed"
+              tone="soft"
+            />
+            <StatCard
+              label="Conversation"
+              value={
+                state.health?.services.conversation.status === "ok" ? "model-backed" : "fallback"
+              }
+              detail="Current reply path"
+              tone="soft"
+            />
+            <StatCard
+              label="Channels"
+              value={
+                state.health?.services.telegram.status === "ok" ? "web + telegram" : "web only"
+              }
+              detail="Active conversational reach"
+              tone="soft"
+            />
+            <StatCard
+              label="Voice"
+              value={
+                state.health?.services.stt.status === "ok" &&
+                state.health?.services.tts.status === "ok"
+                  ? "stt + tts ready"
+                  : "needs attention"
+              }
+              detail="Speech path status"
+              tone="soft"
+            />
+            <StatCard
+              label="Heartbeat"
+              value={nextHeartbeatLabel}
+              detail="Next scheduled sweep"
+              tone="soft"
+            />
           </StatGrid>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
             <button
@@ -274,7 +327,9 @@ export function OverviewConsole() {
                       <strong style={{ fontSize: 13, textTransform: "capitalize" }}>{key}</strong>
                     </div>
                     <div className="stack-sm" style={{ gap: 6 }}>
-                      <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.45, fontSize: 12 }}>
+                      <p
+                        style={{ margin: 0, color: "var(--muted)", lineHeight: 1.45, fontSize: 12 }}
+                      >
                         {service.summary}
                       </p>
                       {linkedStorage
@@ -295,7 +350,9 @@ export function OverviewConsole() {
                             </span>
                             <span
                               style={{
-                                color: entry.exists ? "var(--success-soft-text)" : "var(--warning-soft-text)",
+                                color: entry.exists
+                                  ? "var(--success-soft-text)"
+                                  : "var(--warning-soft-text)",
                                 fontSize: 10,
                                 fontWeight: 700,
                                 textTransform: "uppercase",
@@ -358,7 +415,9 @@ export function OverviewConsole() {
                       <span className="summary-chip-label">{entry.label}</span>
                       <span
                         style={{
-                          color: entry.exists ? "var(--success-soft-text)" : "var(--warning-soft-text)",
+                          color: entry.exists
+                            ? "var(--success-soft-text)"
+                            : "var(--warning-soft-text)",
                           fontSize: 10,
                           fontWeight: 700,
                           textTransform: "uppercase",
@@ -402,9 +461,7 @@ export function OverviewConsole() {
               </p>
             }
           >
-            <div
-              className="compact-list"
-            >
+            <div className="compact-list">
               {(attentionItems.length > 0 ? attentionItems : readiness).map((step) => {
                 const tone = statusTone(step.status);
 
@@ -440,7 +497,14 @@ export function OverviewConsole() {
                     <div className="stack-sm" style={{ gap: 4 }}>
                       <strong style={{ fontSize: 13 }}>{step.title}</strong>
                       {attentionItems.length > 0 ? (
-                        <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                        <p
+                          style={{
+                            margin: 0,
+                            color: "var(--muted)",
+                            fontSize: 12,
+                            lineHeight: 1.45,
+                          }}
+                        >
                           {step.detail}
                         </p>
                       ) : null}

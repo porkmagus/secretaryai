@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 /*
@@ -48,9 +48,7 @@ async function runDryVerification() {
     "TTS_BASE_URL",
   ];
   const missingEnvVars = requiredEnvVars.filter(
-    (name) =>
-      process.env[name] === undefined &&
-      !new RegExp(`^${name}=`, "m").test(envExample),
+    (name) => process.env[name] === undefined && !new RegExp(`^${name}=`, "m").test(envExample),
   );
   const speechDirectories = [
     "runtime/speech",
@@ -69,33 +67,8 @@ async function runDryVerification() {
   }
 
   if (missingEnvVars.length > 0 || missingSpeechDirectories.length > 0) {
-    console.log(
-      JSON.stringify(
-        {
-          dryRun: true,
-          missingEnvVars,
-          missingSpeechDirectories,
-          ttsModelCheck: "would check TTS model availability",
-        },
-        null,
-        2,
-      ),
-    );
     throw new Error("Phase 4 dry verification failed.");
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        dryRun: true,
-        envVars: requiredEnvVars,
-        speechDirectories,
-        ttsModelCheck: "would check TTS model availability",
-      },
-      null,
-      2,
-    ),
-  );
 }
 
 if (dryRun) {
@@ -410,12 +383,12 @@ try {
   await waitForUrl(`http://127.0.0.1:${workerPort}/health/live`, "worker");
   await waitForUrl(`http://127.0.0.1:${webPort}/voice`, "voice page");
 
-  const seededProfile = await waitForVoiceProfile(databaseUrl);
+  const _seededProfile = await waitForVoiceProfile(databaseUrl);
   const insertedArtifact = await insertSpeechArtifact(databaseUrl);
   const createdProfile = await createVoiceProfile(webPort);
   const uploadedSample = await uploadVoiceSample(webPort, createdProfile.id);
 
-  const voicePage = await fetch(`http://127.0.0.1:${webPort}/voice`, {
+  const _voicePage = await fetch(`http://127.0.0.1:${webPort}/voice`, {
     cache: "no-store",
   });
   const speechStatusResponse = await fetch(`http://127.0.0.1:${webPort}/api/speech/status`, {
@@ -460,7 +433,9 @@ try {
   }
 
   if (!uploadedSample.profile?.sampleStorageKey) {
-    throw new Error("Expected uploaded sample to attach a storage key to the created voice profile.");
+    throw new Error(
+      "Expected uploaded sample to attach a storage key to the created voice profile.",
+    );
   }
 
   const sampleResponse = await fetch(
@@ -471,43 +446,14 @@ try {
   );
 
   if (!sampleResponse.ok) {
-    throw new Error(`Expected uploaded voice sample to be retrievable. Got ${sampleResponse.status}.`);
+    throw new Error(
+      `Expected uploaded voice sample to be retrievable. Got ${sampleResponse.status}.`,
+    );
   }
 
   if (!speechStatusBody.services?.stt || !speechStatusBody.services?.tts) {
     throw new Error("Expected speech status payload to include STT and TTS service states.");
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        voicePageStatus: voicePage.status,
-        seededProfile,
-        createdProfileId: createdProfile.id,
-        profileCount: profilesBody.profiles.length,
-        artifactCount: artifactsBody.artifacts.length,
-        verifiedArtifactId: artifact.id,
-        sampleStorageKey: uploadedSample.profile.sampleStorageKey,
-        speechStatus: speechStatusBody.services,
-      },
-      null,
-      2,
-    ),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

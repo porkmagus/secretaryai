@@ -1,10 +1,6 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  normalizeApprovalMode,
-  normalizeExecutionBackend,
-  pathExists,
-} from "./utils";
+import test from "node:test";
+import { normalizeApprovalMode, normalizeExecutionBackend, pathExists } from "./utils";
 
 test("normalizeApprovalMode validates and normalizes values", () => {
   // Valid values

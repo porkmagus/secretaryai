@@ -54,22 +54,16 @@ export async function proxyWorkerJson<T>(
             ...headers,
           }
         : headers,
-      body:
-        body === undefined
-          ? undefined
-          : typeof body === "string"
-            ? body
-            : JSON.stringify(body),
+      body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
       signal: controller?.signal,
     });
 
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
-      return NextResponse.json(
-        payload ?? { error: "Worker request failed." },
-        { status: response.status },
-      );
+      return NextResponse.json(payload ?? { error: "Worker request failed." }, {
+        status: response.status,
+      });
     }
 
     return NextResponse.json(payload as T, {
@@ -129,16 +123,16 @@ export async function proxyWorkerBinary(
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      return NextResponse.json(
-        payload ?? { error: "Worker request failed." },
-        { status: response.status },
-      );
+      return NextResponse.json(payload ?? { error: "Worker request failed." }, {
+        status: response.status,
+      });
     }
 
     return new NextResponse(await response.arrayBuffer(), {
       status: response.status,
       headers: {
-        "Content-Type": response.headers.get("content-type") ?? mimeType ?? "application/octet-stream",
+        "Content-Type":
+          response.headers.get("content-type") ?? mimeType ?? "application/octet-stream",
       },
     });
   } catch {
@@ -190,10 +184,9 @@ export async function proxyWorkerFormDataJson<T>(
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
-      return NextResponse.json(
-        payload ?? { error: "Worker request failed." },
-        { status: response.status },
-      );
+      return NextResponse.json(payload ?? { error: "Worker request failed." }, {
+        status: response.status,
+      });
     }
 
     return NextResponse.json(payload as T, {

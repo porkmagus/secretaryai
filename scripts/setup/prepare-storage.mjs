@@ -29,5 +29,4 @@ for (const relativePath of [
 ]) {
   const fullPath = resolve(root, relativePath);
   await mkdir(fullPath, { recursive: true });
-  console.log(`ready:${fullPath}`);
 }

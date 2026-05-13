@@ -1,50 +1,36 @@
 import { writeFile } from "node:fs/promises";
-import { and, asc, desc, eq, isNull, lte, not, or } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
-  activityTraces,
-  integrations,
-  speechArtifacts,
-  tasks,
-  type DbClient,
-} from "@secretary/db";
+  createMessageId,
+  type RuntimeChatRequest,
+  type TelegramDeliveryMode,
+  type TelegramIntegrationStatusResponse,
+  type TelegramPresenceUpdateRequest,
+  type TelegramPresenceUpdateResponse,
+  type TelegramSyncWebhookResponse,
+  type TelegramTestMessageRequest,
+  type TelegramTestMessageResponse,
+  type UpdateTelegramIntegrationRequest,
+} from "@secretary/core-runtime";
+import { activityTraces, type DbClient, integrations, speechArtifacts } from "@secretary/db";
 import {
   createTelegramClient,
   createTelegramWebhookUrl,
   normalizeTelegramUpdate,
   type TelegramUpdate,
 } from "@secretary/integrations";
-import {
-  createMessageId,
-  type TelegramDeliveryMode,
-  type TelegramPresenceUpdateResponse,
-  type TelegramIntegrationStatusResponse,
-  type TelegramReminderDispatchResponse,
-  type TelegramSyncWebhookResponse,
-  type TelegramTestMessageRequest,
-  type TelegramTestMessageResponse,
-  type TelegramPresenceUpdateRequest,
-  type RuntimeChatRequest,
-  type UpdateTelegramIntegrationRequest,
-} from "@secretary/core-runtime";
-import type { Infrastructure } from "./infrastructure.js";
+import { eq } from "drizzle-orm";
+import { dispatchDueTaskReminders } from "./channel-delivery.js";
 import {
   attachExternalMessageIdToMessage,
   findConversationIdByChannelRef,
 } from "./chat-persistence.js";
-import { dispatchDueTaskReminders } from "./channel-delivery.js";
-import {
-  createSpeechArtifact,
-  recordSpeechTrace,
-  updateSpeechArtifact,
-} from "./speech-runtime.js";
-import {
-  createSpeechStorageKey,
-  ensureSpeechStoragePath,
-} from "./speech-storage.js";
+import type { Infrastructure } from "./infrastructure.js";
+import { createSpeechArtifact, recordSpeechTrace, updateSpeechArtifact } from "./speech-runtime.js";
+import { createSpeechStorageKey, ensureSpeechStoragePath } from "./speech-storage.js";
 import { transcribeAudioFile } from "./stt-service.js";
-import { createTelegramVoiceReply } from "./voice-replies.js";
 import { enqueueTurnMemoryFollowup, processRuntimeTurn } from "./turn-orchestrator.js";
+import { createTelegramVoiceReply } from "./voice-replies.js";
 
 const telegramIntegrationId = "telegram";
 
@@ -92,9 +78,7 @@ function parseTelegramIntegrationConfig(value: Record<string, unknown> | null | 
         ? value.webPresenceLastActiveAt
         : null,
     webhookUrl:
-      typeof value?.webhookUrl === "string" && value.webhookUrl.trim()
-        ? value.webhookUrl
-        : null,
+      typeof value?.webhookUrl === "string" && value.webhookUrl.trim() ? value.webhookUrl : null,
   } satisfies TelegramIntegrationConfig;
 }
 
@@ -172,10 +156,7 @@ export function parseTelegramMessageText(
   };
 }
 
-async function ensureTelegramIntegrationRecord(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+async function ensureTelegramIntegrationRecord(dbClient: DbClient, config: AppConfig) {
   await dbClient.db
     .insert(integrations)
     .values({
@@ -330,10 +311,7 @@ export async function maybeDeliverTelegramAssistantMessage(params: {
   }
 
   const stored = parseTelegramIntegrationConfig(record.configJson);
-  const chatId =
-    params.forceChatId ??
-    stored.defaultChatId ??
-    params.config.telegram.defaultChatId;
+  const chatId = params.forceChatId ?? stored.defaultChatId ?? params.config.telegram.defaultChatId;
 
   if (!chatId) {
     return {
@@ -346,8 +324,8 @@ export async function maybeDeliverTelegramAssistantMessage(params: {
     deliveryMode: stored.deliveryMode,
     idleTimeoutMinutes: stored.idleTimeoutMinutes,
     importance: params.importance,
-      webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
-    });
+    webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
+  });
 
   if (!params.ignoreDeliveryPolicy && !shouldDeliver) {
     return {
@@ -404,7 +382,11 @@ async function downloadTelegramVoiceArtifact(params: {
     throw new Error("Telegram voice note did not include a downloadable file path.");
   }
 
-  const extension = file.file_path.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "dat";
+  const extension =
+    file.file_path
+      .split(".")
+      .pop()
+      ?.replace(/[^a-z0-9]/gi, "") || "dat";
   const storageKey = createSpeechStorageKey(
     "telegram",
     `${Date.now()}-${params.normalized.chatId}-${params.normalized.messageId}.${extension}`,
@@ -515,22 +497,20 @@ async function refreshTelegramHealth(
   } else {
     try {
       const client = getTelegramClient(config);
-      const [me, webhookInfo] = await Promise.all([
-        client.getMe(),
-        client.getWebhookInfo(),
-      ]);
+      const [me, webhookInfo] = await Promise.all([client.getMe(), client.getWebhookInfo()]);
 
       botUser = {
         id: String(me.id),
         username: me.username ?? null,
-        displayName: [me.first_name, me.last_name].filter(Boolean).join(" ") || me.username || "Telegram bot",
+        displayName:
+          [me.first_name, me.last_name].filter(Boolean).join(" ") || me.username || "Telegram bot",
       };
       pendingUpdateCount = webhookInfo.pending_update_count ?? 0;
       lastError = webhookInfo.last_error_message ?? null;
 
       if (!record.enabled) {
-      healthStatus = "disabled";
-      healthSummary = "Telegram credentials are valid, but the integration is disabled.";
+        healthStatus = "disabled";
+        healthSummary = "Telegram credentials are valid, but the integration is disabled.";
       } else if (mode === "polling") {
         healthStatus = "ok";
         healthSummary = "Telegram polling is active locally. No public webhook URL is required.";
@@ -540,7 +520,8 @@ async function refreshTelegramHealth(
         healthSummary = "Provide a public worker URL, then sync the webhook.";
       } else if (webhookInfo.url !== desiredWebhookUrl) {
         healthStatus = "degraded";
-        healthSummary = "Telegram webhook is reachable but needs syncing to the current worker URL.";
+        healthSummary =
+          "Telegram webhook is reachable but needs syncing to the current worker URL.";
       } else {
         healthStatus = "ok";
         healthSummary = "Telegram text roundtrip is configured and ready.";
@@ -593,10 +574,7 @@ async function refreshTelegramHealth(
   } satisfies TelegramIntegrationStatusResponse;
 }
 
-export async function getTelegramIntegrationStatus(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+export async function getTelegramIntegrationStatus(dbClient: DbClient, config: AppConfig) {
   const record = await ensureTelegramIntegrationRecord(dbClient, config);
   return refreshTelegramHealth(dbClient, config, record);
 }
@@ -610,9 +588,7 @@ export async function updateTelegramIntegrationSettings(params: {
   const stored = parseTelegramIntegrationConfig(record.configJson);
   const nextConfig = {
     defaultChatId:
-      params.patch.defaultChatId !== undefined
-        ? params.patch.defaultChatId
-        : stored.defaultChatId,
+      params.patch.defaultChatId !== undefined ? params.patch.defaultChatId : stored.defaultChatId,
     deliveryMode: params.patch.deliveryMode ?? stored.deliveryMode,
     idleTimeoutMinutes:
       params.patch.idleTimeoutMinutes !== undefined
@@ -621,10 +597,7 @@ export async function updateTelegramIntegrationSettings(params: {
     mode: params.patch.mode ?? stored.mode,
     pollCursor: stored.pollCursor,
     webPresenceLastActiveAt: stored.webPresenceLastActiveAt,
-    webhookUrl:
-      params.patch.webhookUrl !== undefined
-        ? params.patch.webhookUrl
-        : stored.webhookUrl,
+    webhookUrl: params.patch.webhookUrl !== undefined ? params.patch.webhookUrl : stored.webhookUrl,
   };
 
   await saveTelegramRecord({
@@ -637,10 +610,7 @@ export async function updateTelegramIntegrationSettings(params: {
   return getTelegramIntegrationStatus(params.dbClient, params.config);
 }
 
-export async function syncTelegramWebhook(params: {
-  dbClient: DbClient;
-  config: AppConfig;
-}) {
+export async function syncTelegramWebhook(params: { dbClient: DbClient; config: AppConfig }) {
   const record = await ensureTelegramIntegrationRecord(params.dbClient, params.config);
   const stored = parseTelegramIntegrationConfig(record.configJson);
   const client = getTelegramClient(params.config);
@@ -809,9 +779,7 @@ export async function sendTelegramTestMessage(params: {
   const record = await ensureTelegramIntegrationRecord(params.dbClient, params.config);
   const stored = parseTelegramIntegrationConfig(record.configJson);
   const chatId =
-    params.request.chatId?.trim() ||
-    stored.defaultChatId ||
-    params.config.telegram.defaultChatId;
+    params.request.chatId?.trim() || stored.defaultChatId || params.config.telegram.defaultChatId;
 
   if (!chatId) {
     throw new Error("No Telegram chat id is configured for test delivery.");

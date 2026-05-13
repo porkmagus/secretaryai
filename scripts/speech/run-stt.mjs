@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -10,12 +10,9 @@ const venvDir = resolve(root, "runtime/venvs/stt");
 const appDir = resolve(root, "services/stt-faster-whisper");
 
 const pythonPath =
-  process.platform === "win32"
-    ? join(venvDir, "Scripts/python.exe")
-    : join(venvDir, "bin/python");
+  process.platform === "win32" ? join(venvDir, "Scripts/python.exe") : join(venvDir, "bin/python");
 
 if (!existsSync(pythonPath)) {
-  console.error("STT virtual environment is missing. Run `npm run stt:setup` first.");
   process.exit(1);
 }
 

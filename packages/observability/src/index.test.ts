@@ -1,5 +1,5 @@
-import { test } from "node:test";
 import { strict as assert } from "node:assert";
+import { test } from "node:test";
 import { createLogger } from "./index";
 
 test("createLogger returns an object with expected methods", () => {
@@ -29,7 +29,10 @@ test("logger methods call console.log or console.error with JSON string", (t) =>
     const mock = level === "error" ? errorMock : logMock;
     const call = mock.mock.calls[mock.mock.calls.length - 1];
 
-    assert.ok(call, `Expected console.${level === "error" ? "error" : "log"} to be called for level ${level}`);
+    assert.ok(
+      call,
+      `Expected console.${level === "error" ? "error" : "log"} to be called for level ${level}`,
+    );
     const logLine = call.arguments[0];
     const parsed = JSON.parse(logLine);
 
@@ -38,7 +41,7 @@ test("logger methods call console.log or console.error with JSON string", (t) =>
     assert.strictEqual(parsed.event, event);
     assert.strictEqual(parsed.foo, "bar");
     assert.ok(parsed.timestamp);
-    assert.ok(!isNaN(Date.parse(parsed.timestamp)));
+    assert.ok(!Number.isNaN(Date.parse(parsed.timestamp)));
   }
 });
 

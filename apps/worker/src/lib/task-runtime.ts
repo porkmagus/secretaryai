@@ -10,10 +10,7 @@ export type TaskDraft = {
   deliveryTargetRef: string | null;
 };
 
-function parseDeliveryPreference(params: {
-  text: string;
-  telegramChatId?: string | null;
-}) {
+function parseDeliveryPreference(params: { text: string; telegramChatId?: string | null }) {
   const patterns: Array<{
     regex: RegExp;
     channelType: TaskDraft["deliveryChannelType"];
@@ -96,9 +93,7 @@ export function parseReminderTime(text: string, now = new Date()) {
     return new Date(now.getTime() + Number(inHoursMatch[1]) * 60 * 60_000);
   }
 
-  const tomorrowMatch = text.match(
-    /\btomorrow(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?\b/i,
-  );
+  const tomorrowMatch = text.match(/\btomorrow(?:\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?\b/i);
 
   if (tomorrowMatch) {
     const reminderAt = new Date(now);

@@ -1,14 +1,14 @@
 import { writeFile } from "node:fs/promises";
 import type { AppConfig } from "@secretary/config";
-import type { DbClient } from "@secretary/db";
 import {
   createTraceId,
   type RuntimeChatResponse,
   type VoicePreviewRequest,
   type WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
-import type { MemoryQueueAdapter } from "./memory-queue.js";
+import type { DbClient } from "@secretary/db";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
+import type { MemoryQueueAdapter } from "./memory-queue.js";
 import {
   createSpeechArtifact,
   getActiveVoiceProfile,
@@ -52,10 +52,7 @@ export async function createVoicePreview(params: {
     throw new Error("TTS_BASE_URL is not configured.");
   }
 
-  const storageKey = createSpeechStorageKey(
-    "tts",
-    `${Date.now()}-voice-preview.wav`,
-  );
+  const storageKey = createSpeechStorageKey("tts", `${Date.now()}-voice-preview.wav`);
   const storagePath = await ensureSpeechStoragePath(storageKey);
   await writeFile(storagePath, synthesis.audio);
 
@@ -99,7 +96,10 @@ export async function processWebSpeechTurn(params: {
 
   const traceId = createTraceId();
   const extension =
-    params.originalFilename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") ||
+    params.originalFilename
+      ?.split(".")
+      .pop()
+      ?.replace(/[^a-z0-9]/gi, "") ||
     (params.mimeType?.includes("ogg")
       ? "ogg"
       : params.mimeType?.includes("webm")
@@ -107,10 +107,7 @@ export async function processWebSpeechTurn(params: {
         : params.mimeType?.includes("mpeg")
           ? "mp3"
           : "wav");
-  const storageKey = createSpeechStorageKey(
-    "web",
-    `${Date.now()}-web-recording.${extension}`,
-  );
+  const storageKey = createSpeechStorageKey("web", `${Date.now()}-web-recording.${extension}`);
   const storagePath = await ensureSpeechStoragePath(storageKey);
   await writeFile(storagePath, params.audio);
 

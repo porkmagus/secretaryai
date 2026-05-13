@@ -1,9 +1,9 @@
-import { type Dispatch, type SetStateAction } from "react";
 import type {
   InferenceModelListResponse,
   InferenceProviderId,
   InferenceSettingsResponse,
 } from "@secretary/core-runtime";
+import type { Dispatch, SetStateAction } from "react";
 import { SurfaceCard } from "../lib/ui";
 
 type InferenceDraft = {
@@ -66,7 +66,10 @@ export function InferenceSettingsSection({
     <SurfaceCard
       title="Inference"
       description={
-        <p>Choose either a hosted provider or the local runtime, then set the model the secretary should use.</p>
+        <p>
+          Choose either a hosted provider or the local runtime, then set the model the secretary
+          should use.
+        </p>
       }
       className="stack-md"
     >
@@ -469,7 +472,8 @@ export function InferenceSettingsSection({
             </div>
 
             <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
-              Local mode talks straight to your local runtime. Pick whichever local endpoint is already running on your machine.
+              Local mode talks straight to your local runtime. Pick whichever local endpoint is
+              already running on your machine.
             </p>
           </>
         )}

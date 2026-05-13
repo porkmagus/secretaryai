@@ -3,12 +3,24 @@ import { dirname, resolve, sep } from "node:path";
 import { repoRoot } from "./utils/index.js";
 
 // Lazy initialization to avoid circular dependency issues
-function getRuntimeRoot() { return resolve(repoRoot, "runtime"); }
-function getSpeechRoot() { return resolve(getRuntimeRoot(), "speech"); }
-function getInboundRoot() { return resolve(getSpeechRoot(), "inbound"); }
-function getTranscriptsRoot() { return resolve(getSpeechRoot(), "transcripts"); }
-function getTtsRoot() { return resolve(getSpeechRoot(), "tts"); }
-function getProfilesRoot() { return resolve(getSpeechRoot(), "profiles"); }
+function getRuntimeRoot() {
+  return resolve(repoRoot, "runtime");
+}
+function getSpeechRoot() {
+  return resolve(getRuntimeRoot(), "speech");
+}
+function getInboundRoot() {
+  return resolve(getSpeechRoot(), "inbound");
+}
+function getTranscriptsRoot() {
+  return resolve(getSpeechRoot(), "transcripts");
+}
+function getTtsRoot() {
+  return resolve(getSpeechRoot(), "tts");
+}
+function getProfilesRoot() {
+  return resolve(getSpeechRoot(), "profiles");
+}
 
 async function ensureDir(path: string) {
   await mkdir(path, { recursive: true });
@@ -45,7 +57,10 @@ function buildSpeechStorageKey(parts: string[]) {
   return normalizeSpeechStorageKey(parts.join("/"));
 }
 
-export function createSpeechStorageKey(kind: "telegram" | "web" | "tts" | "profile", filename: string) {
+export function createSpeechStorageKey(
+  kind: "telegram" | "web" | "tts" | "profile",
+  filename: string,
+) {
   const normalized = filename.replace(/[^a-zA-Z0-9._-]+/g, "-");
 
   switch (kind) {

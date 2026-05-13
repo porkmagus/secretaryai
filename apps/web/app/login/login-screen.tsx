@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { type FormEvent, useState } from "react";
 
 async function readErrorMessage(response: Response) {
   try {
@@ -61,8 +61,7 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
           padding: 30,
           borderRadius: 32,
           border: "1px solid var(--border)",
-          background:
-            "linear-gradient(180deg, rgba(31, 26, 21, 0.98), rgba(17, 14, 11, 0.96))",
+          background: "linear-gradient(180deg, rgba(31, 26, 21, 0.98), rgba(17, 14, 11, 0.96))",
           boxShadow: "var(--shadow)",
           display: "grid",
           gap: 18,
@@ -132,8 +131,8 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
             Sign in to the workspace
           </h1>
           <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
-            This install is using the single-user access gate. Enter the operator password
-            to continue into the Desk, tools, memory, and admin surfaces.
+            This install is using the single-user access gate. Enter the operator password to
+            continue into the Desk, tools, memory, and admin surfaces.
           </p>
         </div>
 
@@ -144,13 +143,18 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              autoFocus
               style={{
                 minHeight: 46,
               }}
             />
           </label>
-          <p style={{ margin: 0, color: error ? "var(--warning-soft-text)" : "var(--muted)", fontSize: 14 }}>
+          <p
+            style={{
+              margin: 0,
+              color: error ? "var(--warning-soft-text)" : "var(--muted)",
+              fontSize: 14,
+            }}
+          >
             {error ?? "The session is stored in an HTTP-only cookie on this browser."}
           </p>
           <button
@@ -163,11 +167,9 @@ export function LoginScreen({ nextPath }: { nextPath: string }) {
               padding: "12px 18px",
               font: "inherit",
               fontWeight: 700,
-              cursor:
-                isSubmitting || password.trim().length === 0 ? "not-allowed" : "pointer",
+              cursor: isSubmitting || password.trim().length === 0 ? "not-allowed" : "pointer",
               color: "#f6fffd",
-              background:
-                "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
+              background: "linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%)",
               opacity: isSubmitting || password.trim().length === 0 ? 0.7 : 1,
             }}
           >

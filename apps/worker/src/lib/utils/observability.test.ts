@@ -1,10 +1,10 @@
-import test, { mock } from "node:test";
 import assert from "node:assert/strict";
+import test, { mock } from "node:test";
 import {
   logAgentEvent,
   logFallbackTriggered,
-  logToolExecution,
   logMemoryRetrieval,
+  logToolExecution,
 } from "./observability";
 
 test("logAgentEvent logs structured JSON with required fields", () => {

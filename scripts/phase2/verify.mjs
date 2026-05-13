@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -299,13 +299,10 @@ await runCommand(npmCommand, ["run", "db:migrate"], {
 });
 
 const worker = startProcess(nodeCommand, ["apps/worker/dist/index.js"], env);
-const web = startWebProcess(
-  webPort,
-  {
-    WORKER_BASE_URL: env.WORKER_BASE_URL,
-    DEFAULT_USER_ID: env.DEFAULT_USER_ID,
-  },
-);
+const web = startWebProcess(webPort, {
+  WORKER_BASE_URL: env.WORKER_BASE_URL,
+  DEFAULT_USER_ID: env.DEFAULT_USER_ID,
+});
 
 try {
   await waitForUrl(`http://127.0.0.1:${workerPort}/health/live`, "worker");
@@ -315,7 +312,7 @@ try {
     text: `Remember that I prefer ${uniquePreference}.`,
   });
   const memory = await waitForMemory(webPort, uniquePreference);
-  const pinnedMemory = await patchMemory(webPort, memory.id, {
+  const _pinnedMemory = await patchMemory(webPort, memory.id, {
     pinned: true,
     suppressed: false,
   });
@@ -325,7 +322,7 @@ try {
     text: `What do you remember about ${uniquePreference}?`,
   });
 
-  const suppressedMemory = await patchMemory(webPort, memory.id, {
+  const _suppressedMemory = await patchMemory(webPort, memory.id, {
     pinned: false,
     suppressed: true,
   });
@@ -349,7 +346,7 @@ try {
     conversationId: memoryTurn.conversationId,
     text: "Remind me to verify the phase two checkpoint tomorrow.",
   });
-  const task = await waitForTask(webPort, "verify the phase two checkpoint");
+  const _task = await waitForTask(webPort, "verify the phase two checkpoint");
 
   const researchTurn = await postChat(webPort, {
     conversationId: memoryTurn.conversationId,
@@ -372,9 +369,7 @@ try {
     throw new Error("Expected memory recall response to include retrieved memory.");
   }
 
-  if (
-    !suppressedRecallTurn.outputText.includes("I don't have a strong stored memory match")
-  ) {
+  if (!suppressedRecallTurn.outputText.includes("I don't have a strong stored memory match")) {
     throw new Error(
       `Expected suppressed memory to stop appearing in recall response. Output: ${suppressedRecallTurn.outputText}`,
     );
@@ -395,37 +390,6 @@ try {
   if (!activityNames.includes("research.specialist.completed")) {
     throw new Error("Expected activity traces to include research specialist completion.");
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        conversationId: memoryTurn.conversationId,
-        memoryId: memory.id,
-        pinnedMemory: pinnedMemory.pinned,
-        suppressedMemory: suppressedMemory.suppressed,
-        taskId: task.id,
-        recallTraceId: recallTurn.traceId,
-        researchTraceId: researchTurn.traceId,
-        activityEvents: activityNames,
-      },
-      null,
-      2,
-    ),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

@@ -1,5 +1,5 @@
-import { basename } from "node:path";
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import type { AppConfig } from "@secretary/config";
 
 type SttResult = {

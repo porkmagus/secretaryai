@@ -11,7 +11,7 @@ import type {
   AgentJobStepRecord,
   AgentJobStepStatus,
 } from "@secretary/core-runtime";
-import {
+import type {
   agentJobArtifacts,
   agentJobRequirements,
   agentJobSteps,
@@ -73,7 +73,9 @@ export function toStepRecord(row: typeof agentJobSteps.$inferSelect): AgentJobSt
   };
 }
 
-export function toArtifactRecord(row: typeof agentJobArtifacts.$inferSelect): AgentJobArtifactRecord {
+export function toArtifactRecord(
+  row: typeof agentJobArtifacts.$inferSelect,
+): AgentJobArtifactRecord {
   return {
     id: row.id,
     jobId: row.jobId,
@@ -89,7 +91,9 @@ export function toArtifactRecord(row: typeof agentJobArtifacts.$inferSelect): Ag
   };
 }
 
-export function toRequirementRecord(row: typeof agentJobRequirements.$inferSelect): AgentJobRequirementRecord {
+export function toRequirementRecord(
+  row: typeof agentJobRequirements.$inferSelect,
+): AgentJobRequirementRecord {
   return {
     id: row.id,
     jobId: row.jobId,

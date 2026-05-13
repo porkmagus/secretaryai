@@ -1,17 +1,17 @@
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import type {
-  AgentJobApprovalMode,
-  AgentExecutionBackend,
   AgentJobSettingsRecord,
   AgentJobSettingsResponse,
   UpdateAgentJobSettingsRequest,
 } from "@secretary/core-runtime";
-import { normalizeApprovalMode, normalizeExecutionBackend } from "./utils.js";
 import { repoRoot } from "./utils/index.js";
+import { normalizeApprovalMode, normalizeExecutionBackend } from "./utils.js";
 
 // Lazy initialization to avoid circular dependency issues
-function getSettingsFilePath() { return resolve(repoRoot, "runtime/config/agent-jobs.json"); }
+function getSettingsFilePath() {
+  return resolve(repoRoot, "runtime/config/agent-jobs.json");
+}
 
 // Sentinel value written to settings on first initialization.
 // Used to distinguish a fresh install from an existing one that was
@@ -44,7 +44,6 @@ function clampInteger(value: unknown, minimum: number, maximum: number, fallback
 
   return Math.max(minimum, Math.min(maximum, Math.round(value)));
 }
-
 
 function parseSettings(raw: Record<string, unknown> | null | undefined): AgentJobSettingsRecord {
   return {
@@ -90,13 +89,20 @@ async function writeSettingsFile(settings: AgentJobSettingsRecord) {
   await mkdir(dirname(path), { recursive: true });
   // Include _initialized sentinel so future first-run detections are reliable.
   const withSentinel = { _initialized: INITIALIZED_FLAG, ...settings };
-  await writeFile(path, `${JSON.stringify(withSentinel, null, 2)}
-`, "utf8");
+  await writeFile(
+    path,
+    `${JSON.stringify(withSentinel, null, 2)}
+`,
+    "utf8",
+  );
 }
 
 export async function loadAgentJobSettings(): Promise<AgentJobSettingsRecord> {
   try {
-    const parsed = JSON.parse(await readFile(getSettingsFilePath(), "utf8")) as Record<string, unknown>;
+    const parsed = JSON.parse(await readFile(getSettingsFilePath(), "utf8")) as Record<
+      string,
+      unknown
+    >;
     const settings = parseSettings(parsed);
 
     // Migrate pre-initialized installs: if _initialized is absent and

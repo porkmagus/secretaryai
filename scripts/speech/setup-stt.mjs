@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,21 +38,15 @@ async function main() {
   const pythonCommand = process.env.PYTHON ?? "python";
 
   if (!existsSync(resolveVenvPython())) {
-    console.log(`Creating STT virtual environment at ${venvDir}`);
     await run(pythonCommand, ["-m", "venv", venvDir]);
   } else {
-    console.log(`Using existing STT virtual environment at ${venvDir}`);
   }
 
   const venvPython = resolveVenvPython();
   await run(venvPython, ["-m", "pip", "install", "--upgrade", "pip"]);
   await run(venvPython, ["-m", "pip", "install", "-r", requirementsPath]);
-
-  console.log("STT service dependencies are ready.");
-  console.log(`Run the local service with: ${process.platform === "win32" ? "npm run dev:stt" : "npm run dev:stt"}`);
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+void main().catch((_error) => {
   process.exit(1);
 });

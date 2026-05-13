@@ -1,5 +1,5 @@
-import { test } from "node:test";
 import { strict as assert } from "node:assert";
+import { test } from "node:test";
 import {
   createSpeechStorageKey,
   normalizeSpeechStorageKey,
@@ -14,10 +14,7 @@ test("normalizeSpeechStorageKey collapses Windows separators", () => {
 });
 
 test("createSpeechStorageKey always uses forward slashes", () => {
-  assert.equal(
-    createSpeechStorageKey("tts", "voice preview.wav"),
-    "speech/tts/voice-preview.wav",
-  );
+  assert.equal(createSpeechStorageKey("tts", "voice preview.wav"), "speech/tts/voice-preview.wav");
 });
 
 test("resolveManagedSpeechStoragePath accepts normalized legacy keys", () => {

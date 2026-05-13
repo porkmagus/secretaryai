@@ -1,10 +1,10 @@
-import { and, desc, eq } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
-import { toolExecutions, type DbClient } from "@secretary/db";
 import { createMessageId, type RuntimeChatRequest } from "@secretary/core-runtime";
-import { decideToolExecution } from "./tools-runtime.js";
+import { type DbClient, toolExecutions } from "@secretary/db";
+import { and, desc, eq } from "drizzle-orm";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision } from "./conversation-decisions.js";
+import { decideToolExecution } from "./tools-runtime.js";
 import { resolveConversationId } from "./utils/index.js";
 
 type MaybeHandleToolApprovalTurnParams = {
@@ -16,7 +16,8 @@ type MaybeHandleToolApprovalTurnParams = {
   traceId: string;
 };
 
-const approvalHelpPattern = /\b(approval|approve|deny|tool|permission|allowed|blocked|what do you need)\b/i;
+const approvalHelpPattern =
+  /\b(approval|approve|deny|tool|permission|allowed|blocked|what do you need)\b/i;
 
 // Note: resolveConversationId is now imported from utils/conversation.ts
 
@@ -24,9 +25,7 @@ function buildApprovalPrompt(toolName: string, summary: string) {
   return `I'm about to use ${toolName} to ${summary}. Go ahead?`;
 }
 
-export async function maybeHandleToolApprovalTurn(
-  params: MaybeHandleToolApprovalTurnParams,
-) {
+export async function maybeHandleToolApprovalTurn(params: MaybeHandleToolApprovalTurnParams) {
   const conversationId = await resolveConversationId(params.dbClient, params.request);
   const text = params.request.message.text.trim();
 

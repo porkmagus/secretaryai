@@ -31,7 +31,6 @@ try {
   };
 
   await writeJson(outputFile, payload);
-  console.log(JSON.stringify({ outputFile }, null, 2));
 } finally {
   await client.end();
 }

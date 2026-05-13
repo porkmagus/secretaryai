@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -632,7 +632,7 @@ try {
   }
 
   const artifact = await waitForSpeechArtifact(webPort);
-  const ttsArtifact = await waitForTtsArtifact(webPort, artifact.conversationId);
+  const _ttsArtifact = await waitForTtsArtifact(webPort, artifact.conversationId);
   const webTurn = await postWebSpeechTurn(webPort, sampleAudioBuffer);
   const historyResponse = await fetch(
     `http://127.0.0.1:${webPort}/api/conversations/${artifact.conversationId}`,
@@ -652,55 +652,18 @@ try {
   }
 
   if (!assistantReply.includes("marked this as something worth carrying forward")) {
-    throw new Error(`Expected assistant reply to be based on STT transcript. Got: ${assistantReply}`);
+    throw new Error(
+      `Expected assistant reply to be based on STT transcript. Got: ${assistantReply}`,
+    );
   }
 
   if (!String(webTurn.transcriptText ?? "").includes("coffee over tea")) {
     throw new Error(`Expected browser speech turn transcript. Got: ${JSON.stringify(webTurn)}`);
   }
 
-  if (
-    fakeTelegram.state.sentVoices.length < 1 &&
-    fakeTelegram.state.sentAudioReplies.length < 1
-  ) {
+  if (fakeTelegram.state.sentVoices.length < 1 && fakeTelegram.state.sentAudioReplies.length < 1) {
     throw new Error("Expected Telegram voice-note flow to send a synthesized audio reply.");
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        conversationId: artifact.conversationId,
-        artifactId: artifact.id,
-        transcriptText: artifact.transcriptText,
-        assistantReply,
-        webTurnConversationId: webTurn.reply?.conversationId,
-        reusedSttService: sttService.reused,
-        reusedTtsService: ttsService.reused,
-        sentAudioReplies: fakeTelegram.state.sentAudioReplies.length,
-        sentVoices: fakeTelegram.state.sentVoices.length,
-        ttsArtifactId: ttsArtifact.id,
-      },
-      null,
-      2,
-    ),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        fakeTelegramState: fakeTelegram.state,
-        sttLogs: sttService.process?.logs?.(),
-        ttsLogs: ttsService.process?.logs?.(),
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

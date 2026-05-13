@@ -11,10 +11,7 @@ function resolveChannel(channel: string) {
   return channel;
 }
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ channel: string }> },
-) {
+export async function POST(request: Request, context: { params: Promise<{ channel: string }> }) {
   const params = await context.params;
   const channel = resolveChannel(params.channel);
 

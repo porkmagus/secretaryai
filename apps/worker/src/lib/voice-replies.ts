@@ -3,12 +3,12 @@ import { readFile, unlink, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type { AppConfig } from "@secretary/config";
 import type { DbClient } from "@secretary/db";
-import { createSpeechStorageKey, ensureSpeechStoragePath } from "./speech-storage.js";
 import {
   createSpeechArtifact,
   getActiveVoiceProfile,
   recordSpeechTrace,
 } from "./speech-runtime.js";
+import { createSpeechStorageKey, ensureSpeechStoragePath } from "./speech-storage.js";
 import { synthesizeSpeech } from "./tts-service.js";
 
 function resolveFfmpegCommand() {
@@ -38,17 +38,7 @@ function runFfmpeg(args: string[]) {
 }
 
 async function convertWavToTelegramVoice(inputPath: string, outputPath: string) {
-  await runFfmpeg([
-    "-y",
-    "-i",
-    inputPath,
-    "-vn",
-    "-c:a",
-    "libopus",
-    "-b:a",
-    "32k",
-    outputPath,
-  ]);
+  await runFfmpeg(["-y", "-i", inputPath, "-vn", "-c:a", "libopus", "-b:a", "32k", outputPath]);
 
   return readFile(outputPath);
 }

@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import { repoRoot } from "./utils/index.js";
 
 // Lazy initialization to avoid circular dependency issues
@@ -168,9 +168,7 @@ export async function saveSecretarySoul(text: string) {
   await writeFileAndEnsureDirectory(getSoulFilePath(), text);
 }
 
-export async function loadSecretaryPersonaProfile(
-  fallbackText = defaultSecretaryPersonaProfile,
-) {
+export async function loadSecretaryPersonaProfile(fallbackText = defaultSecretaryPersonaProfile) {
   return loadFileOrCreate(getPersonaFilePath(), fallbackText);
 }
 

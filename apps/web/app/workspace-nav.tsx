@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { Great_Vibes } from "next/font/google";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const primaryLinks = [
@@ -51,9 +51,7 @@ export function WorkspaceNav({ authEnabled }: { authEnabled: boolean }) {
           </span>
         </div>
         {isLoginRoute ? (
-          <div className="workspace-nav__operator">
-            Operator sign-in
-          </div>
+          <div className="workspace-nav__operator">Operator sign-in</div>
         ) : (
           <div className="workspace-nav__links">
             {primaryLinks.map((link) => {

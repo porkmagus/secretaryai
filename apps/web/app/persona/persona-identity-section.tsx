@@ -1,10 +1,7 @@
-import { type Dispatch, type SetStateAction } from "react";
-import type {
-  PersonaGender,
-  PersonaSettingsResponse,
-} from "@secretary/core-runtime";
-import { FieldHint as FieldNote, SurfaceCard } from "../lib/ui";
+import type { PersonaGender, PersonaSettingsResponse } from "@secretary/core-runtime";
+import type { Dispatch, SetStateAction } from "react";
 import { SecretaryPortraitField } from "../lib/secretary-portrait-field";
+import { FieldHint as FieldNote, SurfaceCard } from "../lib/ui";
 
 type PersonaDraft = {
   addressPreference: string;
@@ -51,7 +48,10 @@ export function PersonaIdentitySection({
     <SurfaceCard
       title="Identity basics"
       description={
-        <p>The short identity fields that shape the secretary before the long-form writing takes over.</p>
+        <p>
+          The short identity fields that shape the secretary before the long-form writing takes
+          over.
+        </p>
       }
       className="stack-md"
     >
@@ -66,7 +66,8 @@ export function PersonaIdentitySection({
             onStatusChange={handlePortraitStatus}
           />
           <FieldNote>
-            Use a centered portrait with a clean face crop so it reads well in the polaroid frame on Desk.
+            Use a centered portrait with a clean face crop so it reads well in the polaroid frame on
+            Desk.
           </FieldNote>
         </div>
 
@@ -109,9 +110,7 @@ export function PersonaIdentitySection({
                 value={draft?.gender ?? "female"}
                 onChange={(event) =>
                   setDraft((current) =>
-                    current
-                      ? { ...current, gender: event.target.value as PersonaGender }
-                      : current,
+                    current ? { ...current, gender: event.target.value as PersonaGender } : current,
                   )
                 }
                 style={{
@@ -127,7 +126,8 @@ export function PersonaIdentitySection({
                 <option value="male">Male</option>
               </select>
               <FieldNote>
-                Sets the default presentation seed used for voice/profile defaults when nothing more specific is configured.
+                Sets the default presentation seed used for voice/profile defaults when nothing more
+                specific is configured.
               </FieldNote>
             </label>
 
@@ -151,7 +151,8 @@ export function PersonaIdentitySection({
                 }}
               />
               <FieldNote>
-                A short internal mood tag for the secretary, like <code>calm</code>, <code>sharp</code>, or <code>warm</code>.
+                A short internal mood tag for the secretary, like <code>calm</code>,{" "}
+                <code>sharp</code>, or <code>warm</code>.
               </FieldNote>
             </label>
 

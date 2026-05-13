@@ -1,7 +1,7 @@
 import "dotenv/config";
-import { buildServer } from "./server.js";
 import { startHeartbeatLoop } from "./lib/heartbeat-runtime.js";
 import { startTelegramPolling } from "./lib/telegram-integration.js";
+import { buildServer } from "./server.js";
 
 async function main() {
   const { app, config, infrastructure, logger } = await buildServer();
@@ -59,4 +59,3 @@ async function main() {
 }
 
 void main();
-

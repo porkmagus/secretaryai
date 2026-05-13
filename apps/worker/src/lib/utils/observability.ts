@@ -1,7 +1,7 @@
 /**
  * Structured logging for agent behavior analysis
  */
-export function logAgentEvent(event: {
+export function logAgentEvent(_event: {
   type: string;
   reason?: string;
   textPreview?: string;
@@ -9,15 +9,7 @@ export function logAgentEvent(event: {
   durationMs?: number;
   resultCount?: number;
   [key: string]: unknown;
-}) {
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      service: "worker",
-      ...event,
-    }),
-  );
-}
+}) {}
 
 /**
  * Log when fallback response is triggered

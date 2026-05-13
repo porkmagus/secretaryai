@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
 import type { MemoryRecord, MemoryType, TaskRecord } from "@secretary/core-runtime";
-import { AppPage, LoadingSurface, NoticeBanner, PageHero, SurfaceCard, ToggleField } from "../lib/ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatTimestamp, snippet } from "../lib/presenters";
+import {
+  AppPage,
+  LoadingSurface,
+  NoticeBanner,
+  PageHero,
+  SurfaceCard,
+  ToggleField,
+} from "../lib/ui";
 
 type MemoryApiResponse = {
   memories: MemoryRecord[];
@@ -47,85 +54,88 @@ export function MemoryBrowser() {
   useEffect(() => {
     let cancelled = false;
 
-    const timeout = setTimeout(async () => {
-      setIsLoading(true);
-      setError(null);
+    const timeout = setTimeout(
+      async () => {
+        setIsLoading(true);
+        setError(null);
 
-      const params = new URLSearchParams();
+        const params = new URLSearchParams();
 
-      if (search.trim()) {
-        params.set("search", search.trim());
-      }
-
-      if (typeFilter !== "all") {
-        params.set("type", typeFilter);
-      }
-
-      if (includeSuppressed) {
-        params.set("includeSuppressed", "true");
-      }
-
-      try {
-        const [memoryResponse, taskResponse] = await Promise.all([
-          fetch(`/api/memories?${params.toString()}`, {
-            cache: "no-store",
-          }),
-          fetch("/api/tasks", {
-            cache: "no-store",
-          }),
-        ]);
-
-        if (!memoryResponse.ok || !taskResponse.ok) {
-          throw new Error("Request failed");
+        if (search.trim()) {
+          params.set("search", search.trim());
         }
 
-        const memoryData = (await memoryResponse.json()) as MemoryApiResponse;
-        const taskData = (await taskResponse.json()) as TaskApiResponse;
-
-        if (cancelled) {
-          return;
+        if (typeFilter !== "all") {
+          params.set("type", typeFilter);
         }
 
-        setMemories(memoryData.memories);
-        setTasks(taskData.tasks);
-        setDrafts((current) => {
-          const next = { ...current };
+        if (includeSuppressed) {
+          params.set("includeSuppressed", "true");
+        }
 
-          for (const memory of memoryData.memories) {
-            next[memory.id] = {
-              title: memory.title ?? "",
-              summary: memory.summary ?? "",
-              contentText: memory.contentText,
-              tags: memory.tags.join(", "),
-              memoryType: memory.memoryType,
-              pinned: memory.pinned,
-              suppressed: memory.suppressed,
-            };
+        try {
+          const [memoryResponse, taskResponse] = await Promise.all([
+            fetch(`/api/memories?${params.toString()}`, {
+              cache: "no-store",
+            }),
+            fetch("/api/tasks", {
+              cache: "no-store",
+            }),
+          ]);
+
+          if (!memoryResponse.ok || !taskResponse.ok) {
+            throw new Error("Request failed");
           }
 
-          return next;
-        });
-        setSelectedMemoryId((current) => {
-          if (memoryData.memories.length === 0) {
-            return null;
+          const memoryData = (await memoryResponse.json()) as MemoryApiResponse;
+          const taskData = (await taskResponse.json()) as TaskApiResponse;
+
+          if (cancelled) {
+            return;
           }
 
-          if (current && memoryData.memories.some((memory) => memory.id === current)) {
-            return current;
-          }
+          setMemories(memoryData.memories);
+          setTasks(taskData.tasks);
+          setDrafts((current) => {
+            const next = { ...current };
 
-          return memoryData.memories[0]?.id ?? null;
-        });
-      } catch {
-        if (!cancelled) {
-          setError("Unable to load memory data.");
+            for (const memory of memoryData.memories) {
+              next[memory.id] = {
+                title: memory.title ?? "",
+                summary: memory.summary ?? "",
+                contentText: memory.contentText,
+                tags: memory.tags.join(", "),
+                memoryType: memory.memoryType,
+                pinned: memory.pinned,
+                suppressed: memory.suppressed,
+              };
+            }
+
+            return next;
+          });
+          setSelectedMemoryId((current) => {
+            if (memoryData.memories.length === 0) {
+              return null;
+            }
+
+            if (current && memoryData.memories.some((memory) => memory.id === current)) {
+              return current;
+            }
+
+            return memoryData.memories[0]?.id ?? null;
+          });
+        } catch {
+          if (!cancelled) {
+            setError("Unable to load memory data.");
+          }
+        } finally {
+          if (!cancelled) {
+            setIsLoading(false);
+          }
         }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    }, search.trim() ? 300 : 0);
+      },
+      search.trim() ? 300 : 0,
+    );
 
     return () => {
       cancelled = true;
@@ -156,63 +166,66 @@ export function MemoryBrowser() {
   const selectedDraft = selectedMemory ? drafts[selectedMemory.id] : null;
   const visibleTasks = tasks.slice(0, 6);
 
-  const saveMemory = useCallback(async (memoryId: string) => {
-    const draft = drafts[memoryId];
+  const saveMemory = useCallback(
+    async (memoryId: string) => {
+      const draft = drafts[memoryId];
 
-    if (!draft) {
-      return;
-    }
-
-    setSavingId(memoryId);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/memories/${memoryId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: draft.title || null,
-          summary: draft.summary || null,
-          contentText: draft.contentText,
-          tags: draft.tags
-            .split(",")
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-          memoryType: draft.memoryType,
-          pinned: draft.pinned,
-          suppressed: draft.suppressed,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Request failed");
+      if (!draft) {
+        return;
       }
 
-      const payload = (await response.json()) as { memory: MemoryRecord };
+      setSavingId(memoryId);
+      setError(null);
 
-      setMemories((current) =>
-        current.map((memory) => (memory.id === memoryId ? payload.memory : memory)),
-      );
-      setDrafts((current) => ({
-        ...current,
-        [memoryId]: {
-          title: payload.memory.title ?? "",
-          summary: payload.memory.summary ?? "",
-          contentText: payload.memory.contentText,
-          tags: payload.memory.tags.join(", "),
-          memoryType: payload.memory.memoryType,
-          pinned: payload.memory.pinned,
-          suppressed: payload.memory.suppressed,
-        },
-      }));
-    } catch {
-      setError("Memory update failed.");
-    } finally {
-      setSavingId(null);
-    }
-  }, [drafts]);
+      try {
+        const response = await fetch(`/api/memories/${memoryId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title: draft.title || null,
+            summary: draft.summary || null,
+            contentText: draft.contentText,
+            tags: draft.tags
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter(Boolean),
+            memoryType: draft.memoryType,
+            pinned: draft.pinned,
+            suppressed: draft.suppressed,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Request failed");
+        }
+
+        const payload = (await response.json()) as { memory: MemoryRecord };
+
+        setMemories((current) =>
+          current.map((memory) => (memory.id === memoryId ? payload.memory : memory)),
+        );
+        setDrafts((current) => ({
+          ...current,
+          [memoryId]: {
+            title: payload.memory.title ?? "",
+            summary: payload.memory.summary ?? "",
+            contentText: payload.memory.contentText,
+            tags: payload.memory.tags.join(", "),
+            memoryType: payload.memory.memoryType,
+            pinned: payload.memory.pinned,
+            suppressed: payload.memory.suppressed,
+          },
+        }));
+      } catch {
+        setError("Memory update failed.");
+      } finally {
+        setSavingId(null);
+      }
+    },
+    [drafts],
+  );
 
   return (
     <AppPage>
@@ -234,8 +247,8 @@ export function MemoryBrowser() {
         title="Memory and context"
         description={
           <p>
-            Browse the Secretary&apos;s memory base the same way you inspect traces:
-            scan a compact list, then open one item at a time in focus.
+            Browse the Secretary&apos;s memory base the same way you inspect traces: scan a compact
+            list, then open one item at a time in focus.
           </p>
         }
         meta={
@@ -368,7 +381,14 @@ export function MemoryBrowser() {
                         {memory.pinned ? "Pinned" : memory.suppressed ? "Suppressed" : ""}
                       </span>
                     </div>
-                    <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                    <p
+                      style={{
+                        margin: "6px 0 0",
+                        color: "var(--muted)",
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                      }}
+                    >
                       {snippet(memory.summary ?? memory.contentText, 120)}
                     </p>
                   </button>
@@ -419,7 +439,11 @@ export function MemoryBrowser() {
                   <div className="stack-sm" style={{ gap: 6 }}>
                     <p
                       className="eyebrow"
-                      style={{ marginBottom: 0, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                      style={{
+                        marginBottom: 0,
+                        color: "var(--accent-strong)",
+                        letterSpacing: "0.08em",
+                      }}
                     >
                       {selectedMemory.memoryType}
                     </p>
@@ -427,7 +451,8 @@ export function MemoryBrowser() {
                       {selectedMemory.title ?? "Untitled memory"}
                     </h2>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.5 }}>
-                      Source {selectedMemory.sourceRef ?? "n/a"} · updated {formatTimestamp(selectedMemory.updatedAt)}
+                      Source {selectedMemory.sourceRef ?? "n/a"} · updated{" "}
+                      {formatTimestamp(selectedMemory.updatedAt)}
                     </p>
                   </div>
                   <div className="desk-live-row" style={{ minWidth: "min(100%, 360px)" }}>
@@ -619,7 +644,8 @@ export function MemoryBrowser() {
                   }}
                 >
                   <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                    Tags: {selectedMemory.tags.length > 0 ? selectedMemory.tags.join(", ") : "none yet"}
+                    Tags:{" "}
+                    {selectedMemory.tags.length > 0 ? selectedMemory.tags.join(", ") : "none yet"}
                   </p>
                   <button
                     type="button"

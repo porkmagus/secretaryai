@@ -8,6 +8,9 @@
         "noUnusedVariables": "error",
         "noUnusedImports": "error"
       },
+      "complexity": {
+        "noBannedTypes": "warn"
+      },
       "suspicious": {
         "noConsole": "warn",
         "noExplicitAny": "warn"
@@ -33,12 +36,12 @@
       "packages/**/*.ts",
       "scripts/**/*.mjs",
       "services/**/*.py",
-      "!node_modules",
-      "!dist",
-      "!.next",
-      "!coverage",
-      "!runtime",
-      "!drizzle"
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.next",
+      "!**/coverage",
+      "!**/runtime",
+      "!**/drizzle"
     ]
   }
 }

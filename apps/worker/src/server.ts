@@ -1,43 +1,39 @@
 import { readFile, writeFile } from "node:fs/promises";
-import {
-  createUIMessageStream,
-  pipeUIMessageStreamToResponse,
-  type UIMessage,
-} from "ai";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
-import Fastify from "fastify";
 import { loadAppConfig } from "@secretary/config";
 import {
-  type DiscordTestMessageRequest,
-  type DiscordTestMessageResponse,
+  type ActivityTraceResponse,
   type AdminMaintenanceAction,
   type AdminMaintenanceActionResponse,
   type AdminMaintenanceOverviewResponse,
-  type CreateVoiceProfileRequest,
-  type DeskChatMessageMetadata,
-  type ConversationListResponse,
-  type ActivityTraceResponse,
   type AgentJobActionResponse,
   type AgentJobDetailResponse,
   type AgentJobListResponse,
   type AgentJobRequirementDecisionRequest,
   type AgentJobSettingsResponse,
-  type CreateAgentJobRequest,
   type ConversationHistoryResponse,
+  type ConversationListResponse,
+  type CreateAgentJobRequest,
+  type CreateVoiceProfileRequest,
+  createMessageId,
+  createTraceId,
+  type DeskChatMessageMetadata,
+  type DiscordTestMessageRequest,
+  type DiscordTestMessageResponse,
   type EmailTestMessageRequest,
   type EmailTestMessageResponse,
   type HeartbeatIntegrationStatusResponse,
   type HeartbeatRunResponse,
+  type InferenceModelListResponse,
   type InferenceProviderId,
+  type InferenceSettingsResponse,
   type MemoryListResponse,
   type OnboardingStatusResponse,
   type OutboundChannelStatusResponse,
   type PersonaSettingsResponse,
-  type InferenceSettingsResponse,
-  type InferenceModelListResponse,
-  type SpeechServiceStatusResponse,
-  type SpeechArtifactListResponse,
+  type RuntimeChatRequest,
+  type RuntimeChatStreamRequest,
   type SettingsExportResponse,
   type SettingsImportRequest,
   type SettingsImportResponse,
@@ -45,50 +41,48 @@ import {
   type SlackTestMessageResponse,
   type SmsTestMessageRequest,
   type SmsTestMessageResponse,
+  type SpeechArtifactListResponse,
+  type SpeechServiceStatusResponse,
   type SystemHealthResponse,
   type TaskListResponse,
+  type TelegramPresenceUpdateRequest,
+  type TelegramPresenceUpdateResponse,
+  type TelegramTestMessageRequest,
   type ToolApprovalDecisionResponse,
   type ToolExecutionListResponse,
   type ToolListResponse,
-  type TelegramTestMessageRequest,
-  type TelegramPresenceUpdateRequest,
-  type TelegramPresenceUpdateResponse,
   type UpdateAgentJobSettingsRequest,
-  type UpdateHeartbeatIntegrationRequest,
   type UpdateDiscordIntegrationRequest,
   type UpdateEmailIntegrationRequest,
+  type UpdateHeartbeatIntegrationRequest,
+  type UpdateInferenceSettingsRequest,
+  type UpdateMemoryRequest,
+  type UpdatePersonaSettingsRequest,
   type UpdateSlackIntegrationRequest,
   type UpdateSmsIntegrationRequest,
-  type UpdateToolRequest,
-  type UpdatePersonaSettingsRequest,
-  type UpdateInferenceSettingsRequest,
-  type UpdateVoiceProfileRequest,
   type UpdateTelegramIntegrationRequest,
-  type UpdateMemoryRequest,
+  type UpdateToolRequest,
+  type UpdateVoiceProfileRequest,
   type VoicePreviewRequest,
-  type VoicePreviewResponse,
   type VoiceProfileListResponse,
   type WebSpeechTurnResponse,
-  createMessageId,
-  createTraceId,
-  type RuntimeChatRequest,
-  type RuntimeChatStreamRequest,
 } from "@secretary/core-runtime";
 import type { TelegramUpdate } from "@secretary/integrations";
-import { createInfrastructure } from "./lib/infrastructure.js";
-import {
-  finalizeChatTurn,
-  getConversationMessages,
-  listRecentConversations,
-  prepareChatTurn,
-} from "./lib/chat-persistence.js";
 import { createLogger } from "@secretary/observability";
+import { createUIMessageStream, pipeUIMessageStreamToResponse, type UIMessage } from "ai";
+import Fastify from "fastify";
 import {
-  getConversationActivity,
-  listMemories,
-  listTasksForUser,
-  updateMemory,
-} from "./lib/memory-engine.js";
+  exportSettingsSnapshot,
+  getAdminMaintenanceSnapshot,
+  getOnboardingStatus,
+  getPersonaSettings,
+  getSystemHealth,
+  importSettingsSnapshot,
+  runAdminMaintenanceAction,
+  updatePersonaAvatar,
+  updatePersonaSettings,
+} from "./lib/admin-runtime.js";
+import { resolveManagedAgentJobArtifactPath } from "./lib/agent-job-artifact-storage.js";
 import {
   cancelAgentJob,
   createAgentJob,
@@ -99,18 +93,31 @@ import {
   resumeAgentJob,
   updateAgentJobSettings,
 } from "./lib/agent-jobs.js";
-import { resolveManagedAgentJobArtifactPath } from "./lib/agent-job-artifact-storage.js";
 import { dispatchDueTaskReminders } from "./lib/channel-delivery.js";
 import {
-  dispatchDueTelegramReminders,
-  getTelegramIntegrationStatus,
-  handleTelegramWebhookUpdate,
-  maybeDeliverTelegramAssistantMessage,
-  sendTelegramTestMessage,
-  syncTelegramWebhook,
-  touchTelegramWebPresence,
-  updateTelegramIntegrationSettings,
-} from "./lib/telegram-integration.js";
+  finalizeChatTurn,
+  getConversationMessages,
+  listRecentConversations,
+  prepareChatTurn,
+} from "./lib/chat-persistence.js";
+import { createConversationReplyStream } from "./lib/conversation-model.js";
+import {
+  getHeartbeatIntegrationStatus,
+  runHeartbeat,
+  updateHeartbeatIntegrationSettings,
+} from "./lib/heartbeat-runtime.js";
+import {
+  listInferenceModels,
+  loadInferenceSettings,
+  updateInferenceSettings,
+} from "./lib/inference-settings.js";
+import { createInfrastructure } from "./lib/infrastructure.js";
+import {
+  getConversationActivity,
+  listMemories,
+  listTasksForUser,
+  updateMemory,
+} from "./lib/memory-engine.js";
 import {
   getDiscordIntegrationStatus,
   getEmailIntegrationStatus,
@@ -126,6 +133,12 @@ import {
   updateSmsIntegrationSettings,
 } from "./lib/outbound-channel-integrations.js";
 import {
+  createPersonaAvatarStorageKey,
+  ensurePersonaStoragePath,
+  resolveManagedPersonaStoragePath,
+} from "./lib/persona-soul.js";
+import { getSpeechServiceStatus } from "./lib/speech-health.js";
+import {
   attachVoiceProfileSample,
   createSpeechArtifact,
   createVoiceProfile,
@@ -140,29 +153,16 @@ import {
   ensureSpeechStoragePath,
   resolveManagedSpeechStoragePath,
 } from "./lib/speech-storage.js";
-import { getSpeechServiceStatus } from "./lib/speech-health.js";
-import { createVoicePreview, processWebSpeechTurn } from "./lib/web-speech.js";
 import {
-  exportSettingsSnapshot,
-  getAdminMaintenanceSnapshot,
-  getOnboardingStatus,
-  getPersonaSettings,
-  getSystemHealth,
-  importSettingsSnapshot,
-  runAdminMaintenanceAction,
-  updatePersonaAvatar,
-  updatePersonaSettings,
-} from "./lib/admin-runtime.js";
-import {
-  getHeartbeatIntegrationStatus,
-  runHeartbeat,
-  updateHeartbeatIntegrationSettings,
-} from "./lib/heartbeat-runtime.js";
-import {
-  listInferenceModels,
-  loadInferenceSettings,
-  updateInferenceSettings,
-} from "./lib/inference-settings.js";
+  dispatchDueTelegramReminders,
+  getTelegramIntegrationStatus,
+  handleTelegramWebhookUpdate,
+  maybeDeliverTelegramAssistantMessage,
+  sendTelegramTestMessage,
+  syncTelegramWebhook,
+  touchTelegramWebPresence,
+  updateTelegramIntegrationSettings,
+} from "./lib/telegram-integration.js";
 import {
   decideToolExecution,
   listToolExecutions,
@@ -172,15 +172,10 @@ import {
 import {
   enqueueTurnMemoryFollowup,
   processRuntimeTurn,
-  resolveImmediateRuntimeTurn,
   type RuntimeTurnPersistence,
+  resolveImmediateRuntimeTurn,
 } from "./lib/turn-orchestrator.js";
-import { createConversationReplyStream } from "./lib/conversation-model.js";
-import {
-  createPersonaAvatarStorageKey,
-  ensurePersonaStoragePath,
-  resolveManagedPersonaStoragePath,
-} from "./lib/persona-soul.js";
+import { createVoicePreview, processWebSpeechTurn } from "./lib/web-speech.js";
 
 /**
  * Validate required environment variables before starting the server.
@@ -205,7 +200,7 @@ function validateRequiredEnv(): void {
   }
 
   if (missing.length > 0) {
-    const lines = [
+    const _lines = [
       "",
       "╔══════════════════════════════════════════════════════════════╗",
       "║             SECRETARY WORKER — MISSING ENV VARS              ║",
@@ -219,7 +214,6 @@ function validateRequiredEnv(): void {
       "Then restart the worker.",
       "",
     ];
-    console.error(lines.join("\n"));
     process.exit(1);
   }
 }
@@ -324,8 +318,7 @@ export async function buildServer() {
 
   app.get("/health/ready", async (_, reply) => {
     const dependencies = await infrastructure.checkHealth();
-    const ok =
-      dependencies.postgres === "ok" && dependencies.redis === "ok";
+    const ok = dependencies.postgres === "ok" && dependencies.redis === "ok";
 
     return reply.status(ok ? 200 : 503).send({
       ok,
@@ -465,7 +458,10 @@ export async function buildServer() {
       }
 
       const extension =
-        upload.filename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") ||
+        upload.filename
+          ?.split(".")
+          .pop()
+          ?.replace(/[^a-z0-9]/gi, "") ||
         (upload.mimetype === "image/png"
           ? "png"
           : upload.mimetype === "image/webp"
@@ -511,23 +507,26 @@ export async function buildServer() {
     }
   });
 
-  app.patch<{ Body: UpdateInferenceSettingsRequest }>("/runtime/inference", async (request, reply) => {
-    try {
-      const response: InferenceSettingsResponse = await updateInferenceSettings({
-        request: request.body,
-      });
+  app.patch<{ Body: UpdateInferenceSettingsRequest }>(
+    "/runtime/inference",
+    async (request, reply) => {
+      try {
+        const response: InferenceSettingsResponse = await updateInferenceSettings({
+          request: request.body,
+        });
 
-      return response;
-    } catch (error) {
-      logger.error("runtime.inference.update_failed", {
-        error: error instanceof Error ? error.message : error,
-      });
+        return response;
+      } catch (error) {
+        logger.error("runtime.inference.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
 
-      return reply.status(500).send({
-        error: "Unable to update inference settings.",
-      });
-    }
-  });
+        return reply.status(500).send({
+          error: "Unable to update inference settings.",
+        });
+      }
+    },
+  );
 
   app.get<{
     Querystring: {
@@ -545,8 +544,7 @@ export async function buildServer() {
       });
 
       return reply.status(500).send({
-        error:
-          error instanceof Error ? error.message : "Unable to fetch inference models.",
+        error: error instanceof Error ? error.message : "Unable to fetch inference models.",
       });
     }
   });
@@ -605,12 +603,7 @@ export async function buildServer() {
         conversationId: request.params.conversationId,
         messages: storedMessages.map((message) => ({
           id: message.id,
-          role: message.role as
-            | "assistant"
-            | "specialist"
-            | "system"
-            | "tool"
-            | "user",
+          role: message.role as "assistant" | "specialist" | "system" | "tool" | "user",
           text: message.contentText,
           createdAt: message.createdAt.toISOString(),
         })),
@@ -655,14 +648,11 @@ export async function buildServer() {
     };
   }>("/runtime/memories", async (request, reply) => {
     try {
-      const response: MemoryListResponse = await listMemories(
-        infrastructure.dbClient,
-        {
-          search: request.query.search,
-          memoryType: request.query.type,
-          includeSuppressed: request.query.includeSuppressed === "true",
-        },
-      );
+      const response: MemoryListResponse = await listMemories(infrastructure.dbClient, {
+        search: request.query.search,
+        memoryType: request.query.type,
+        includeSuppressed: request.query.includeSuppressed === "true",
+      });
 
       return response;
     } catch (error) {
@@ -771,9 +761,7 @@ export async function buildServer() {
 
   app.get("/runtime/agent-jobs", async (_, reply) => {
     try {
-      const response: AgentJobListResponse = await listAgentJobs(
-        infrastructure.dbClient,
-      );
+      const response: AgentJobListResponse = await listAgentJobs(infrastructure.dbClient);
 
       return response;
     } catch (error) {
@@ -984,20 +972,23 @@ export async function buildServer() {
     }
   });
 
-  app.patch<{ Body: UpdateAgentJobSettingsRequest }>("/runtime/agent-job-settings", async (request, reply) => {
-    try {
-      const response: AgentJobSettingsResponse = await updateAgentJobSettings(request.body);
-      return response;
-    } catch (error) {
-      logger.error("runtime.agent_job_settings.update_failed", {
-        error: error instanceof Error ? error.message : error,
-      });
+  app.patch<{ Body: UpdateAgentJobSettingsRequest }>(
+    "/runtime/agent-job-settings",
+    async (request, reply) => {
+      try {
+        const response: AgentJobSettingsResponse = await updateAgentJobSettings(request.body);
+        return response;
+      } catch (error) {
+        logger.error("runtime.agent_job_settings.update_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
 
-      return reply.status(500).send({
-        error: "Unable to update agent job settings.",
-      });
-    }
-  });
+        return reply.status(500).send({
+          error: "Unable to update agent job settings.",
+        });
+      }
+    },
+  );
 
   app.get("/runtime/admin/maintenance", async (_, reply) => {
     try {
@@ -1017,25 +1008,28 @@ export async function buildServer() {
     }
   });
 
-  app.post<{ Body: { action: AdminMaintenanceAction } }>("/runtime/admin/maintenance", async (request, reply) => {
-    try {
-      const response: AdminMaintenanceActionResponse = await runAdminMaintenanceAction({
-        action: request.body.action,
-        config,
-        infrastructure,
-      });
-      return response;
-    } catch (error) {
-      logger.error("runtime.admin_maintenance.action_failed", {
-        error: error instanceof Error ? error.message : error,
-        action: request.body?.action ?? null,
-      });
+  app.post<{ Body: { action: AdminMaintenanceAction } }>(
+    "/runtime/admin/maintenance",
+    async (request, reply) => {
+      try {
+        const response: AdminMaintenanceActionResponse = await runAdminMaintenanceAction({
+          action: request.body.action,
+          config,
+          infrastructure,
+        });
+        return response;
+      } catch (error) {
+        logger.error("runtime.admin_maintenance.action_failed", {
+          error: error instanceof Error ? error.message : error,
+          action: request.body?.action ?? null,
+        });
 
-      return reply.status(500).send({
-        error: "Unable to run admin maintenance action.",
-      });
-    }
-  });
+        return reply.status(500).send({
+          error: "Unable to run admin maintenance action.",
+        });
+      }
+    },
+  );
 
   app.get("/runtime/tools", async (_, reply) => {
     try {
@@ -1059,11 +1053,7 @@ export async function buildServer() {
     Body: UpdateToolRequest;
   }>("/runtime/tools/:toolId", async (request, reply) => {
     try {
-      const tool = await updateTool(
-        infrastructure.dbClient,
-        request.params.toolId,
-        request.body,
-      );
+      const tool = await updateTool(infrastructure.dbClient, request.params.toolId, request.body);
 
       if (!tool) {
         return reply.status(404).send({
@@ -1234,10 +1224,7 @@ export async function buildServer() {
 
       const filePath = resolveManagedSpeechStoragePath(storageKey);
       const fileBuffer = await readFile(filePath);
-      reply.header(
-        "Content-Type",
-        request.query.mimeType?.trim() || "application/octet-stream",
-      );
+      reply.header("Content-Type", request.query.mimeType?.trim() || "application/octet-stream");
 
       return reply.send(fileBuffer);
     } catch (error) {
@@ -1253,9 +1240,7 @@ export async function buildServer() {
 
   app.get("/runtime/voice/profiles", async (_, reply) => {
     try {
-      const response: VoiceProfileListResponse = await listVoiceProfiles(
-        infrastructure.dbClient,
-      );
+      const response: VoiceProfileListResponse = await listVoiceProfiles(infrastructure.dbClient);
 
       return response;
     } catch (error) {
@@ -1269,36 +1254,39 @@ export async function buildServer() {
     }
   });
 
-  app.post<{ Body: CreateVoiceProfileRequest }>("/runtime/voice/profiles", async (request, reply) => {
-    try {
-      const name = request.body.name?.trim();
-      const engineId = request.body.engineId?.trim();
+  app.post<{ Body: CreateVoiceProfileRequest }>(
+    "/runtime/voice/profiles",
+    async (request, reply) => {
+      try {
+        const name = request.body.name?.trim();
+        const engineId = request.body.engineId?.trim();
 
-      if (!name || !engineId) {
-        return reply.status(400).send({
-          error: "Voice profile name and engineId are required.",
+        if (!name || !engineId) {
+          return reply.status(400).send({
+            error: "Voice profile name and engineId are required.",
+          });
+        }
+
+        const profile = await createVoiceProfile(infrastructure.dbClient, {
+          ...request.body,
+          engineId,
+          name,
+        });
+
+        return {
+          profile,
+        };
+      } catch (error) {
+        logger.error("runtime.voice.profile_create_failed", {
+          error: error instanceof Error ? error.message : error,
+        });
+
+        return reply.status(500).send({
+          error: "Unable to create voice profile.",
         });
       }
-
-      const profile = await createVoiceProfile(infrastructure.dbClient, {
-        ...request.body,
-        engineId,
-        name,
-      });
-
-      return {
-        profile,
-      };
-    } catch (error) {
-      logger.error("runtime.voice.profile_create_failed", {
-        error: error instanceof Error ? error.message : error,
-      });
-
-      return reply.status(500).send({
-        error: "Unable to create voice profile.",
-      });
-    }
-  });
+    },
+  );
 
   app.patch<{
     Params: {
@@ -1340,10 +1328,7 @@ export async function buildServer() {
     };
   }>("/runtime/voice/profiles/:profileId/sample", async (request, reply) => {
     try {
-      const profile = await getVoiceProfileById(
-        infrastructure.dbClient,
-        request.params.profileId,
-      );
+      const profile = await getVoiceProfileById(infrastructure.dbClient, request.params.profileId);
 
       if (!profile) {
         return reply.status(404).send({
@@ -1366,7 +1351,10 @@ export async function buildServer() {
       }
 
       const extension =
-        upload.filename?.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "wav";
+        upload.filename
+          ?.split(".")
+          .pop()
+          ?.replace(/[^a-z0-9]/gi, "") || "wav";
       const storageKey = createSpeechStorageKey(
         "profile",
         `${Date.now()}-${request.params.profileId}.${extension}`,
@@ -1440,19 +1428,18 @@ export async function buildServer() {
         config,
         dbClient: infrastructure.dbClient,
         request: request.body,
-        });
+      });
 
-        reply.header("Content-Type", preview.mimeType);
+      reply.header("Content-Type", preview.mimeType);
 
-        return reply.send(preview.audio);
+      return reply.send(preview.audio);
     } catch (error) {
       logger.error("runtime.voice.preview_failed", {
         error: error instanceof Error ? error.message : error,
       });
 
       return reply.status(500).send({
-        error:
-          error instanceof Error ? error.message : "Unable to generate voice preview.",
+        error: error instanceof Error ? error.message : "Unable to generate voice preview.",
       });
     }
   });
@@ -1509,8 +1496,7 @@ export async function buildServer() {
       });
 
       return reply.status(500).send({
-        error:
-          error instanceof Error ? error.message : "Unable to process web audio turn.",
+        error: error instanceof Error ? error.message : "Unable to process web audio turn.",
       });
     }
   });
@@ -1562,10 +1548,7 @@ export async function buildServer() {
       });
 
       return reply.status(500).send({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to sync Telegram webhook.",
+        error: error instanceof Error ? error.message : "Unable to sync Telegram webhook.",
       });
     }
   });
@@ -1585,10 +1568,7 @@ export async function buildServer() {
         });
 
         return reply.status(500).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to send Telegram test message.",
+          error: error instanceof Error ? error.message : "Unable to send Telegram test message.",
         });
       }
     },
@@ -1611,10 +1591,7 @@ export async function buildServer() {
         });
 
         return reply.status(500).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to update Telegram presence.",
+          error: error instanceof Error ? error.message : "Unable to update Telegram presence.",
         });
       }
     },
@@ -1632,10 +1609,7 @@ export async function buildServer() {
       });
 
       return reply.status(500).send({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to deliver Telegram reminders.",
+        error: error instanceof Error ? error.message : "Unable to deliver Telegram reminders.",
       });
     }
   });
@@ -1652,10 +1626,7 @@ export async function buildServer() {
       });
 
       return reply.status(500).send({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to deliver due reminders.",
+        error: error instanceof Error ? error.message : "Unable to deliver due reminders.",
       });
     }
   });
@@ -1682,12 +1653,11 @@ export async function buildServer() {
     "/runtime/integrations/discord",
     async (request, reply) => {
       try {
-        const response: OutboundChannelStatusResponse =
-          await updateDiscordIntegrationSettings({
-            dbClient: infrastructure.dbClient,
-            config,
-            patch: request.body,
-          });
+        const response: OutboundChannelStatusResponse = await updateDiscordIntegrationSettings({
+          dbClient: infrastructure.dbClient,
+          config,
+          patch: request.body,
+        });
         return response;
       } catch (error) {
         logger.error("runtime.integrations.discord.update_failed", {
@@ -1717,10 +1687,7 @@ export async function buildServer() {
         });
 
         return reply.status(500).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to send Discord test message.",
+          error: error instanceof Error ? error.message : "Unable to send Discord test message.",
         });
       }
     },
@@ -1748,12 +1715,11 @@ export async function buildServer() {
     "/runtime/integrations/slack",
     async (request, reply) => {
       try {
-        const response: OutboundChannelStatusResponse =
-          await updateSlackIntegrationSettings({
-            dbClient: infrastructure.dbClient,
-            config,
-            patch: request.body,
-          });
+        const response: OutboundChannelStatusResponse = await updateSlackIntegrationSettings({
+          dbClient: infrastructure.dbClient,
+          config,
+          patch: request.body,
+        });
         return response;
       } catch (error) {
         logger.error("runtime.integrations.slack.update_failed", {
@@ -1783,10 +1749,7 @@ export async function buildServer() {
         });
 
         return reply.status(500).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to send Slack test message.",
+          error: error instanceof Error ? error.message : "Unable to send Slack test message.",
         });
       }
     },
@@ -1814,12 +1777,11 @@ export async function buildServer() {
     "/runtime/integrations/email",
     async (request, reply) => {
       try {
-        const response: OutboundChannelStatusResponse =
-          await updateEmailIntegrationSettings({
-            dbClient: infrastructure.dbClient,
-            config,
-            patch: request.body,
-          });
+        const response: OutboundChannelStatusResponse = await updateEmailIntegrationSettings({
+          dbClient: infrastructure.dbClient,
+          config,
+          patch: request.body,
+        });
         return response;
       } catch (error) {
         logger.error("runtime.integrations.email.update_failed", {
@@ -1849,10 +1811,7 @@ export async function buildServer() {
         });
 
         return reply.status(500).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to send email test message.",
+          error: error instanceof Error ? error.message : "Unable to send email test message.",
         });
       }
     },
@@ -1880,12 +1839,11 @@ export async function buildServer() {
     "/runtime/integrations/sms",
     async (request, reply) => {
       try {
-        const response: OutboundChannelStatusResponse =
-          await updateSmsIntegrationSettings({
-            dbClient: infrastructure.dbClient,
-            config,
-            patch: request.body,
-          });
+        const response: OutboundChannelStatusResponse = await updateSmsIntegrationSettings({
+          dbClient: infrastructure.dbClient,
+          config,
+          patch: request.body,
+        });
         return response;
       } catch (error) {
         logger.error("runtime.integrations.sms.update_failed", {
@@ -1915,10 +1873,7 @@ export async function buildServer() {
         });
 
         return reply.status(500).send({
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to send SMS test message.",
+          error: error instanceof Error ? error.message : "Unable to send SMS test message.",
         });
       }
     },
@@ -1926,8 +1881,10 @@ export async function buildServer() {
 
   app.get("/runtime/integrations/heartbeat", async (_, reply) => {
     try {
-      const response: HeartbeatIntegrationStatusResponse =
-        await getHeartbeatIntegrationStatus(infrastructure.dbClient, config);
+      const response: HeartbeatIntegrationStatusResponse = await getHeartbeatIntegrationStatus(
+        infrastructure.dbClient,
+        config,
+      );
       return response;
     } catch (error) {
       logger.error("runtime.integrations.heartbeat.failed", {
@@ -2051,221 +2008,71 @@ export async function buildServer() {
     }
   });
 
-  app.post<{ Body: RuntimeChatStreamRequest }>(
-    "/runtime/chat/stream",
-    async (request, reply) => {
-      const body = request.body as RuntimeChatStreamRequest;
-      const text = body.text?.trim();
+  app.post<{ Body: RuntimeChatStreamRequest }>("/runtime/chat/stream", async (request, reply) => {
+    const body = request.body as RuntimeChatStreamRequest;
+    const text = body.text?.trim();
 
-      if (!text) {
-        return reply.status(400).send({
-          error: "Message text is required.",
-        });
-      }
+    if (!text) {
+      return reply.status(400).send({
+        error: "Message text is required.",
+      });
+    }
 
-      const traceId = createTraceId();
-      const runtimeRequest: RuntimeChatRequest = {
-        conversationId: body.conversationId,
-        channel: "web",
-        userId: config.defaultUserId,
-        message: {
-          text,
-        },
-        metadata: {
-          requestId: traceId,
-        },
-      };
+    const traceId = createTraceId();
+    const runtimeRequest: RuntimeChatRequest = {
+      conversationId: body.conversationId,
+      channel: "web",
+      userId: config.defaultUserId,
+      message: {
+        text,
+      },
+      metadata: {
+        requestId: traceId,
+      },
+    };
 
-      try {
-        const immediateHandledTurn = await resolveImmediateRuntimeTurn({
-          config,
-          dbClient: infrastructure.dbClient,
-          queue: infrastructure.agentJobQueue,
-          defaultPersonaId: config.defaultPersonaId,
-          defaultUserId: config.defaultUserId,
-          request: runtimeRequest,
-          traceId,
-        });
+    try {
+      const immediateHandledTurn = await resolveImmediateRuntimeTurn({
+        config,
+        dbClient: infrastructure.dbClient,
+        queue: infrastructure.agentJobQueue,
+        defaultPersonaId: config.defaultPersonaId,
+        defaultUserId: config.defaultUserId,
+        request: runtimeRequest,
+        traceId,
+      });
 
-        if (immediateHandledTurn) {
-          await finalizePersistedTurn({
-            body: runtimeRequest,
-            persistedTurn: immediateHandledTurn,
-            traceId,
-          });
-
-          const stream = createUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
-            execute: async ({ writer }) => {
-              writer.write({
-                type: "data-runtime-context",
-                data: buildDeskChatMetadata({
-                  response: immediateHandledTurn.response,
-                  mode: "tool",
-                }),
-              });
-              writer.write({
-                type: "text-start",
-                id: immediateHandledTurn.response.messageId,
-              });
-              writer.write({
-                type: "text-delta",
-                id: immediateHandledTurn.response.messageId,
-                delta: immediateHandledTurn.response.outputText,
-              });
-              writer.write({
-                type: "text-end",
-                id: immediateHandledTurn.response.messageId,
-              });
-            },
-            generateId: createMessageId,
-          });
-
-          reply.hijack();
-          pipeUIMessageStreamToResponse({
-            response: reply.raw,
-            stream,
-            status: 200,
-          });
-          return reply;
-        }
-
-        const preparedTurn = await prepareChatTurn({
-          config,
-          dbClient: infrastructure.dbClient,
-          defaultPersonaId: config.defaultPersonaId,
-          defaultUserId: config.defaultUserId,
-          request: runtimeRequest,
-          traceId,
-        });
-        const streamPlan = createConversationReplyStream({
-          inference: preparedTurn.inference,
-          request: preparedTurn.request,
-          context: preparedTurn.context,
+      if (immediateHandledTurn) {
+        await finalizePersistedTurn({
+          body: runtimeRequest,
+          persistedTurn: immediateHandledTurn,
           traceId,
         });
 
         const stream = createUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
-          originalMessages: preparedTurn.originalMessages,
-          generateId: createMessageId,
           execute: async ({ writer }) => {
-            if (streamPlan.kind === "model") {
-              writer.merge(
-                streamPlan.result.toUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
-                  messageMetadata: ({ part }) => {
-                    if (part.type === "start") {
-                      return buildDeskChatMetadata({
-                        response: {
-                          conversationId: preparedTurn.conversationId,
-                          contextSummary: {
-                            memories: preparedTurn.context.relevantMemories,
-                            tasks: preparedTurn.context.activeTasks,
-                            research: preparedTurn.context.researchResult ?? undefined,
-                          },
-                          traceId,
-                        },
-                        mode: "model",
-                        model: streamPlan.model ?? null,
-                      });
-                    }
-
-                    if (part.type === "finish") {
-                      const replyMode = streamPlan.guardState.mode;
-                      return buildDeskChatMetadata({
-                        response: {
-                          conversationId: preparedTurn.conversationId,
-                          contextSummary: {
-                            memories: preparedTurn.context.relevantMemories,
-                            tasks: preparedTurn.context.activeTasks,
-                            research: preparedTurn.context.researchResult ?? undefined,
-                          },
-                          traceId,
-                        },
-                        mode: replyMode,
-                        model: replyMode === "model" ? streamPlan.model ?? null : null,
-                        providerError: streamPlan.guardState.providerError,
-                        totalTokens: part.totalUsage.totalTokens,
-                      });
-                    }
-
-                    return undefined;
-                  },
-                  sendSources: true,
-                }),
-              );
-              return;
-            }
-
             writer.write({
               type: "data-runtime-context",
               data: buildDeskChatMetadata({
-                response: {
-                  conversationId: preparedTurn.conversationId,
-                  contextSummary: {
-                    memories: preparedTurn.context.relevantMemories,
-                    tasks: preparedTurn.context.activeTasks,
-                    research: preparedTurn.context.researchResult ?? undefined,
-                  },
-                  traceId,
-                },
-                mode: "fallback",
-                model: streamPlan.model ?? null,
-                providerError: streamPlan.providerError,
+                response: immediateHandledTurn.response,
+                mode: "tool",
               }),
             });
             writer.write({
               type: "text-start",
-              id: "fallback-text",
+              id: immediateHandledTurn.response.messageId,
             });
             writer.write({
               type: "text-delta",
-              id: "fallback-text",
-              delta: streamPlan.text,
+              id: immediateHandledTurn.response.messageId,
+              delta: immediateHandledTurn.response.outputText,
             });
             writer.write({
               type: "text-end",
-              id: "fallback-text",
+              id: immediateHandledTurn.response.messageId,
             });
           },
-          onFinish: async ({ responseMessage }) => {
-            const outputText = extractText(responseMessage);
-
-            if (!outputText) {
-              return;
-            }
-
-            const persistedTurn = await finalizeChatTurn({
-              dbClient: infrastructure.dbClient,
-              preparedTurn,
-              assistantMessageId: responseMessage.id,
-              outputText,
-              mode:
-                streamPlan.kind === "model"
-                  ? streamPlan.guardState.mode
-                  : streamPlan.mode,
-              model:
-                streamPlan.kind === "model" && streamPlan.guardState.mode === "fallback"
-                  ? null
-                  : streamPlan.model ?? null,
-              providerError:
-                streamPlan.kind === "model"
-                  ? streamPlan.guardState.providerError
-                  : streamPlan.providerError ?? null,
-            });
-
-            await finalizePersistedTurn({
-              body: preparedTurn.request,
-              persistedTurn,
-              traceId,
-            });
-          },
-          onError: (error) => {
-            logger.error("runtime.chat.stream_failed", {
-              error: error instanceof Error ? error.message : error,
-              traceId,
-            });
-
-            return "Something went wrong. Let me try again."
-          },
+          generateId: createMessageId,
         });
 
         reply.hijack();
@@ -2275,19 +2082,163 @@ export async function buildServer() {
           status: 200,
         });
         return reply;
-      } catch (error) {
-        logger.error("runtime.chat.stream_failed", {
-          error: error instanceof Error ? error.message : error,
-          traceId,
-        });
-
-        return reply.status(500).send({
-          error: "Unable to stream chat reply.",
-          traceId,
-        });
       }
-    },
-  );
+
+      const preparedTurn = await prepareChatTurn({
+        config,
+        dbClient: infrastructure.dbClient,
+        defaultPersonaId: config.defaultPersonaId,
+        defaultUserId: config.defaultUserId,
+        request: runtimeRequest,
+        traceId,
+      });
+      const streamPlan = createConversationReplyStream({
+        inference: preparedTurn.inference,
+        request: preparedTurn.request,
+        context: preparedTurn.context,
+        traceId,
+      });
+
+      const stream = createUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
+        originalMessages: preparedTurn.originalMessages,
+        generateId: createMessageId,
+        execute: async ({ writer }) => {
+          if (streamPlan.kind === "model") {
+            writer.merge(
+              streamPlan.result.toUIMessageStream<UIMessage<DeskChatMessageMetadata>>({
+                messageMetadata: ({ part }) => {
+                  if (part.type === "start") {
+                    return buildDeskChatMetadata({
+                      response: {
+                        conversationId: preparedTurn.conversationId,
+                        contextSummary: {
+                          memories: preparedTurn.context.relevantMemories,
+                          tasks: preparedTurn.context.activeTasks,
+                          research: preparedTurn.context.researchResult ?? undefined,
+                        },
+                        traceId,
+                      },
+                      mode: "model",
+                      model: streamPlan.model ?? null,
+                    });
+                  }
+
+                  if (part.type === "finish") {
+                    const replyMode = streamPlan.guardState.mode;
+                    return buildDeskChatMetadata({
+                      response: {
+                        conversationId: preparedTurn.conversationId,
+                        contextSummary: {
+                          memories: preparedTurn.context.relevantMemories,
+                          tasks: preparedTurn.context.activeTasks,
+                          research: preparedTurn.context.researchResult ?? undefined,
+                        },
+                        traceId,
+                      },
+                      mode: replyMode,
+                      model: replyMode === "model" ? (streamPlan.model ?? null) : null,
+                      providerError: streamPlan.guardState.providerError,
+                      totalTokens: part.totalUsage.totalTokens,
+                    });
+                  }
+
+                  return undefined;
+                },
+                sendSources: true,
+              }),
+            );
+            return;
+          }
+
+          writer.write({
+            type: "data-runtime-context",
+            data: buildDeskChatMetadata({
+              response: {
+                conversationId: preparedTurn.conversationId,
+                contextSummary: {
+                  memories: preparedTurn.context.relevantMemories,
+                  tasks: preparedTurn.context.activeTasks,
+                  research: preparedTurn.context.researchResult ?? undefined,
+                },
+                traceId,
+              },
+              mode: "fallback",
+              model: streamPlan.model ?? null,
+              providerError: streamPlan.providerError,
+            }),
+          });
+          writer.write({
+            type: "text-start",
+            id: "fallback-text",
+          });
+          writer.write({
+            type: "text-delta",
+            id: "fallback-text",
+            delta: streamPlan.text,
+          });
+          writer.write({
+            type: "text-end",
+            id: "fallback-text",
+          });
+        },
+        onFinish: async ({ responseMessage }) => {
+          const outputText = extractText(responseMessage);
+
+          if (!outputText) {
+            return;
+          }
+
+          const persistedTurn = await finalizeChatTurn({
+            dbClient: infrastructure.dbClient,
+            preparedTurn,
+            assistantMessageId: responseMessage.id,
+            outputText,
+            mode: streamPlan.kind === "model" ? streamPlan.guardState.mode : streamPlan.mode,
+            model:
+              streamPlan.kind === "model" && streamPlan.guardState.mode === "fallback"
+                ? null
+                : (streamPlan.model ?? null),
+            providerError:
+              streamPlan.kind === "model"
+                ? streamPlan.guardState.providerError
+                : (streamPlan.providerError ?? null),
+          });
+
+          await finalizePersistedTurn({
+            body: preparedTurn.request,
+            persistedTurn,
+            traceId,
+          });
+        },
+        onError: (error) => {
+          logger.error("runtime.chat.stream_failed", {
+            error: error instanceof Error ? error.message : error,
+            traceId,
+          });
+
+          return "Something went wrong. Let me try again.";
+        },
+      });
+
+      reply.hijack();
+      pipeUIMessageStreamToResponse({
+        response: reply.raw,
+        stream,
+        status: 200,
+      });
+      return reply;
+    } catch (error) {
+      logger.error("runtime.chat.stream_failed", {
+        error: error instanceof Error ? error.message : error,
+        traceId,
+      });
+
+      return reply.status(500).send({
+        error: "Unable to stream chat reply.",
+        traceId,
+      });
+    }
+  });
 
   return {
     app,

@@ -1,15 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { closeSync, openSync } from "node:fs";
+import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import net from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import net from "node:net";
-import { openSync, closeSync } from "node:fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -28,12 +22,14 @@ const workerPackagePath = resolve(root, "apps/worker/package.json");
 const workerTsconfigPath = resolve(root, "apps/worker/tsconfig.json");
 const sttRequirementsPath = resolve(root, "services/stt-faster-whisper/requirements.txt");
 const ttsRequirementsPath = resolve(root, "services/tts-chatterbox/requirements.txt");
-const sttVenvPythonPath = process.platform === "win32"
-  ? resolve(root, "runtime/venvs/stt/Scripts/python.exe")
-  : resolve(root, "runtime/venvs/stt/bin/python");
-const ttsVenvPythonPath = process.platform === "win32"
-  ? resolve(root, "runtime/venvs/tts/Scripts/python.exe")
-  : resolve(root, "runtime/venvs/tts/bin/python");
+const sttVenvPythonPath =
+  process.platform === "win32"
+    ? resolve(root, "runtime/venvs/stt/Scripts/python.exe")
+    : resolve(root, "runtime/venvs/stt/bin/python");
+const ttsVenvPythonPath =
+  process.platform === "win32"
+    ? resolve(root, "runtime/venvs/tts/Scripts/python.exe")
+    : resolve(root, "runtime/venvs/tts/bin/python");
 
 // Global state for signal handling
 let isShuttingDown = false;
@@ -110,18 +106,12 @@ function parseArgs(argv) {
   };
 }
 
-function logSection(title) {
-  console.log("");
-  console.log(`=== ${title} ===`);
-}
+function logSection(_title) {}
 
-function logStep(label, detail = null) {
-  console.log(detail ? `- ${label}: ${detail}` : `- ${label}`);
-}
+function logStep(_label, _detail = null) {}
 
-function logVerbose(verbose, message) {
+function logVerbose(verbose, _message) {
   if (verbose) {
-    console.log(`  [verbose] ${message}`);
   }
 }
 
@@ -163,16 +153,12 @@ function getProcessIdsOnPort(port) {
     "$processIds | ConvertTo-Json -Compress",
   ].join(" ");
 
-  const result = spawnSync(
-    "powershell.exe",
-    ["-NoProfile", "-Command", command],
-    {
-      cwd: root,
-      encoding: "utf8",
-      shell: false,
-      windowsHide: true,
-    },
-  );
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", command], {
+    cwd: root,
+    encoding: "utf8",
+    shell: false,
+    windowsHide: true,
+  });
 
   if (result.status !== 0 || !result.stdout.trim()) {
     return [];
@@ -213,16 +199,12 @@ function getStrayDevProcessIds() {
     "$procs | Select-Object -ExpandProperty ProcessId -Unique | ConvertTo-Json -Compress",
   ].join(" ");
 
-  const result = spawnSync(
-    "powershell.exe",
-    ["-NoProfile", "-Command", script],
-    {
-      cwd: root,
-      encoding: "utf8",
-      shell: false,
-      windowsHide: true,
-    },
-  );
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", script], {
+    cwd: root,
+    encoding: "utf8",
+    shell: false,
+    windowsHide: true,
+  });
 
   if (result.status !== 0 || !result.stdout.trim()) {
     return [];
@@ -303,7 +285,7 @@ function runCommand(command, args, options = {}) {
       }
       rejectPromise(err);
     });
-    
+
     child.on("exit", (code) => {
       if (options.track) {
         activeProcesses.delete(options.trackKey || `${command}-${args.join("-")}`);
@@ -313,9 +295,7 @@ function runCommand(command, args, options = {}) {
         return;
       }
 
-      rejectPromise(
-        new Error(`${command} ${args.join(" ")} exited with ${code ?? "unknown"}`),
-      );
+      rejectPromise(new Error(`${command} ${args.join(" ")} exited with ${code ?? "unknown"}`));
     });
   });
 }
@@ -385,7 +365,7 @@ async function ensureDockerStack({ dryRun, verbose }) {
 
   try {
     await runNpmScript("stack:up");
-  } catch (error) {
+  } catch (_error) {
     logStep("Docker stack", "encountered stale Docker residue, retrying once");
     await cleanupInfrastructureResidue({ dryRun: false });
     await runNpmScript("stack:up");
@@ -395,13 +375,19 @@ async function ensureDockerStack({ dryRun, verbose }) {
     logStep("Waiting for", `${infrastructureService.label} on ${infrastructureService.port}`);
     const ready = await waitForPortReadiness(infrastructureService, verbose);
     if (!ready) {
-      throw new Error(`${infrastructureService.label} did not become ready on port ${infrastructureService.port}.`);
+      throw new Error(
+        `${infrastructureService.label} did not become ready on port ${infrastructureService.port}.`,
+      );
     }
     logStep("Ready", infrastructureService.label);
   }
 }
 
-async function maybeRunWithRetries(commandLabel, npmScript, { dryRun, attempts = 3, delayMs = 5000 }) {
+async function maybeRunWithRetries(
+  commandLabel,
+  npmScript,
+  { dryRun, attempts = 3, delayMs = 5000 },
+) {
   logStep(commandLabel, `npm run ${npmScript}`);
   if (dryRun) {
     return;
@@ -418,7 +404,10 @@ async function maybeRunWithRetries(commandLabel, npmScript, { dryRun, attempts =
         break;
       }
 
-      logStep(commandLabel, `attempt ${attempt} failed, retrying in ${Math.round(delayMs / 1000)}s`);
+      logStep(
+        commandLabel,
+        `attempt ${attempt} failed, retrying in ${Math.round(delayMs / 1000)}s`,
+      );
       await sleep(delayMs);
     }
   }
@@ -483,9 +472,7 @@ async function ensureWorkerBuild(state, { dryRun }) {
   );
 
   const buildOutputExists = await pathExists(workerBuildOutputPath);
-  const needsBuild =
-    !buildOutputExists ||
-    state.bootstrap.workerSourceMtimeMs !== sourceMtimeMs;
+  const needsBuild = !buildOutputExists || state.bootstrap.workerSourceMtimeMs !== sourceMtimeMs;
 
   if (!needsBuild) {
     logStep("Worker build", "ready");
@@ -557,7 +544,8 @@ async function ensureSystemDependencies({ installMissing, dryRun }) {
     });
   }
 
-  const hasPython = canRun("python", ["--version"]) ||
+  const hasPython =
+    canRun("python", ["--version"]) ||
     canRun("py", ["-3.11", "--version"]) ||
     canRun("py", ["-3", "--version"]);
 
@@ -685,12 +673,12 @@ async function killPortListeners(port, verbose = false) {
       success = false;
     }
   }
-  
+
   // Give the OS time to release the port
   if (pids.length > 0) {
     await sleep(500);
   }
-  
+
   return success;
 }
 
@@ -701,7 +689,7 @@ async function stopManagedProcesses({ dryRun, keepDocker = false, verbose = fals
   isShuttingDown = true;
 
   logSection("Stopping Secretary");
-  
+
   const state = await readState();
   const entries = Object.entries(state.processes ?? {});
 
@@ -761,22 +749,25 @@ async function stopManagedProcesses({ dryRun, keepDocker = false, verbose = fals
   if (!keepDocker) {
     await maybeRun("Docker stack down", "stack:down", { dryRun });
   }
-  
+
   isShuttingDown = false;
 }
 
-async function launchDetachedProcess(service, verbose = false) {
+async function _launchDetachedProcess(service, verbose = false) {
   const outLogPath = resolve(logsRoot, `${service.key}.out.log`);
   const errLogPath = resolve(logsRoot, `${service.key}.err.log`);
-  
+
   // Ensure log files exist
   await ensureDir(logsRoot);
-  await writeFile(outLogPath, `=== ${service.label} started at ${new Date().toISOString()} ===\n`, "utf8");
+  await writeFile(
+    outLogPath,
+    `=== ${service.label} started at ${new Date().toISOString()} ===\n`,
+    "utf8",
+  );
   await writeFile(errLogPath, "", "utf8");
-  
-  const [command, args] = process.platform === "win32"
-    ? service.windowsCommand
-    : service.unixCommand;
+
+  const [command, args] =
+    process.platform === "win32" ? service.windowsCommand : service.unixCommand;
 
   logVerbose(verbose, `Launching ${service.label}: ${command} ${args.join(" ")}`);
 
@@ -822,27 +813,35 @@ function sleep(ms) {
   });
 }
 
-async function waitForPortReadiness({ port, startupTimeoutMs }, verbose = false, healthUrl = null, healthRetries = 3) {
+async function waitForPortReadiness(
+  { port, startupTimeoutMs },
+  verbose = false,
+  healthUrl = null,
+  healthRetries = 3,
+) {
   const timeoutMs = startupTimeoutMs ?? 45_000;
   const startedAt = Date.now();
   let lastError = null;
 
   while (Date.now() - startedAt < timeoutMs) {
     const isOpen = await isPortOpen(port);
-    
+
     if (isOpen && healthUrl) {
       // If we have a health URL, verify it's actually responding
       for (let attempt = 0; attempt < healthRetries; attempt++) {
         try {
-          const response = await fetch(healthUrl, { 
-            signal: AbortSignal.timeout(2000) 
+          const response = await fetch(healthUrl, {
+            signal: AbortSignal.timeout(2000),
           }).catch(() => null);
-          
+
           if (response?.ok || response?.status === 404) {
             return true;
           }
-          
-          logVerbose(verbose, `Health check attempt ${attempt + 1} for ${healthUrl}: ${response?.status || 'failed'}`);
+
+          logVerbose(
+            verbose,
+            `Health check attempt ${attempt + 1} for ${healthUrl}: ${response?.status || "failed"}`,
+          );
           await sleep(500);
         } catch (err) {
           lastError = err;
@@ -856,37 +855,39 @@ async function waitForPortReadiness({ port, startupTimeoutMs }, verbose = false,
     await sleep(1_000);
   }
 
-  logVerbose(verbose, `Timeout waiting for port ${port}. Last error: ${lastError?.message || 'none'}`);
+  logVerbose(
+    verbose,
+    `Timeout waiting for port ${port}. Last error: ${lastError?.message || "none"}`,
+  );
   return false;
 }
 
-async function waitForService(service, verbose = false) {
+async function _waitForService(service, verbose = false) {
   // Wait initial delay for service to start binding
   if (service.startupDelayMs) {
-    logVerbose(verbose, `Waiting ${service.startupDelayMs}ms for ${service.label} to initialize...`);
+    logVerbose(
+      verbose,
+      `Waiting ${service.startupDelayMs}ms for ${service.label} to initialize...`,
+    );
     await sleep(service.startupDelayMs);
   }
-  
+
   return waitForPortReadiness(
     { port: service.port, startupTimeoutMs: service.startupTimeoutMs },
     verbose,
     service.healthUrl,
-    service.healthRetries ?? 3
+    service.healthRetries ?? 3,
   );
 }
 
-async function readLogTail(path, lineCount = 40) {
+async function _readLogTail(path, lineCount = 40) {
   if (!(await pathExists(path))) {
     return "";
   }
 
   try {
     const content = await readFile(path, "utf8");
-    return content
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .slice(-lineCount)
-      .join("\n");
+    return content.split(/\r?\n/).filter(Boolean).slice(-lineCount).join("\n");
   } catch {
     return "";
   }
@@ -896,10 +897,10 @@ async function checkServiceHealth(service, verbose = false) {
   if (!service.healthUrl) {
     return await isPortOpen(service.port);
   }
-  
+
   try {
-    const response = await fetch(service.healthUrl, { 
-      signal: AbortSignal.timeout(3000) 
+    const response = await fetch(service.healthUrl, {
+      signal: AbortSignal.timeout(3000),
     });
     return response.ok || response.status === 404;
   } catch (err) {
@@ -909,19 +910,18 @@ async function checkServiceHealth(service, verbose = false) {
 }
 
 async function startCommand({ dryRun, verbose }) {
-  let state = await ensureBootstrap({ installMissing: false, dryRun, verbose });
-  
+  const _state = await ensureBootstrap({ installMissing: false, dryRun, verbose });
+
   // Set up signal handlers for clean shutdown
   const shutdownHandler = async () => {
-    console.log("\n");
     logStep("Shutdown signal received", "cleaning up...");
     await stopManagedProcesses({ dryRun: false, keepDocker: true, verbose });
     process.exit(0);
   };
-  
+
   process.on("SIGINT", shutdownHandler);
   process.on("SIGTERM", shutdownHandler);
-  
+
   // Pre-flight: check for existing processes on our ports
   logSection("Pre-flight checks");
   for (const service of services) {
@@ -933,11 +933,11 @@ async function startCommand({ dryRun, verbose }) {
       }
     }
   }
-  
+
   await stopManagedProcesses({ dryRun, keepDocker: true, verbose });
 
   logSection("Starting services");
-  
+
   if (dryRun) {
     logStep("Services", "Would start web, worker, stt, tts via service runner");
     return;
@@ -946,7 +946,7 @@ async function startCommand({ dryRun, verbose }) {
   // Launch all services using the consolidated service runner
   const serviceRunnerPath = resolve(__dirname, "service-runner.mjs");
   const [spawnCommand, spawnArgs] = normalizeWindowsSpawn("node", [serviceRunnerPath]);
-  
+
   const child = spawn(spawnCommand, spawnArgs, {
     cwd: root,
     stdio: "inherit", // Pass through all stdio to show consolidated output
@@ -982,24 +982,22 @@ async function startCommand({ dryRun, verbose }) {
   return new Promise((resolvePromise) => {
     child.on("exit", (code) => {
       activeProcesses.delete("service-runner");
-      
+
       if (code !== 0) {
-        console.log(`\nService runner exited with code ${code}`);
       }
-      
+
       // Clean up state
       const state = readState();
       writeState({
         ...state,
         processes: {},
       });
-      
+
       resolvePromise();
     });
 
-    child.on("error", (err) => {
+    child.on("error", (_err) => {
       activeProcesses.delete("service-runner");
-      console.error(`Failed to start service runner: ${err.message}`);
       resolvePromise();
     });
   });
@@ -1028,17 +1026,26 @@ async function statusCommand() {
   logStep("Repo", root);
   logStep(".env", (await pathExists(envPath)) ? "present" : "missing");
   logStep("Docker CLI", canRun("docker", ["--version"]) ? "available" : "missing");
-  logStep("Python", canRun("python", ["--version"]) || canRun("py", ["-3.11", "--version"]) ? "available" : "missing");
+  logStep(
+    "Python",
+    canRun("python", ["--version"]) || canRun("py", ["-3.11", "--version"])
+      ? "available"
+      : "missing",
+  );
   logStep("Last started", formatTimestamp(state.lastStartedAt));
   logStep("Logs", logsRoot);
 
   for (const service of services) {
     const running = await isPortOpen(service.port);
     const processInfo = state.processes?.[service.key] ?? null;
-    const healthStatus = service.healthUrl && running 
-      ? await checkServiceHealth(service).then(() => " (healthy)", () => " (unhealthy)")
-      : "";
-    
+    const healthStatus =
+      service.healthUrl && running
+        ? await checkServiceHealth(service).then(
+            () => " (healthy)",
+            () => " (unhealthy)",
+          )
+        : "";
+
     logStep(
       service.label,
       running
@@ -1049,8 +1056,8 @@ async function statusCommand() {
 }
 
 async function logsCommand({ service, follow = false }) {
-  const validServices = services.map(s => s.key);
-  
+  const validServices = services.map((s) => s.key);
+
   if (!service || !validServices.includes(service)) {
     logSection("Available logs");
     for (const svc of services) {
@@ -1064,24 +1071,20 @@ async function logsCommand({ service, follow = false }) {
     logStep("Services", validServices.join(", "));
     return;
   }
-  
+
   const outLogPath = resolve(logsRoot, `${service}.out.log`);
-  const errLogPath = resolve(logsRoot, `${service}.err.log`);
-  
+  const _errLogPath = resolve(logsRoot, `${service}.err.log`);
+
   if (follow) {
     // Tail the logs
     const tailCmd = process.platform === "win32" ? "powershell.exe" : "tail";
-    const tailArgs = process.platform === "win32" 
-      ? ["-NoProfile", "-Command", `Get-Content -Path "${outLogPath}" -Wait -Tail 20`]
-      : ["-f", "-n", "20", outLogPath];
-    
+    const tailArgs =
+      process.platform === "win32"
+        ? ["-NoProfile", "-Command", `Get-Content -Path "${outLogPath}" -Wait -Tail 20`]
+        : ["-f", "-n", "20", outLogPath];
+
     await runCommand(tailCmd, tailArgs, { stdio: "inherit" });
   } else {
-    // Show recent logs
-    console.log(`\n=== ${service} stdout ===\n`);
-    console.log(await readLogTail(outLogPath, 50) || "(no output)");
-    console.log(`\n=== ${service} stderr ===\n`);
-    console.log(await readLogTail(errLogPath, 50) || "(no errors)");
   }
 }
 
@@ -1113,25 +1116,10 @@ async function main() {
       await statusCommand();
       break;
     default:
-      console.log(`Unknown command "${command}".`);
-      console.log("Usage: secretary.cmd <install|start|stop|restart|status|logs>");
-      console.log("");
-      console.log("Commands:");
-      console.log("  install  - Set up dependencies and infrastructure");
-      console.log("  start    - Start all services");
-      console.log("  stop     - Stop all services");
-      console.log("  restart  - Restart all services");
-      console.log("  status   - Check service health");
-      console.log("  logs     - View service logs (use: logs <service> [--follow])");
-      console.log("");
-      console.log("Options:");
-      console.log("  --dry-run  - Show what would be done without doing it");
-      console.log("  --verbose  - Show detailed output");
       process.exit(1);
   }
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+void main().catch((_error) => {
   process.exit(1);
 });

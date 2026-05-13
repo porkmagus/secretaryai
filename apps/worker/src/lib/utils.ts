@@ -1,9 +1,6 @@
-import { access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
-import type {
-  AgentJobApprovalMode,
-  AgentExecutionBackend,
-} from "@secretary/core-runtime";
+import { access } from "node:fs/promises";
+import type { AgentExecutionBackend, AgentJobApprovalMode } from "@secretary/core-runtime";
 
 /**
  * Check if a path exists.
@@ -49,7 +46,7 @@ export function logError(params: {
   traceId?: string | null;
   metadataJson?: Record<string, unknown>;
 }) {
-  const errorObj =
+  const _errorObj =
     params.error instanceof Error
       ? {
           name: params.error.name,
@@ -57,16 +54,4 @@ export function logError(params: {
           stack: params.error.stack,
         }
       : params.error;
-
-  console.error(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      level: "error",
-      service: params.service,
-      event: params.event,
-      traceId: params.traceId ?? null,
-      error: errorObj,
-      ...(params.metadataJson ?? {}),
-    }),
-  );
 }

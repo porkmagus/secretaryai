@@ -1,9 +1,6 @@
-import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import {
-  detectConversationDecision,
-  extractWorkspacePathHint,
-} from "./conversation-decisions.js";
+import { test } from "node:test";
+import { detectConversationDecision, extractWorkspacePathHint } from "./conversation-decisions.js";
 
 /**
  * Test: detectConversationDecision
@@ -132,10 +129,7 @@ test("extractWorkspacePathHint: finds relative path in quotes", () => {
 });
 
 test("extractWorkspacePathHint: finds parent-relative path in single quotes", () => {
-  assert.equal(
-    extractWorkspacePathHint("'../shared/lib/helpers.js'"),
-    "../shared/lib/helpers.js",
-  );
+  assert.equal(extractWorkspacePathHint("'../shared/lib/helpers.js'"), "../shared/lib/helpers.js");
 });
 
 test("extractWorkspacePathHint: returns null for plain sentences without paths", () => {

@@ -17,8 +17,12 @@ import {
 import { repoRoot } from "./utils/index.js";
 
 // Lazy initialization to avoid circular dependency issues
-function getSettingsFilePath() { return resolve(repoRoot, "runtime/config/inference-provider.json"); }
-function getSecretFilePath() { return resolve(repoRoot, "runtime/secrets/inference-provider.json"); }
+function getSettingsFilePath() {
+  return resolve(repoRoot, "runtime/config/inference-provider.json");
+}
+function getSecretFilePath() {
+  return resolve(repoRoot, "runtime/secrets/inference-provider.json");
+}
 
 type StoredInferenceSettings = {
   enabled: boolean;
@@ -127,7 +131,9 @@ function normalizeMaxOutputTokens(
   return Math.max(64, Math.min(12000, Math.round(maxOutputTokens)));
 }
 
-function normalizeStoredSettings(settings: StoredInferenceSettings | null): StoredInferenceSettings {
+function normalizeStoredSettings(
+  settings: StoredInferenceSettings | null,
+): StoredInferenceSettings {
   const selectedProviderId = normalizeProviderId(settings?.selectedProviderId) ?? null;
 
   return {
@@ -319,9 +325,7 @@ export async function loadInferenceSettings(): Promise<InferenceSettingsResponse
   };
 }
 
-export async function updateInferenceSettings(params: {
-  request: UpdateInferenceSettingsRequest;
-}) {
+export async function updateInferenceSettings(params: { request: UpdateInferenceSettingsRequest }) {
   const currentSettings = await readStoredSettings();
   const currentSecrets = await readStoredSecrets();
 
@@ -578,10 +582,7 @@ export async function listInferenceModels(
     case "ollama":
       return listOllamaModels({
         providerId: selectedProvider.id,
-        baseUrl:
-          selectedProvider.baseUrl ??
-          definition.defaultBaseUrl ??
-          "http://127.0.0.1:11434",
+        baseUrl: selectedProvider.baseUrl ?? definition.defaultBaseUrl ?? "http://127.0.0.1:11434",
         apiKey,
       });
     case "openai_compatible":
@@ -599,18 +600,14 @@ export async function listInferenceModels(
       return listGenericModels({
         providerId: selectedProvider.id,
         baseUrl:
-          selectedProvider.baseUrl ??
-          definition.defaultBaseUrl ??
-          "http://127.0.0.1:1234/v1",
+          selectedProvider.baseUrl ?? definition.defaultBaseUrl ?? "http://127.0.0.1:1234/v1",
         apiKey,
       });
     case "openai":
       return listGenericModels({
         providerId: selectedProvider.id,
         baseUrl:
-          selectedProvider.baseUrl ??
-          definition.defaultBaseUrl ??
-          "https://api.openai.com/v1",
+          selectedProvider.baseUrl ?? definition.defaultBaseUrl ?? "https://api.openai.com/v1",
         apiKey,
       });
     default:
@@ -624,7 +621,7 @@ export async function getInferenceRuntimeConfig() {
     (provider) => provider.id === settings.settings.selectedProviderId,
   );
 
-  if (!settings.settings.enabled || !selectedProvider || !selectedProvider.model) {
+  if (!settings.settings.enabled || !selectedProvider?.model) {
     return {
       enabled: false,
       providerId: null,

@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 
 const TASK_INTENT_REGEX =
   /\b(task|tasks|todo|to-do|remind|reminder|schedule|scheduled|due|deadline|checklist|meeting|time|when|what do i have)\b/i;
@@ -24,12 +24,7 @@ test("TASK_INTENT_REGEX matches various task-oriented phrases", () => {
 });
 
 test("TASK_INTENT_REGEX does not match non-task phrases", () => {
-  const nonMatches = [
-    "hello how are you",
-    "tell me a joke",
-    "what is the weather",
-    "i like cats",
-  ];
+  const nonMatches = ["hello how are you", "tell me a joke", "what is the weather", "i like cats"];
 
   for (const phrase of nonMatches) {
     assert.ok(!TASK_INTENT_REGEX.test(phrase), `Should not match: "${phrase}"`);

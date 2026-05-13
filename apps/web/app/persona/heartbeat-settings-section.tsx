@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type {
   HeartbeatIntegrationStatusResponse,
   HeartbeatRunResponse,
 } from "@secretary/core-runtime";
+import { useEffect, useState } from "react";
 import { SurfaceCard, ToggleField } from "../lib/ui";
 
 export function HeartbeatSettingsSection() {
@@ -37,13 +37,15 @@ export function HeartbeatSettingsSection() {
       });
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load heartbeat settings.");
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load heartbeat settings.",
+      );
     }
   }
 
   useEffect(() => {
     void loadHeartbeat();
-  }, []);
+  }, [loadHeartbeat]);
 
   async function saveHeartbeat() {
     if (!heartbeatDraft) {
@@ -123,12 +125,12 @@ export function HeartbeatSettingsSection() {
       title="Autonomy heartbeat"
       description={
         <p>
-          A configurable self-check for the secretary. Set how often it runs and what it
-          asks the agent to review, then test it with a manual run whenever you want.
+          A configurable self-check for the secretary. Set how often it runs and what it asks the
+          agent to review, then test it with a manual run whenever you want.
         </p>
       }
     >
-      {(error || status) ? (
+      {error || status ? (
         <div
           style={{
             padding: "10px 14px",
@@ -256,7 +258,14 @@ export function HeartbeatSettingsSection() {
                 }}
               >
                 <strong style={{ fontSize: 14 }}>Last error</strong>
-                <p style={{ margin: 0, color: "var(--warning-soft-text)", lineHeight: 1.45, fontSize: 13 }}>
+                <p
+                  style={{
+                    margin: 0,
+                    color: "var(--warning-soft-text)",
+                    lineHeight: 1.45,
+                    fontSize: 13,
+                  }}
+                >
                   {heartbeat.integration.lastError}
                 </p>
               </div>
@@ -269,8 +278,8 @@ export function HeartbeatSettingsSection() {
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.6 }}>
-          Use a short, actionable prompt here. Heartbeat runs in the worker, not the browser,
-          so it keeps working while the local stack is up.
+          Use a short, actionable prompt here. Heartbeat runs in the worker, not the browser, so it
+          keeps working while the local stack is up.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button

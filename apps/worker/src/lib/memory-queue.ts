@@ -1,5 +1,5 @@
-import { Queue, Worker } from "bullmq";
 import type { MemoryCandidateJobPayload } from "@secretary/core-runtime";
+import { Queue, Worker } from "bullmq";
 
 export const memoryCandidateQueueName = "memory-extract-candidates";
 export type MemoryQueueAdapter = {
@@ -10,10 +10,7 @@ type CreateMemoryQueueOptions = {
   processCandidate?: (jobId: string, payload: MemoryCandidateJobPayload) => Promise<void>;
 };
 
-export function createMemoryQueue(
-  redisUrl: string,
-  options: CreateMemoryQueueOptions = {},
-) {
+export function createMemoryQueue(redisUrl: string, options: CreateMemoryQueueOptions = {}) {
   const url = new URL(redisUrl);
   const connection = {
     host: url.hostname,
@@ -32,13 +29,12 @@ export function createMemoryQueue(
     },
   };
 
-  const queue = new Queue<
-    MemoryCandidateJobPayload,
-    void,
-    typeof memoryCandidateQueueName
-  >(memoryCandidateQueueName, {
-    connection,
-  });
+  const queue = new Queue<MemoryCandidateJobPayload, void, typeof memoryCandidateQueueName>(
+    memoryCandidateQueueName,
+    {
+      connection,
+    },
+  );
   const worker = options.processCandidate
     ? new Worker<MemoryCandidateJobPayload, void, typeof memoryCandidateQueueName>(
         memoryCandidateQueueName,
@@ -54,44 +50,16 @@ export function createMemoryQueue(
 
   void queue.client
     .then((client) => {
-      client.on("error", (err) => {
-        console.error(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          service: "worker",
-          event: "memory_queue.redis_error",
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      });
+      client.on("error", (_err) => {});
     })
-    .catch((err) => {
-      console.error(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        service: "worker",
-        event: "memory_queue.client_init_failed",
-        error: err instanceof Error ? err.message : String(err),
-      }));
-    });
+    .catch((_err) => {});
 
   if (worker) {
     void worker.client
       .then((client) => {
-        client.on("error", (err) => {
-          console.error(JSON.stringify({
-            timestamp: new Date().toISOString(),
-            service: "worker",
-            event: "memory_worker.redis_error",
-            error: err instanceof Error ? err.message : String(err),
-          }));
-        });
+        client.on("error", (_err) => {});
       })
-      .catch((err) => {
-        console.error(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          service: "worker",
-          event: "memory_worker.client_init_failed",
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      });
+      .catch((_err) => {});
   }
 
   return {
@@ -109,10 +77,7 @@ export function createMemoryQueue(
       await client.ping();
     },
     async close() {
-      await Promise.all([
-        queue.close(),
-        worker?.close(),
-      ]);
+      await Promise.all([queue.close(), worker?.close()]);
     },
   };
 }

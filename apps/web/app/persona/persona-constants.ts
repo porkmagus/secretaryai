@@ -1,5 +1,4 @@
 import type {
-  PersonaGender,
   SecretaryClarifyingStyle,
   SecretaryClosingStyle,
   SecretaryDirectness,

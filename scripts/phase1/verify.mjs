@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -178,19 +178,16 @@ await runCommand(npmCommand, ["run", "build"]);
 await runCommand(npmCommand, ["run", "db:migrate"]);
 
 const worker = startProcess(nodeCommand, ["apps/worker/dist/index.js"], env);
-const web = startWebProcess(
-  webPort,
-  {
-    WORKER_BASE_URL: env.WORKER_BASE_URL,
-    DEFAULT_USER_ID: env.DEFAULT_USER_ID,
-  },
-);
+const web = startWebProcess(webPort, {
+  WORKER_BASE_URL: env.WORKER_BASE_URL,
+  DEFAULT_USER_ID: env.DEFAULT_USER_ID,
+});
 
 try {
   await waitForUrl(`http://127.0.0.1:${workerPort}/health/live`, "worker");
   await waitForUrl(`http://127.0.0.1:${webPort}/`, "web");
 
-  const deskPage = await fetch(`http://127.0.0.1:${webPort}/`, {
+  const _deskPage = await fetch(`http://127.0.0.1:${webPort}/`, {
     cache: "no-store",
   });
 
@@ -224,13 +221,10 @@ try {
   await delay(2000);
 
   const restartedWorker = startProcess(nodeCommand, ["apps/worker/dist/index.js"], env);
-  const restartedWeb = startWebProcess(
-    webPort,
-    {
-      WORKER_BASE_URL: env.WORKER_BASE_URL,
-      DEFAULT_USER_ID: env.DEFAULT_USER_ID,
-    },
-  );
+  const restartedWeb = startWebProcess(webPort, {
+    WORKER_BASE_URL: env.WORKER_BASE_URL,
+    DEFAULT_USER_ID: env.DEFAULT_USER_ID,
+  });
 
   try {
     await waitForUrl(`http://127.0.0.1:${workerPort}/health/live`, "worker restart");
@@ -243,14 +237,12 @@ try {
     const historyAfterRestart = await historyAfterRestartResponse.json();
 
     if (!historyAfterRestartResponse.ok) {
-      throw new Error(
-        `History after restart failed: ${JSON.stringify(historyAfterRestart)}`,
-      );
+      throw new Error(`History after restart failed: ${JSON.stringify(historyAfterRestart)}`);
     }
 
     const client = new Client({ connectionString: databaseUrl });
     await client.connect();
-    const counts = await client.query(
+    const _counts = await client.query(
       `
         select
           (select count(*)::int from messages where conversation_id = $1) as messages,
@@ -260,43 +252,10 @@ try {
       [chatBody.conversationId],
     );
     await client.end();
-
-    console.log(
-      JSON.stringify(
-        {
-          deskPageStatus: deskPage.status,
-          chatStatus: chatResponse.status,
-          conversationId: chatBody.conversationId,
-          historyStatus: historyResponse.status,
-          historyAfterRestartStatus: historyAfterRestartResponse.status,
-          counts: counts.rows[0],
-          runtimeStorage: [
-            "runtime/postgres",
-            "runtime/redis",
-          ],
-        },
-        null,
-        2,
-      ),
-    );
   } finally {
     await killTree(restartedWeb.child);
     await killTree(restartedWorker.child);
   }
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

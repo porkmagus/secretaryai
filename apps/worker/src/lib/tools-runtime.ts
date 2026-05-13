@@ -1,20 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, extname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
-import {
-  activityTraces,
-  conversations,
-  memoryEntries,
-  messages,
-  personas,
-  tasks,
-  toolExecutions,
-  tools,
-  users,
-  type DbClient,
-} from "@secretary/db";
+import { basename, resolve } from "node:path";
 import type { AppConfig } from "@secretary/config";
 import {
   createConversationId,
@@ -30,10 +16,23 @@ import {
   type ToolRecord,
   type UpdateToolRequest,
 } from "@secretary/core-runtime";
+import {
+  activityTraces,
+  conversations,
+  type DbClient,
+  memoryEntries,
+  messages,
+  personas,
+  tasks,
+  toolExecutions,
+  tools,
+  users,
+} from "@secretary/db";
 import { createTelegramClient } from "@secretary/integrations";
-import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
-import { findConversationIdByChannelRef, getConversationMessages } from "./chat-persistence.js";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { parseSecretaryCustomization } from "./admin-runtime.js";
+import { findConversationIdByChannelRef, getConversationMessages } from "./chat-persistence.js";
+import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
 import { sendConfiguredEmail } from "./outbound-channel-integrations.js";
 import { defaultSecretaryName, defaultSecretarySoul } from "./persona-soul.js";
 import {
@@ -53,6 +52,7 @@ const EMAIL_DRAFTS_DIR = "runtime/generated/email-drafts";
 const CALENDAR_EXPORTS_DIR = "runtime/generated/calendar-events";
 const BROWSER_TARGETS_DIR = "runtime/generated/browser-targets";
 const DOWNLOADS_DIR = "runtime/downloads";
+
 import { repoRoot } from "./utils/index.js";
 
 type BuiltInTool = {
@@ -98,19 +98,22 @@ const builtInTools: BuiltInTool[] = [
   {
     key: "crawl4ai_light",
     name: "Crawl4AI Light Crawl",
-    description: "Quickly extract basic content from a web page using the local Crawl4AI service (light mode).",
+    description:
+      "Quickly extract basic content from a web page using the local Crawl4AI service (light mode).",
     approvalMode: "ask_first",
   },
   {
     key: "crawl4ai_deep",
     name: "Crawl4AI Deep Crawl",
-    description: "Extract full content and metadata from a web page using Crawl4AI's deep extraction mode.",
+    description:
+      "Extract full content and metadata from a web page using Crawl4AI's deep extraction mode.",
     approvalMode: "ask_first",
   },
   {
     key: "crawl4ai_variable",
     name: "Crawl4AI Variable Crawl",
-    description: "Extract content from a web page using Crawl4AI with custom options (strategy, hooks, etc.).",
+    description:
+      "Extract content from a web page using Crawl4AI with custom options (strategy, hooks, etc.).",
     approvalMode: "ask_first",
   },
   {
@@ -200,13 +203,15 @@ const builtInTools: BuiltInTool[] = [
   {
     key: "memory_read",
     name: "Read Memory",
-    description: "Search and retrieve relevant memory entries to answer a question about what the secretary knows.",
+    description:
+      "Search and retrieve relevant memory entries to answer a question about what the secretary knows.",
     approvalMode: "always_allow",
   },
   {
     key: "note_to_self",
     name: "Note to Self",
-    description: "Proactively save a personal detail, name, preference, or context note as a memory entry without an explicit user command.",
+    description:
+      "Proactively save a personal detail, name, preference, or context note as a memory entry without an explicit user command.",
     approvalMode: "ask_first",
   },
 ];
@@ -284,11 +289,13 @@ function parseInlineUrl(text: string) {
 }
 
 function sanitizeFileNamePart(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 72) || `item-${Date.now()}`;
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 72) || `item-${Date.now()}`
+  );
 }
 
 function resolveRuntimePath(relativePath: string) {
@@ -452,12 +459,11 @@ function parseTaskListIntent(text: string) {
     return null;
   }
 
-  const status =
-    /\b(done|completed|finished)\b/i.test(text)
-      ? "done"
-      : /\b(all|everything)\b/i.test(text)
-        ? "all"
-        : "open";
+  const status = /\b(done|completed|finished)\b/i.test(text)
+    ? "done"
+    : /\b(all|everything)\b/i.test(text)
+      ? "all"
+      : "open";
 
   return {
     requestJson: {
@@ -470,7 +476,9 @@ function parseTaskListIntent(text: string) {
 }
 
 function parseSearchIntent(text: string) {
-  const match = text.match(/\b(?:search (?:the )?web for|look up|find latest on|latest on|google)\s+(.+)/i);
+  const match = text.match(
+    /\b(?:search (?:the )?web for|look up|find latest on|latest on|google)\s+(.+)/i,
+  );
   if (!match?.[1]) {
     return null;
   }
@@ -490,7 +498,10 @@ function parseScrapeIntent(text: string) {
   }
 
   // Match patterns like "scrape", "extract content from", "get content of", "fetch page"
-  const hasScrapeIntent = /\b(?:scrape|extract content from|get content of|fetch page|pull content from|read this page|summarize this)\b/i.test(text);
+  const hasScrapeIntent =
+    /\b(?:scrape|extract content from|get content of|fetch page|pull content from|read this page|summarize this)\b/i.test(
+      text,
+    );
   if (!hasScrapeIntent) {
     return null;
   }
@@ -522,7 +533,9 @@ function parseFileIntent(text: string) {
 function parseFileWriteIntent(text: string) {
   const path =
     parseInlinePath(text) ??
-    text.match(/\b(?:write|save|update)\s+(?:a\s+)?file\s+([^\s]+)\s+(?:with|to)\b/i)?.[1]?.trim() ??
+    text
+      .match(/\b(?:write|save|update)\s+(?:a\s+)?file\s+([^\s]+)\s+(?:with|to)\b/i)?.[1]
+      ?.trim() ??
     null;
 
   if (!path || !/\b(?:write|save|update)\b/i.test(text)) {
@@ -530,8 +543,7 @@ function parseFileWriteIntent(text: string) {
   }
 
   const contentMatch =
-    text.match(/\b(?:with|to)\s+content\s*:\s*(.+)$/i) ??
-    text.match(/\b(?:with|to)\s+(.+)$/i);
+    text.match(/\b(?:with|to)\s+content\s*:\s*(.+)$/i) ?? text.match(/\b(?:with|to)\s+(.+)$/i);
   const content = contentMatch?.[1]?.trim().replace(/[.]+$/, "") ?? "";
 
   if (!content) {
@@ -547,8 +559,12 @@ function parseFileWriteIntent(text: string) {
 
 function parseDocumentCreateIntent(text: string) {
   const match =
-    text.match(/\b(?:create|draft|write|make)\s+(?:a\s+)?(?:document|note|report|brief|checklist)\s+(?:called|named|titled)\s+["`]?([^"`]+)["`]?/i) ??
-    text.match(/\b(?:create|draft|write|make)\s+(?:a\s+)?(?:document|note|report|brief|checklist)\b[:\s-]+(.+)$/i);
+    text.match(
+      /\b(?:create|draft|write|make)\s+(?:a\s+)?(?:document|note|report|brief|checklist)\s+(?:called|named|titled)\s+["`]?([^"`]+)["`]?/i,
+    ) ??
+    text.match(
+      /\b(?:create|draft|write|make)\s+(?:a\s+)?(?:document|note|report|brief|checklist)\b[:\s-]+(.+)$/i,
+    );
 
   if (!match?.[1]) {
     return null;
@@ -615,8 +631,7 @@ function parseMemoryWriteIntent(text: string) {
   }
 
   const rememberMatch =
-    text.match(/\bremember(?: this)?[:\s]+(.+)$/i) ??
-    text.match(/\bstore in memory[:\s]+(.+)$/i);
+    text.match(/\bremember(?: this)?[:\s]+(.+)$/i) ?? text.match(/\bstore in memory[:\s]+(.+)$/i);
 
   if (!rememberMatch?.[1]) {
     return null;
@@ -672,8 +687,12 @@ function parseBrowserOpenIntent(text: string) {
 
 function parseEmailDraftIntent(text: string) {
   const match =
-    text.match(/\b(?:draft|write|compose|create)\s+(?:an?\s+)?email\s+to\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i) ??
-    text.match(/\bemail\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i);
+    text.match(
+      /\b(?:draft|write|compose|create)\s+(?:an?\s+)?email\s+to\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i,
+    ) ??
+    text.match(
+      /\bemail\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i,
+    );
 
   if (!match?.[1]) {
     return null;
@@ -700,8 +719,12 @@ function parseEmailDraftIntent(text: string) {
 
 function parseEmailSendIntent(text: string) {
   const match =
-    text.match(/\b(?:send)\s+(?:an?\s+)?email\s+to\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i) ??
-    text.match(/\bsend\s+email\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i);
+    text.match(
+      /\b(?:send)\s+(?:an?\s+)?email\s+to\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i,
+    ) ??
+    text.match(
+      /\bsend\s+email\s+(.+?)(?:\s+(?:about|regarding|subject)\s+(.+?))?(?:\s+(?:saying|that|with body)\s+(.+))?$/i,
+    );
 
   if (!match?.[1]) {
     return null;
@@ -742,8 +765,9 @@ function parseDurationMinutes(text: string) {
 
 function parseCalendarCreateIntent(text: string) {
   const match =
-    text.match(/\b(?:schedule|add|create|draft)\s+(?:an?\s+)?(?:calendar event|event|meeting)\s+(?:for\s+)?(.+)$/i) ??
-    text.match(/\bput\s+(.+)\s+on\s+(?:my\s+)?calendar\b/i);
+    text.match(
+      /\b(?:schedule|add|create|draft)\s+(?:an?\s+)?(?:calendar event|event|meeting)\s+(?:for\s+)?(.+)$/i,
+    ) ?? text.match(/\bput\s+(.+)\s+on\s+(?:my\s+)?calendar\b/i);
 
   if (!match?.[1]) {
     return null;
@@ -753,7 +777,10 @@ function parseCalendarCreateIntent(text: string) {
   const startAt = parseReminderTime(raw);
   const title = cleanTaskText(
     raw
-      .replace(/\b(?:tomorrow|today|in\s+\d+\s+(?:minutes?|hours?)|at\s+\d+(?::\d{2})?\s*(?:am|pm)?|for\s+\d+\s+(?:minutes?|hours?))\b/gi, "")
+      .replace(
+        /\b(?:tomorrow|today|in\s+\d+\s+(?:minutes?|hours?)|at\s+\d+(?::\d{2})?\s*(?:am|pm)?|for\s+\d+\s+(?:minutes?|hours?))\b/gi,
+        "",
+      )
       .replace(/\s{2,}/g, " ")
       .trim(),
   );
@@ -801,19 +828,21 @@ function parseMemoryReadIntent(text: string) {
     /\bcheck\s+(?:your |my )?notes\b/i,
     /\bwhat\s+did\s+(?:i|we)\s+(?:say|talk about|discuss)\b/i,
   ];
-  
-  const hasMemoryPhrase = memoryPhrases.some(pattern => pattern.test(text));
+
+  const hasMemoryPhrase = memoryPhrases.some((pattern) => pattern.test(text));
   if (!hasMemoryPhrase) {
     return null;
   }
 
   // Extract the query - look for what comes after the trigger phrase
   const queryMatch =
-    text.match(/\b(?:do you remember|recall|what do you know about|what do you have on|search(?:\s+your)?\s+memory\s+for|check(?:\s+your)?\s+memory\s+for|look(?:\s+in)?(?:\s+your)?\s+memory\s+for)\s+(.+)/i) ??
-    text.match(/\b(?:about|regarding|on)\s+(.+)/i);
-  
+    text.match(
+      /\b(?:do you remember|recall|what do you know about|what do you have on|search(?:\s+your)?\s+memory\s+for|check(?:\s+your)?\s+memory\s+for|look(?:\s+in)?(?:\s+your)?\s+memory\s+for)\s+(.+)/i,
+    ) ?? text.match(/\b(?:about|regarding|on)\s+(.+)/i);
+
   // If no specific query found, use the whole text minus common prefixes
-  const query = queryMatch?.[1]?.trim().replace(/[.?!]+$/, "") ?? 
+  const query =
+    queryMatch?.[1]?.trim().replace(/[.?!]+$/, "") ??
     text.replace(/^\s*(?:can you|please|i want to|let me|i'll)\s+/i, "").trim();
 
   return {
@@ -834,7 +863,7 @@ function parseNoteToSelfIntent(text: string) {
     /\badd\s+(?:this\s+)?to\s+(?:your\s+)?memory\s*[:\s]+(.+)$/i,
     /\bsave\s+(?:this\s+)?(?:to\s+memory|for\s+later)\s*[:\s]+(.+)$/i,
   ];
-  
+
   for (const pattern of notePatterns) {
     const match = text.match(pattern);
     if (match?.[1]) {
@@ -850,7 +879,7 @@ function parseNoteToSelfIntent(text: string) {
       };
     }
   }
-  
+
   return null;
 }
 
@@ -935,8 +964,7 @@ async function ensureConversationEnvelope(params: {
       : null);
   const conversationId = existingConversationId ?? createConversationId();
   const userId = params.request.userId || params.defaultUserId;
-  const userDisplayName =
-    params.request.metadata?.telegramUserDisplayName ?? "Local Owner";
+  const userDisplayName = params.request.metadata?.telegramUserDisplayName ?? "Local Owner";
   const userMessageId = createMessageId();
   const conversationTitle =
     params.request.channel === "telegram" && params.request.metadata?.telegramChatLabel
@@ -1179,7 +1207,6 @@ function resolveWorkspacePath(inputPath: string) {
   return candidate;
 }
 
-
 async function executeCrawl4aiLight(config: AppConfig, url: string) {
   if (!config.crawl4ai?.baseUrl) {
     throw new Error("Crawl4AI is not configured.");
@@ -1215,8 +1242,21 @@ async function executeCrawl4aiDeep(config: AppConfig, url: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       urls: [url],
-      crawler_config: { type: "CrawlerRunConfig", params: { stream: false, cache_mode: "bypass", extraction_strategy: { type: "JsonCssExtractionStrategy", params: {} } } },
-      browser_config: { type: "BrowserConfig", params: { headless: true, viewport: { type: "dict", value: { width: 1920, height: 1080 } } } },
+      crawler_config: {
+        type: "CrawlerRunConfig",
+        params: {
+          stream: false,
+          cache_mode: "bypass",
+          extraction_strategy: { type: "JsonCssExtractionStrategy", params: {} },
+        },
+      },
+      browser_config: {
+        type: "BrowserConfig",
+        params: {
+          headless: true,
+          viewport: { type: "dict", value: { width: 1920, height: 1080 } },
+        },
+      },
     }),
   });
   if (!response.ok) throw new Error(`Crawl4AI Deep Crawl failed: ${response.status}`);
@@ -1230,7 +1270,11 @@ async function executeCrawl4aiDeep(config: AppConfig, url: string) {
   };
 }
 
-async function executeCrawl4aiVariable(config: AppConfig, url: string, options: Record<string, unknown>) {
+async function executeCrawl4aiVariable(
+  config: AppConfig,
+  url: string,
+  options: Record<string, unknown>,
+) {
   if (!config.crawl4ai?.baseUrl) {
     throw new Error("Crawl4AI is not configured.");
   }
@@ -1280,8 +1324,9 @@ async function executeWebSearch(config: AppConfig, query: string) {
 
     const lines = [
       ...(payload.answers ?? []).slice(0, 2),
-      ...topResults.map((result, index) =>
-        `${index + 1}. ${result.title}${result.url ? ` (${result.url})` : ""}${result.summary ? ` - ${shortSnippet(result.summary, 120)}` : ""}`,
+      ...topResults.map(
+        (result, index) =>
+          `${index + 1}. ${result.title}${result.url ? ` (${result.url})` : ""}${result.summary ? ` - ${shortSnippet(result.summary, 120)}` : ""}`,
       ),
     ].filter(Boolean);
 
@@ -1315,15 +1360,15 @@ async function executeWebSearch(config: AppConfig, query: string) {
 
   const topResults = (payload.RelatedTopics ?? [])
     .flatMap((entry) =>
-      "Text" in entry && entry.Text
-        ? [{ title: entry.Text, url: entry.FirstURL ?? null }]
-        : [],
+      "Text" in entry && entry.Text ? [{ title: entry.Text, url: entry.FirstURL ?? null }] : [],
     )
     .slice(0, 3);
 
   const lines = [
     payload.AbstractText?.trim() || null,
-    ...topResults.map((result, index) => `${index + 1}. ${result.title}${result.url ? ` (${result.url})` : ""}`),
+    ...topResults.map(
+      (result, index) => `${index + 1}. ${result.title}${result.url ? ` (${result.url})` : ""}`,
+    ),
   ].filter(Boolean) as string[];
 
   return {
@@ -1363,7 +1408,7 @@ async function executeFileRead(pathInput: string) {
       preview,
       truncated,
     },
-    text: truncated 
+    text: truncated
       ? `Here's the start of ${pathInput} (truncated):\n\n${preview}`
       : `Here's ${pathInput}:\n\n${preview}`,
   };
@@ -1474,43 +1519,45 @@ async function executeShellCommand(command: string) {
 
   const shellCommand = process.platform === "win32" ? "powershell" : "bash";
   const shellArgs =
-    process.platform === "win32"
-      ? ["-NoProfile", "-Command", command]
-      : ["-lc", command];
+    process.platform === "win32" ? ["-NoProfile", "-Command", command] : ["-lc", command];
 
-  const output = await new Promise<{ durationMs: number; stderr: string; stdout: string }>((resolvePromise, rejectPromise) => {
-    const startedAt = Date.now();
-    const child = spawn(shellCommand, shellArgs, {
-      cwd: repoRoot,
-      shell: false,
-    });
-    let stdout = "";
-    let stderr = "";
-    const timeout = setTimeout(() => {
-      child.kill();
-      rejectPromise(new Error(`Command exceeded the ${SHELL_TIMEOUT_MS / 1000}s safety timeout.`));
-    }, SHELL_TIMEOUT_MS);
+  const output = await new Promise<{ durationMs: number; stderr: string; stdout: string }>(
+    (resolvePromise, rejectPromise) => {
+      const startedAt = Date.now();
+      const child = spawn(shellCommand, shellArgs, {
+        cwd: repoRoot,
+        shell: false,
+      });
+      let stdout = "";
+      let stderr = "";
+      const timeout = setTimeout(() => {
+        child.kill();
+        rejectPromise(
+          new Error(`Command exceeded the ${SHELL_TIMEOUT_MS / 1000}s safety timeout.`),
+        );
+      }, SHELL_TIMEOUT_MS);
 
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      rejectPromise(error);
-    });
-    child.on("exit", (code) => {
-      clearTimeout(timeout);
-      if (code === 0) {
-        resolvePromise({ durationMs: Date.now() - startedAt, stdout, stderr });
-        return;
-      }
+      child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+      child.on("error", (error) => {
+        clearTimeout(timeout);
+        rejectPromise(error);
+      });
+      child.on("exit", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolvePromise({ durationMs: Date.now() - startedAt, stdout, stderr });
+          return;
+        }
 
-      rejectPromise(new Error(stderr || `Command exited with ${code}`));
-    });
-  });
+        rejectPromise(new Error(stderr || `Command exited with ${code}`));
+      });
+    },
+  );
 
   return {
     responseJson: {
@@ -1523,7 +1570,11 @@ async function executeShellCommand(command: string) {
   };
 }
 
-async function executeTaskList(dbClient: DbClient, userId: string, requestJson: Record<string, unknown>) {
+async function executeTaskList(
+  dbClient: DbClient,
+  userId: string,
+  requestJson: Record<string, unknown>,
+) {
   const status =
     requestJson.status === "done" || requestJson.status === "all" ? requestJson.status : "open";
   const limit =
@@ -1613,9 +1664,7 @@ async function executeTaskCreate(
       ? requestJson.detail.trim()
       : "Created from an explicit secretary task request.";
   const dueAt =
-    typeof requestJson.dueAt === "string" && requestJson.dueAt
-      ? new Date(requestJson.dueAt)
-      : null;
+    typeof requestJson.dueAt === "string" && requestJson.dueAt ? new Date(requestJson.dueAt) : null;
   const reminderAt =
     typeof requestJson.reminderAt === "string" && requestJson.reminderAt
       ? new Date(requestJson.reminderAt)
@@ -1710,7 +1759,9 @@ async function executeTaskUpdate(
       ? requestJson.status.trim()
       : task.status;
   const dueAt =
-    typeof requestJson.dueAt === "string" && requestJson.dueAt ? new Date(requestJson.dueAt) : task.dueAt;
+    typeof requestJson.dueAt === "string" && requestJson.dueAt
+      ? new Date(requestJson.dueAt)
+      : task.dueAt;
   const reminderAt =
     typeof requestJson.reminderAt === "string" && requestJson.reminderAt
       ? new Date(requestJson.reminderAt)
@@ -1767,12 +1818,8 @@ async function findMemoryByReference(dbClient: DbClient, reference: string) {
   );
 }
 
-async function executeMemoryWrite(
-  dbClient: DbClient,
-  requestJson: Record<string, unknown>,
-) {
-  const operation =
-    typeof requestJson.operation === "string" ? requestJson.operation.trim() : "";
+async function executeMemoryWrite(dbClient: DbClient, requestJson: Record<string, unknown>) {
+  const operation = typeof requestJson.operation === "string" ? requestJson.operation.trim() : "";
 
   if (operation === "create") {
     const contentText =
@@ -1899,7 +1946,9 @@ async function executeBrowserOpen(requestJson: Record<string, unknown>) {
     "",
     `Target: ${target}`,
     `Created: ${createdAt}`,
-    note ? `Next action: ${note}` : "Next action: Review this page and continue the follow-up from the Activity history.",
+    note
+      ? `Next action: ${note}`
+      : "Next action: Review this page and continue the follow-up from the Activity history.",
     "",
     "This target was saved by the secretary for follow-through.",
   ].join("\n");
@@ -1934,7 +1983,10 @@ async function executeCalendarCreate(requestJson: Record<string, unknown>) {
   const fileName = `${Date.now()}-${sanitizeFileNamePart(title)}.ics`;
   const relativePath = `${CALENDAR_EXPORTS_DIR}/${fileName}`;
   const formatIcsDate = (value: Date) =>
-    value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    value
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}Z$/, "Z");
   const content = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -1978,9 +2030,7 @@ async function executeEmailDraft(requestJson: Record<string, unknown>) {
   const targetDir = await ensureRuntimeGeneratedPath(EMAIL_DRAFTS_DIR);
   const fileName = `${Date.now()}-${sanitizeFileNamePart(to)}-${sanitizeFileNamePart(subject)}.md`;
   const relativePath = `${EMAIL_DRAFTS_DIR}/${fileName}`;
-  const draftBody =
-    body ||
-    `Hi ${to},\n\n${subject}\n\nBest,\n${defaultSecretaryName}`;
+  const draftBody = body || `Hi ${to},\n\n${subject}\n\nBest,\n${defaultSecretaryName}`;
   const content = [
     `# Email Draft`,
     "",
@@ -2076,7 +2126,9 @@ async function executeToolRequest(params: {
       return executeCrawl4aiVariable(
         params.config,
         String(params.requestJson.url ?? ""),
-        (params.requestJson.options && typeof params.requestJson.options === "object") ? params.requestJson.options as Record<string, unknown> : {}
+        params.requestJson.options && typeof params.requestJson.options === "object"
+          ? (params.requestJson.options as Record<string, unknown>)
+          : {},
       );
     case "file_read":
       return executeFileRead(String(params.requestJson.path ?? ""));
@@ -2175,11 +2227,7 @@ export async function listTools(dbClient: DbClient): Promise<ToolListResponse> {
   };
 }
 
-export async function updateTool(
-  dbClient: DbClient,
-  toolId: string,
-  request: UpdateToolRequest,
-) {
+export async function updateTool(dbClient: DbClient, toolId: string, request: UpdateToolRequest) {
   const existing = await dbClient.db.query.tools.findFirst({
     where: eq(tools.id, toolId),
   });
@@ -2206,7 +2254,7 @@ export async function listToolExecutions(params: {
   approvalState?: string;
   conversationId?: string;
   dbClient: DbClient;
-}) : Promise<ToolExecutionListResponse> {
+}): Promise<ToolExecutionListResponse> {
   const records = await params.dbClient.db.query.toolExecutions.findMany({
     where:
       params.conversationId && params.approvalState

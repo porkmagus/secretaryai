@@ -1,17 +1,11 @@
-import { createDbClient } from "@secretary/db";
 import type { AppConfig } from "@secretary/config";
-import { createMemoryQueue } from "./memory-queue.js";
+import { createDbClient } from "@secretary/db";
 import { createAgentJobQueue } from "./agent-job-queue.js";
-import {
-  markMemoryCandidateJobFailed,
-  processMemoryCandidateJob,
-} from "./memory-engine.js";
-import {
-  markAgentJobFailed,
-  processAgentJob,
-} from "./agent-jobs.js";
-import { ensureSpeechStorageLayout } from "./speech-storage.js";
+import { markAgentJobFailed, processAgentJob } from "./agent-jobs.js";
+import { markMemoryCandidateJobFailed, processMemoryCandidateJob } from "./memory-engine.js";
+import { createMemoryQueue } from "./memory-queue.js";
 import { ensureDefaultVoiceProfile } from "./speech-runtime.js";
+import { ensureSpeechStorageLayout } from "./speech-storage.js";
 
 export async function createInfrastructure(config: AppConfig) {
   const dbClient = createDbClient(config.databaseUrl);
@@ -66,11 +60,12 @@ export async function createInfrastructure(config: AppConfig) {
         agentJobQueue.checkHealth(),
       ]);
 
-      const redisError = memoryRedis.status === "rejected"
-        ? memoryRedis.reason
-        : agentRedis.status === "rejected"
-          ? agentRedis.reason
-          : null;
+      const redisError =
+        memoryRedis.status === "rejected"
+          ? memoryRedis.reason
+          : agentRedis.status === "rejected"
+            ? agentRedis.reason
+            : null;
 
       return {
         postgres:
@@ -79,20 +74,11 @@ export async function createInfrastructure(config: AppConfig) {
             : postgres.reason instanceof Error
               ? postgres.reason.message
               : "error",
-        redis:
-          !redisError
-            ? "ok"
-            : redisError instanceof Error
-              ? redisError.message
-              : "error",
+        redis: !redisError ? "ok" : redisError instanceof Error ? redisError.message : "error",
       };
     },
     async close() {
-      await Promise.allSettled([
-        dbClient.close(),
-        memoryQueue.close(),
-        agentJobQueue.close(),
-      ]);
+      await Promise.allSettled([dbClient.close(), memoryQueue.close(), agentJobQueue.close()]);
     },
   };
 }

@@ -28,7 +28,11 @@ export function usePolling({
 
     async function runPoll() {
       const now = Date.now();
-      if (runningRef.current || document.visibilityState === "hidden" || now - lastRanRef.current < intervalMs / 2) {
+      if (
+        runningRef.current ||
+        document.visibilityState === "hidden" ||
+        now - lastRanRef.current < intervalMs / 2
+      ) {
         return;
       }
 

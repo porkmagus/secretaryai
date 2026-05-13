@@ -1,9 +1,9 @@
-import http from "node:http";
 import { spawn } from "node:child_process";
+import http from "node:http";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -380,7 +380,7 @@ try {
   await waitForUrl(`http://127.0.0.1:${workerPort}/health/live`, "worker");
   await waitForUrl(`http://127.0.0.1:${webPort}/`, "web");
 
-  const channelsPage = await fetch(`http://127.0.0.1:${webPort}/channels`, {
+  const _channelsPage = await fetch(`http://127.0.0.1:${webPort}/channels`, {
     cache: "no-store",
   });
 
@@ -390,7 +390,7 @@ try {
     defaultChatId,
   });
 
-  const syncResult = await postJson(
+  const _syncResult = await postJson(
     `http://127.0.0.1:${webPort}/api/integrations/telegram/sync-webhook`,
     {},
   );
@@ -473,7 +473,9 @@ try {
   const secondReply = fakeTelegram.state.sentMessages.at(-1)?.text ?? "";
 
   if (!secondReply.includes("Relevant memory in play")) {
-    throw new Error(`Expected Telegram recall reply to include memory context. Got: ${secondReply}`);
+    throw new Error(
+      `Expected Telegram recall reply to include memory context. Got: ${secondReply}`,
+    );
   }
 
   const reminderWebhook = await fetch(fakeTelegram.state.webhookUrl, {
@@ -518,7 +520,9 @@ try {
   const afterReminderMessages = fakeTelegram.state.sentMessages.slice(beforeReminderCount);
 
   if (reminderDispatch.delivered < 1) {
-    throw new Error(`Expected at least one Telegram reminder delivery. Got: ${JSON.stringify(reminderDispatch)}`);
+    throw new Error(
+      `Expected at least one Telegram reminder delivery. Got: ${JSON.stringify(reminderDispatch)}`,
+    );
   }
 
   if (!afterReminderMessages.some((message) => message.text.includes("Reminder:"))) {
@@ -547,45 +551,11 @@ try {
   await patchTelegramSettings(webPort, {
     enabled: false,
   });
-  await postJson(
-    `http://127.0.0.1:${webPort}/api/integrations/telegram/sync-webhook`,
-    {},
-  );
+  await postJson(`http://127.0.0.1:${webPort}/api/integrations/telegram/sync-webhook`, {});
 
   if (fakeTelegram.state.webhookUrl !== "") {
     throw new Error("Expected disabling Telegram to remove the webhook.");
   }
-
-  console.log(
-    JSON.stringify(
-      {
-        channelsPageStatus: channelsPage.status,
-        webhookUrl: syncResult.webhookUrl,
-        conversationId: firstBody.conversationId,
-        telegramSentMessages: fakeTelegram.state.sentMessages.length,
-        reminderDispatch,
-        healthStatus: statusBody.integration.healthStatus,
-        historyMessages: historyBody.messages.length,
-      },
-      null,
-      2,
-    ),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        fakeTelegramState: fakeTelegram.state,
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

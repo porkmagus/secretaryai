@@ -17,11 +17,7 @@ async function signValue(value: string, secret: string) {
     false,
     ["sign"],
   );
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(value),
-  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
 
   return encodeHex(new Uint8Array(signature));
 }
@@ -50,15 +46,11 @@ export function getAuthPassword() {
 }
 
 export function getSessionSecret() {
-  return (
-    process.env.APP_SESSION_SECRET?.trim() ||
-    process.env.APP_AUTH_PASSWORD?.trim() ||
-    ""
-  );
+  return process.env.APP_SESSION_SECRET?.trim() || process.env.APP_AUTH_PASSWORD?.trim() || "";
 }
 
 export function normalizeNextPath(input: string | null | undefined) {
-  if (!input || !input.startsWith("/") || input.startsWith("//")) {
+  if (!input?.startsWith("/") || input.startsWith("//")) {
     return "/";
   }
 

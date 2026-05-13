@@ -1,9 +1,7 @@
 "use client";
 
+import type { SystemHealthResponse } from "@secretary/core-runtime";
 import { useEffect, useState } from "react";
-import type {
-  SystemHealthResponse,
-} from "@secretary/core-runtime";
 import { AppPage, LoadingSurface, PageHero, SurfaceCard } from "../lib/ui";
 import { HeartbeatSettingsSection } from "../persona/heartbeat-settings-section";
 
@@ -33,7 +31,7 @@ function statusTone(status: string) {
 export function HealthConsole() {
   const [data, setData] = useState<SystemHealthResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  const [status, _setStatus] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -53,7 +51,7 @@ export function HealthConsole() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   if (!data) {
     return (
@@ -62,8 +60,8 @@ export function HealthConsole() {
           title="Preparing the health dashboard"
           description={
             <p>
-              Checking local services and runtime readiness so the health page
-              opens with a complete operator view.
+              Checking local services and runtime readiness so the health page opens with a complete
+              operator view.
             </p>
           }
           blocks={3}
@@ -79,8 +77,8 @@ export function HealthConsole() {
         title="Local system check"
         description={
           <p>
-            A quick operator glance at service readiness, storage visibility, and the
-            few commands you actually need when something feels off.
+            A quick operator glance at service readiness, storage visibility, and the few commands
+            you actually need when something feels off.
           </p>
         }
         meta={
@@ -114,62 +112,58 @@ export function HealthConsole() {
       <SurfaceCard
         tone="dark"
         title="Service status"
-        description={
-          <p>
-            One compact line per system instead of a full grid of cards.
-          </p>
-        }
+        description={<p>One compact line per system instead of a full grid of cards.</p>}
       >
         <div className="compact-list">
-          {data
-            ? Object.entries(data.services).map(([key, service]) => {
-                const tone = statusTone(service.status);
+          {data ? (
+            Object.entries(data.services).map(([key, service]) => {
+              const tone = statusTone(service.status);
 
-                return (
+              return (
+                <div
+                  key={key}
+                  style={{
+                    display: "grid",
+                    gap: 8,
+                    padding: "12px 0",
+                    gridTemplateColumns: "minmax(110px, 140px) auto",
+                    alignItems: "start",
+                  }}
+                >
                   <div
-                    key={key}
                     style={{
-                      display: "grid",
-                      gap: 8,
-                      padding: "12px 0",
-                      gridTemplateColumns: "minmax(110px, 140px) auto",
-                      alignItems: "start",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
                     }}
                   >
-                    <div
+                    <span
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        flexWrap: "wrap",
+                        padding: "4px 9px",
+                        borderRadius: 999,
+                        background: tone.background,
+                        border: `1px solid ${tone.border}`,
+                        color: tone.badge,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
                       }}
                     >
-                      <span
-                        style={{
-                          padding: "4px 9px",
-                          borderRadius: 999,
-                          background: tone.background,
-                          border: `1px solid ${tone.border}`,
-                          color: tone.badge,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                        }}
-                      >
-                        {service.status}
-                      </span>
-                      <strong style={{ fontSize: 14, textTransform: "capitalize" }}>{key}</strong>
-                    </div>
-                    <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.45, fontSize: 13 }}>
-                      {service.summary}
-                    </p>
+                      {service.status}
+                    </span>
+                    <strong style={{ fontSize: 14, textTransform: "capitalize" }}>{key}</strong>
                   </div>
-                );
-              })
-            : (
-              <p style={{ margin: 0, color: "var(--muted)" }}>Loading services...</p>
-            )}
+                  <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.45, fontSize: 13 }}>
+                    {service.summary}
+                  </p>
+                </div>
+              );
+            })
+          ) : (
+            <p style={{ margin: 0, color: "var(--muted)" }}>Loading services...</p>
+          )}
         </div>
       </SurfaceCard>
 
@@ -224,7 +218,10 @@ export function HealthConsole() {
           </div>
         </SurfaceCard>
 
-        <SurfaceCard title="Runbook shortcuts" description={<p>Keep these close; nothing here needs a giant block.</p>}>
+        <SurfaceCard
+          title="Runbook shortcuts"
+          description={<p>Keep these close; nothing here needs a giant block.</p>}
+        >
           <div
             style={{
               display: "grid",

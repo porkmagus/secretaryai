@@ -1,5 +1,5 @@
-import test from "node:test";
 import assert from "node:assert/strict";
+import test from "node:test";
 import { buildTaskDraft, normalizeTaskTitle, parseReminderTime } from "./task-runtime.js";
 
 test("buildTaskDraft extracts reminder timing and trims title", () => {

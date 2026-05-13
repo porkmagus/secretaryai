@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type {
   AgentExecutionBackend,
   AgentJobApprovalMode,
   AgentJobSettingsResponse,
   UpdateAgentJobSettingsRequest,
 } from "@secretary/core-runtime";
+import { useEffect, useState } from "react";
 import { LoadingSurface, NoticeBanner, SurfaceCard, ToggleField } from "../../lib/ui";
 
 type AgentSettingsDraft = {
@@ -63,7 +63,7 @@ export function AgentSettingsConsole() {
 
   useEffect(() => {
     void loadSettings();
-  }, []);
+  }, [loadSettings]);
 
   function updateField<K extends keyof AgentSettingsDraft>(key: K, value: AgentSettingsDraft[K]) {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
@@ -143,125 +143,147 @@ export function AgentSettingsConsole() {
       <SurfaceCard
         tone="dark"
         title="Agent defaults"
-        description={<p>These are system-level defaults for autonomous build jobs. Job pages only start, pause, resume, and review work.</p>}
+        description={
+          <p>
+            These are system-level defaults for autonomous build jobs. Job pages only start, pause,
+            resume, and review work.
+          </p>
+        }
       >
         <div style={{ display: "grid", gap: 16 }}>
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Default workspace path</span>
-                <input
-                  value={draft.defaultWorkspacePath}
-                  onChange={(event) => updateField("defaultWorkspacePath", event.target.value)}
-                  className="input-shell"
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Default access mode</span>
-                <select
-                  value={draft.defaultApprovalMode}
-                  onChange={(event) => updateField("defaultApprovalMode", event.target.value as AgentJobApprovalMode)}
-                  className="input-shell"
-                >
-                  <option value="restrictive">Restrictive</option>
-                  <option value="builder">Builder</option>
-                  <option value="full_access">YOLO / Full access</option>
-                </select>
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Execution backend</span>
-                <select
-                  value={draft.executionBackend}
-                  onChange={(event) => updateField("executionBackend", event.target.value as AgentExecutionBackend)}
-                  className="input-shell"
-                >
-                  <option value="host_native">Host native shell</option>
-                  <option value="wsl_bash">WSL bash</option>
-                  <option value="docker_sandbox">Docker sandbox</option>
-                </select>
-              </label>
-            </div>
-
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Max agent steps</span>
-                <input
-                  value={draft.maxAgentSteps}
-                  onChange={(event) => updateField("maxAgentSteps", event.target.value)}
-                  className="input-shell"
-                  inputMode="numeric"
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Command timeout (seconds)</span>
-                <input
-                  value={draft.maxCommandTimeoutSeconds}
-                  onChange={(event) => updateField("maxCommandTimeoutSeconds", event.target.value)}
-                  className="input-shell"
-                  inputMode="numeric"
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Verification repair passes</span>
-                <input
-                  value={draft.maxVerificationAttempts}
-                  onChange={(event) => updateField("maxVerificationAttempts", event.target.value)}
-                  className="input-shell"
-                  inputMode="numeric"
-                />
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Max runtime (minutes)</span>
-                <input
-                  value={draft.maxJobRuntimeMinutes}
-                  onChange={(event) => updateField("maxJobRuntimeMinutes", event.target.value)}
-                  className="input-shell"
-                  inputMode="numeric"
-                />
-              </label>
-            </div>
-
+          <div
+            style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+          >
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>Allowed workspace roots</span>
-              <textarea
-                value={draft.allowedWorkspaceRoots}
-                onChange={(event) => updateField("allowedWorkspaceRoots", event.target.value)}
-                className="textarea-shell"
-                rows={4}
-                placeholder={"One root per line, e.g. /home/user/projects\nThe repo root is included by default. Blank means deny-all."}
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Default workspace path</span>
+              <input
+                value={draft.defaultWorkspacePath}
+                onChange={(event) => updateField("defaultWorkspacePath", event.target.value)}
+                className="input-shell"
               />
             </label>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              <ToggleField
-                checked={draft.allowNetworkAccess}
-                onChange={(checked) => updateField("allowNetworkAccess", checked)}
-                label="Allow network access"
-                hint="Controls installs, remote fetches, and network-heavy verification."
-              />
-              <ToggleField
-                checked={draft.browserVerificationEnabled}
-                onChange={(checked) => updateField("browserVerificationEnabled", checked)}
-                label="Enable browser verification"
-                hint="Allow browser-based verification passes when the stack supports them."
-              />
-              <ToggleField
-                checked={draft.redactSecretsInArtifacts}
-                onChange={(checked) => updateField("redactSecretsInArtifacts", checked)}
-                label="Redact secrets in artifacts"
-                hint="Mask obvious credentials from command logs and saved evidence."
-              />
-            </div>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Default access mode</span>
+              <select
+                value={draft.defaultApprovalMode}
+                onChange={(event) =>
+                  updateField("defaultApprovalMode", event.target.value as AgentJobApprovalMode)
+                }
+                className="input-shell"
+              >
+                <option value="restrictive">Restrictive</option>
+                <option value="builder">Builder</option>
+                <option value="full_access">YOLO / Full access</option>
+              </select>
+            </label>
 
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" className="button-primary" disabled={isSaving} onClick={() => void saveSettings()}>
-                {isSaving ? "Saving..." : "Save agent defaults"}
-              </button>
-            </div>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Execution backend</span>
+              <select
+                value={draft.executionBackend}
+                onChange={(event) =>
+                  updateField("executionBackend", event.target.value as AgentExecutionBackend)
+                }
+                className="input-shell"
+              >
+                <option value="host_native">Host native shell</option>
+                <option value="wsl_bash">WSL bash</option>
+                <option value="docker_sandbox">Docker sandbox</option>
+              </select>
+            </label>
+          </div>
+
+          <div
+            style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+          >
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Max agent steps</span>
+              <input
+                value={draft.maxAgentSteps}
+                onChange={(event) => updateField("maxAgentSteps", event.target.value)}
+                className="input-shell"
+                inputMode="numeric"
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Command timeout (seconds)</span>
+              <input
+                value={draft.maxCommandTimeoutSeconds}
+                onChange={(event) => updateField("maxCommandTimeoutSeconds", event.target.value)}
+                className="input-shell"
+                inputMode="numeric"
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                Verification repair passes
+              </span>
+              <input
+                value={draft.maxVerificationAttempts}
+                onChange={(event) => updateField("maxVerificationAttempts", event.target.value)}
+                className="input-shell"
+                inputMode="numeric"
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Max runtime (minutes)</span>
+              <input
+                value={draft.maxJobRuntimeMinutes}
+                onChange={(event) => updateField("maxJobRuntimeMinutes", event.target.value)}
+                className="input-shell"
+                inputMode="numeric"
+              />
+            </label>
+          </div>
+
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>Allowed workspace roots</span>
+            <textarea
+              value={draft.allowedWorkspaceRoots}
+              onChange={(event) => updateField("allowedWorkspaceRoots", event.target.value)}
+              className="textarea-shell"
+              rows={4}
+              placeholder={
+                "One root per line, e.g. /home/user/projects\nThe repo root is included by default. Blank means deny-all."
+              }
+            />
+          </label>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            <ToggleField
+              checked={draft.allowNetworkAccess}
+              onChange={(checked) => updateField("allowNetworkAccess", checked)}
+              label="Allow network access"
+              hint="Controls installs, remote fetches, and network-heavy verification."
+            />
+            <ToggleField
+              checked={draft.browserVerificationEnabled}
+              onChange={(checked) => updateField("browserVerificationEnabled", checked)}
+              label="Enable browser verification"
+              hint="Allow browser-based verification passes when the stack supports them."
+            />
+            <ToggleField
+              checked={draft.redactSecretsInArtifacts}
+              onChange={(checked) => updateField("redactSecretsInArtifacts", checked)}
+              label="Redact secrets in artifacts"
+              hint="Mask obvious credentials from command logs and saved evidence."
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="button-primary"
+              disabled={isSaving}
+              onClick={() => void saveSettings()}
+            >
+              {isSaving ? "Saving..." : "Save agent defaults"}
+            </button>
+          </div>
         </div>
       </SurfaceCard>
     </div>

@@ -1,12 +1,18 @@
-import { createMessageId, createTraceId, type HeartbeatIntegrationStatusResponse, type HeartbeatRunResponse, type UpdateHeartbeatIntegrationRequest } from "@secretary/core-runtime";
 import type { AppConfig } from "@secretary/config";
-import { activityTraces, conversations, integrations, type DbClient } from "@secretary/db";
-import type { Infrastructure } from "./infrastructure.js";
+import {
+  createMessageId,
+  createTraceId,
+  type HeartbeatIntegrationStatusResponse,
+  type HeartbeatRunResponse,
+  type UpdateHeartbeatIntegrationRequest,
+} from "@secretary/core-runtime";
+import { activityTraces, conversations, type DbClient, integrations } from "@secretary/db";
 import { eq } from "drizzle-orm";
 import {
   deliverImportantUpdateToEnabledChannels,
   deliverRuntimeMessage,
 } from "./channel-delivery.js";
+import type { Infrastructure } from "./infrastructure.js";
 import { enqueueTurnMemoryFollowup, processRuntimeTurn } from "./turn-orchestrator.js";
 
 const heartbeatIntegrationId = "heartbeat";
@@ -55,10 +61,7 @@ function computeNextRunAt(intervalMinutes: number, from = new Date()) {
   return new Date(from.getTime() + intervalMinutes * 60 * 1000);
 }
 
-async function ensureHeartbeatIntegrationRecord(
-  dbClient: DbClient,
-  config: AppConfig,
-) {
+async function ensureHeartbeatIntegrationRecord(dbClient: DbClient, _config: AppConfig) {
   await dbClient.db
     .insert(integrations)
     .values({
@@ -167,12 +170,11 @@ export async function getHeartbeatIntegrationStatus(
   return {
     integration: {
       enabled: record.enabled,
-      healthStatus:
-        record.enabled
-          ? record.healthStatus === "degraded"
-            ? "degraded"
-            : "ok"
-          : "disabled",
+      healthStatus: record.enabled
+        ? record.healthStatus === "degraded"
+          ? "degraded"
+          : "ok"
+        : "disabled",
       healthSummary: toHeartbeatSummary({
         enabled: record.enabled,
         config: heartbeatConfig,
@@ -206,7 +208,7 @@ export async function updateHeartbeatIntegrationSettings(params: {
         : currentConfig.intervalMinutes,
     prompt:
       params.patch.prompt !== undefined
-        ? (params.patch.prompt?.trim() || defaultHeartbeatPrompt)
+        ? params.patch.prompt?.trim() || defaultHeartbeatPrompt
         : currentConfig.prompt,
     nextRunAt: currentConfig.nextRunAt,
   };

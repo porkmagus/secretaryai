@@ -1,4 +1,4 @@
-import { createClient, readJson, settingsTables } from "./snapshot-utils.mjs";
+import { createClient, readJson } from "./snapshot-utils.mjs";
 
 const databaseUrl = process.env.DATABASE_URL;
 const inputFile = process.env.IMPORT_INPUT_FILE ?? process.argv[2];
@@ -150,8 +150,6 @@ try {
   }
 
   await client.query("commit");
-
-  console.log(JSON.stringify({ importedFrom: inputFile }, null, 2));
 } catch (error) {
   await client.query("rollback").catch(() => undefined);
   throw error;

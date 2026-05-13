@@ -1,16 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import type {
-  ToolApprovalMode,
   ToolApprovalDecisionResponse,
+  ToolApprovalMode,
   ToolExecutionListResponse,
   ToolExecutionRecord,
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
-import { ActionRow, AppPage, EmptyState, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard, ToggleField } from "../lib/ui";
+import { useEffect, useMemo, useState } from "react";
 import { formatTimestamp, formatTracePayload, snippet } from "../lib/presenters";
+import {
+  ActionRow,
+  AppPage,
+  EmptyState,
+  LoadingSurface,
+  NoticeBanner,
+  StatCard,
+  StatGrid,
+  SurfaceCard,
+  ToggleField,
+} from "../lib/ui";
 
 type EditableTool = {
   approvalMode: ToolApprovalMode;
@@ -233,7 +243,7 @@ export function ToolsConsole() {
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
 
   async function saveTool(tool: ToolRecord) {
     const draft = drafts[tool.id];
@@ -294,9 +304,7 @@ export function ToolsConsole() {
       await load();
     } catch (decisionError) {
       setError(
-        decisionError instanceof Error
-          ? decisionError.message
-          : "Unable to update approval.",
+        decisionError instanceof Error ? decisionError.message : "Unable to update approval.",
       );
     } finally {
       setDecisionId(null);
@@ -342,9 +350,7 @@ export function ToolsConsole() {
       }
       await load();
     } catch (applyError) {
-      setError(
-        applyError instanceof Error ? applyError.message : "Unable to apply access preset.",
-      );
+      setError(applyError instanceof Error ? applyError.message : "Unable to apply access preset.");
     } finally {
       setPresetBusy(null);
     }
@@ -356,8 +362,7 @@ export function ToolsConsole() {
         .filter((tool) => {
           const draft = drafts[tool.id];
           return (
-            draft &&
-            (draft.approvalMode !== tool.approvalMode || draft.enabled !== tool.enabled)
+            draft && (draft.approvalMode !== tool.approvalMode || draft.enabled !== tool.enabled)
           );
         })
         .map((tool) => tool.id),
@@ -426,9 +431,7 @@ export function ToolsConsole() {
       .filter((entry) => entry.tools.length > 0);
   }, [tools]);
 
-  const pending = filteredExecutions.filter(
-    (execution) => execution.approvalState === "pending",
-  );
+  const pending = filteredExecutions.filter((execution) => execution.approvalState === "pending");
   const selectedTool = tools.find((tool) => tool.id === selectedToolId) ?? tools[0] ?? null;
   const selectedDraft = selectedTool ? drafts[selectedTool.id] : null;
   const selectedExecution =
@@ -458,14 +461,43 @@ export function ToolsConsole() {
       <SurfaceCard
         tone="dark"
         title="Tools"
-        description={<p>Set the rules once, keep approvals calm, and only dive into audit detail when something actually matters.</p>}
+        description={
+          <p>
+            Set the rules once, keep approvals calm, and only dive into audit detail when something
+            actually matters.
+          </p>
+        }
       >
         <div className="stack-md">
           <StatGrid>
-            <StatCard label="Pending" value={String(pending.length)} detail="Approvals currently waiting" tone="soft" />
-            <StatCard label="Completed" value={String(executions.filter((execution) => execution.executionStatus === "completed").length)} detail="Recent successful runs" tone="soft" />
-            <StatCard label="Failures" value={String(executions.filter((execution) => execution.executionStatus === "failed").length)} detail="Runs that need a closer look" tone="soft" />
-            <StatCard label="Dirty" value={String(dirtyToolIds.length)} detail="Policies changed but not yet saved" tone="soft" />
+            <StatCard
+              label="Pending"
+              value={String(pending.length)}
+              detail="Approvals currently waiting"
+              tone="soft"
+            />
+            <StatCard
+              label="Completed"
+              value={String(
+                executions.filter((execution) => execution.executionStatus === "completed").length,
+              )}
+              detail="Recent successful runs"
+              tone="soft"
+            />
+            <StatCard
+              label="Failures"
+              value={String(
+                executions.filter((execution) => execution.executionStatus === "failed").length,
+              )}
+              detail="Runs that need a closer look"
+              tone="soft"
+            />
+            <StatCard
+              label="Dirty"
+              value={String(dirtyToolIds.length)}
+              detail="Policies changed but not yet saved"
+              tone="soft"
+            />
           </StatGrid>
           <div className="persona-action-cluster">
             {(["restrictive", "full_access"] as const).map((preset) => (
@@ -502,10 +534,8 @@ export function ToolsConsole() {
         </p>
       </SurfaceCard>
 
-      {(error || statusMessage) ? (
-        <NoticeBanner tone={error ? "error" : "success"}>
-          {error ?? statusMessage}
-        </NoticeBanner>
+      {error || statusMessage ? (
+        <NoticeBanner tone={error ? "error" : "success"}>{error ?? statusMessage}</NoticeBanner>
       ) : null}
 
       <section className="inspector-grid">
@@ -513,7 +543,12 @@ export function ToolsConsole() {
           <SurfaceCard
             tone="dark"
             title="Tool navigator"
-            description={<p>Pick a capability group, inspect one tool policy, and keep approvals in the same lane.</p>}
+            description={
+              <p>
+                Pick a capability group, inspect one tool policy, and keep approvals in the same
+                lane.
+              </p>
+            }
             className="stack-sm"
           >
             <ActionRow align="between">
@@ -539,8 +574,17 @@ export function ToolsConsole() {
                   {pending.slice(0, 3).map((execution) => (
                     <div key={execution.id} style={{ display: "grid", gap: 8, padding: "10px 0" }}>
                       <div>
-                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>{execution.toolName}</p>
-                        <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>
+                          {execution.toolName}
+                        </p>
+                        <p
+                          style={{
+                            margin: "4px 0 0",
+                            color: "var(--muted)",
+                            fontSize: 12,
+                            lineHeight: 1.45,
+                          }}
+                        >
                           {snippet(execution.summary, 100)}
                         </p>
                       </div>
@@ -634,7 +678,6 @@ export function ToolsConsole() {
               ))}
             </div>
           </SurfaceCard>
-
         </aside>
 
         <div className="inspector-panel">
@@ -642,7 +685,12 @@ export function ToolsConsole() {
             <SurfaceCard>
               <EmptyState
                 title="Choose a tool to tune"
-                description={<p>Pick anything from the navigator to inspect its policy, health, and recent execution trail.</p>}
+                description={
+                  <p>
+                    Pick anything from the navigator to inspect its policy, health, and recent
+                    execution trail.
+                  </p>
+                }
               />
             </SurfaceCard>
           ) : (
@@ -650,7 +698,12 @@ export function ToolsConsole() {
               <SurfaceCard
                 tone="dark"
                 title="Selected tool"
-                description={<p>Edit the live policy here, then drop into execution history only when you need the audit trail.</p>}
+                description={
+                  <p>
+                    Edit the live policy here, then drop into execution history only when you need
+                    the audit trail.
+                  </p>
+                }
                 className="stack-sm"
               >
                 <div
@@ -665,7 +718,11 @@ export function ToolsConsole() {
                   <div className="stack-sm" style={{ gap: 6 }}>
                     <p
                       className="eyebrow"
-                      style={{ marginBottom: 0, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                      style={{
+                        marginBottom: 0,
+                        color: "var(--accent-strong)",
+                        letterSpacing: "0.08em",
+                      }}
                     >
                       {toolGroupLabel(selectedTool)}
                     </p>
@@ -702,7 +759,19 @@ export function ToolsConsole() {
                     alignItems: "center",
                   }}
                 >
-                  <label htmlFor="policy-approval-mode" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                  <label
+                    htmlFor="policy-approval-mode"
+                    style={{
+                      position: "absolute",
+                      width: 1,
+                      height: 1,
+                      padding: 0,
+                      margin: -1,
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      border: 0,
+                    }}
+                  >
                     Approval mode
                   </label>
                   <select
@@ -740,7 +809,8 @@ export function ToolsConsole() {
                 </div>
 
                 <p style={{ margin: 0, color: "var(--muted)", fontSize: 14, lineHeight: 1.55 }}>
-                  {approvalModeLabel(selectedDraft.approvalMode)}: {approvalModeHint(selectedDraft.approvalMode)}
+                  {approvalModeLabel(selectedDraft.approvalMode)}:{" "}
+                  {approvalModeHint(selectedDraft.approvalMode)}
                   {!selectedDraft.enabled ? " This tool is disabled and will not execute." : ""}
                 </p>
 
@@ -773,17 +843,35 @@ export function ToolsConsole() {
 
               <SurfaceCard
                 title="Execution browser"
-                description={<p>Filter recent runs, then inspect the payloads only for the execution you care about.</p>}
+                description={
+                  <p>
+                    Filter recent runs, then inspect the payloads only for the execution you care
+                    about.
+                  </p>
+                }
                 className="stack-md"
               >
                 <div
                   style={{
                     display: "grid",
                     gap: 10,
-                    gridTemplateColumns: "minmax(0, 1.2fr) minmax(180px, 220px) minmax(160px, 180px)",
+                    gridTemplateColumns:
+                      "minmax(0, 1.2fr) minmax(180px, 220px) minmax(160px, 180px)",
                   }}
                 >
-                  <label htmlFor="execution-search" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                  <label
+                    htmlFor="execution-search"
+                    style={{
+                      position: "absolute",
+                      width: 1,
+                      height: 1,
+                      padding: 0,
+                      margin: -1,
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      border: 0,
+                    }}
+                  >
                     Search executions
                   </label>
                   <input
@@ -792,7 +880,19 @@ export function ToolsConsole() {
                     onChange={(event) => setFilterText(event.target.value)}
                     placeholder="Search tool, summary, request, or error"
                   />
-                  <label htmlFor="execution-tool-filter" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                  <label
+                    htmlFor="execution-tool-filter"
+                    style={{
+                      position: "absolute",
+                      width: 1,
+                      height: 1,
+                      padding: 0,
+                      margin: -1,
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      border: 0,
+                    }}
+                  >
                     Filter by tool
                   </label>
                   <select
@@ -807,7 +907,19 @@ export function ToolsConsole() {
                       </option>
                     ))}
                   </select>
-                  <label htmlFor="execution-state-filter" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", border: 0 }}>
+                  <label
+                    htmlFor="execution-state-filter"
+                    style={{
+                      position: "absolute",
+                      width: 1,
+                      height: 1,
+                      padding: 0,
+                      margin: -1,
+                      overflow: "hidden",
+                      clip: "rect(0, 0, 0, 0)",
+                      border: 0,
+                    }}
+                  >
                     Filter by state
                   </label>
                   <select
@@ -826,7 +938,12 @@ export function ToolsConsole() {
                 {filteredExecutions.length === 0 ? (
                   <EmptyState
                     title="No executions match these filters"
-                    description={<p>Widen the filters or pick another tool if you want to inspect older approvals and runs.</p>}
+                    description={
+                      <p>
+                        Widen the filters or pick another tool if you want to inspect older
+                        approvals and runs.
+                      </p>
+                    }
                   />
                 ) : (
                   <>
@@ -866,7 +983,9 @@ export function ToolsConsole() {
                                 <p style={{ margin: 0, fontWeight: 700, fontSize: 14 }}>
                                   {execution.toolName}
                                 </p>
-                                <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
+                                <p
+                                  style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}
+                                >
                                   {formatTimestamp(execution.createdAt)}
                                 </p>
                               </div>
@@ -885,7 +1004,14 @@ export function ToolsConsole() {
                                 {execution.executionStatus}
                               </span>
                             </div>
-                            <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                            <p
+                              style={{
+                                margin: "6px 0 0",
+                                color: "var(--muted)",
+                                fontSize: 12,
+                                lineHeight: 1.45,
+                              }}
+                            >
                               {snippet(execution.summary, 140)}
                             </p>
                           </button>
@@ -906,11 +1032,17 @@ export function ToolsConsole() {
                           <div>
                             <p
                               className="eyebrow"
-                              style={{ marginBottom: 6, color: "var(--accent-strong)", letterSpacing: "0.08em" }}
+                              style={{
+                                marginBottom: 6,
+                                color: "var(--accent-strong)",
+                                letterSpacing: "0.08em",
+                              }}
                             >
                               {selectedExecution.toolKey}
                             </p>
-                            <h2 style={{ margin: 0, fontSize: 22 }}>{selectedExecution.toolName}</h2>
+                            <h2 style={{ margin: 0, fontSize: 22 }}>
+                              {selectedExecution.toolName}
+                            </h2>
                           </div>
                           <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
                             {formatTimestamp(selectedExecution.createdAt)}
@@ -922,27 +1054,54 @@ export function ToolsConsole() {
                         </p>
 
                         <div style={{ display: "grid", gap: 6 }}>
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: "var(--muted)",
+                            }}
+                          >
                             Request
                           </p>
-                          <pre className="activity-trace-detail" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                          <pre
+                            className="activity-trace-detail"
+                            style={{ margin: 0, whiteSpace: "pre-wrap" }}
+                          >
                             {formatRequest(selectedExecution.requestJson)}
                           </pre>
                         </div>
 
                         {selectedExecution.responseJson ? (
                           <div style={{ display: "grid", gap: 6 }}>
-                            <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "var(--muted)" }}>
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: "var(--muted)",
+                              }}
+                            >
                               Result
                             </p>
-                            <pre className="activity-trace-detail" style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                            <pre
+                              className="activity-trace-detail"
+                              style={{ margin: 0, whiteSpace: "pre-wrap" }}
+                            >
                               {formatTracePayload(selectedExecution.responseJson)}
                             </pre>
                           </div>
                         ) : null}
 
                         {selectedExecution.errorText ? (
-                          <p style={{ margin: 0, color: "var(--danger)", fontSize: 13, lineHeight: 1.5 }}>
+                          <p
+                            style={{
+                              margin: 0,
+                              color: "var(--danger)",
+                              fontSize: 13,
+                              lineHeight: 1.5,
+                            }}
+                          >
                             {selectedExecution.errorText}
                           </p>
                         ) : null}

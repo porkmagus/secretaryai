@@ -1,17 +1,12 @@
 import type { AppConfig } from "@secretary/config";
-import {
-  activityTraces,
-  conversations,
-  messages,
-  type DbClient,
-} from "@secretary/db";
 import { createMessageId } from "@secretary/core-runtime";
+import { activityTraces, conversations, type DbClient, messages } from "@secretary/db";
 import { eq } from "drizzle-orm";
-import { attachExternalMessageIdToMessage } from "./chat-persistence.js";
 import {
   deliverImportantUpdateToEnabledChannels,
   deliverRuntimeMessage,
 } from "./channel-delivery.js";
+import { attachExternalMessageIdToMessage } from "./chat-persistence.js";
 
 type PostAgentJobConversationUpdateParams = {
   dbClient: DbClient;
@@ -28,9 +23,7 @@ export function buildAgentJobLocationHint(jobId: string) {
   return `Open Activity > Jobs and select ${jobId} for the full detail.`;
 }
 
-export async function postAgentJobConversationUpdate(
-  params: PostAgentJobConversationUpdateParams,
-) {
+export async function postAgentJobConversationUpdate(params: PostAgentJobConversationUpdateParams) {
   if (!params.conversationId) {
     return null;
   }
@@ -106,11 +99,7 @@ export async function postAgentJobConversationUpdate(
       });
 
       if (delivery.delivered && delivery.externalRef) {
-        await attachExternalMessageIdToMessage(
-          params.dbClient,
-          messageId,
-          delivery.externalRef,
-        );
+        await attachExternalMessageIdToMessage(params.dbClient, messageId, delivery.externalRef);
       }
     } catch {
       // Keep lifecycle updates durable even when an external chat channel is unavailable.

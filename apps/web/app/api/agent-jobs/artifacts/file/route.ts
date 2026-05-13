@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
 function getWorkerBaseUrl() {
   return process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";

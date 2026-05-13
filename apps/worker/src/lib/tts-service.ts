@@ -53,9 +53,7 @@ export async function synthesizeSpeech(params: {
 
   const durationHeader = response.headers.get("x-secretary-duration-ms");
   const durationMs =
-    durationHeader && durationHeader.trim().length > 0
-      ? Number(durationHeader)
-      : null;
+    durationHeader && durationHeader.trim().length > 0 ? Number(durationHeader) : null;
 
   return {
     audio: Buffer.from(await response.arrayBuffer()),

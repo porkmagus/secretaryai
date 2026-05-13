@@ -17,9 +17,7 @@ const dockerDesktopBin =
   process.platform === "win32" && dockerDesktopExe ? dirname(dockerDesktopExe) : null;
 
 if (!existsSync(envFile)) {
-  throw new Error(
-    "Deployment env file is missing. Copy .env.deploy.example to .env.deploy first.",
-  );
+  throw new Error("Deployment env file is missing. Copy .env.deploy.example to .env.deploy first.");
 }
 
 function hasCommand(command) {

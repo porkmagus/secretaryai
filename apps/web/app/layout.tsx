@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Secretary Workspace",
-  description: "Desk, onboarding, health, persona, memory, activity, tools, channels, and voice surfaces for the Secretary-first assistant.",
+  description:
+    "Desk, onboarding, health, persona, memory, activity, tools, channels, and voice surfaces for the Secretary-first assistant.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
@@ -19,9 +20,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const authEnabled = isSingleUserAuthEnabled();
 
   return (

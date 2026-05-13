@@ -1,16 +1,11 @@
-import { and, asc, desc, eq, isNull, lte, or, not } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
-import {
-  activityTraces,
-  integrations,
-  tasks,
-  type DbClient,
-} from "@secretary/db";
 import {
   createMessageId,
   type OutboundChannelKey,
   type TelegramReminderDispatchResponse,
 } from "@secretary/core-runtime";
+import { activityTraces, type DbClient, integrations, tasks } from "@secretary/db";
+import { and, asc, desc, eq, isNull, lte, not, or } from "drizzle-orm";
 import {
   sendConfiguredDiscordMessage,
   sendConfiguredEmail,
@@ -63,9 +58,7 @@ async function recordDeliveryTrace(params: {
   });
 }
 
-async function listEnabledOutboundChannels(
-  dbClient: DbClient,
-): Promise<OutboundChannelKey[]> {
+async function listEnabledOutboundChannels(dbClient: DbClient): Promise<OutboundChannelKey[]> {
   const rows = await dbClient.db.query.integrations.findMany({
     where: and(
       eq(integrations.enabled, true),
@@ -81,8 +74,9 @@ async function listEnabledOutboundChannels(
 
   return rows
     .map((row) => row.integrationType)
-    .filter((value): value is OutboundChannelKey =>
-      value === "discord" || value === "slack" || value === "email" || value === "sms",
+    .filter(
+      (value): value is OutboundChannelKey =>
+        value === "discord" || value === "slack" || value === "email" || value === "sms",
     );
 }
 
@@ -103,9 +97,7 @@ async function resolveStoredRecipient(params: {
   return candidate;
 }
 
-export async function deliverRuntimeMessage(
-  params: DeliverRuntimeMessageParams,
-) {
+export async function deliverRuntimeMessage(params: DeliverRuntimeMessageParams) {
   switch (params.channelType) {
     case "telegram": {
       const delivery = await maybeDeliverTelegramAssistantMessage({
@@ -124,8 +116,8 @@ export async function deliverRuntimeMessage(
       return {
         delivered: delivery.delivered,
         reason: delivery.delivered ? null : delivery.reason,
-        externalRef: delivery.delivered ? delivery.sentMessageIds[0] ?? null : null,
-        deliveredTo: delivery.delivered ? delivery.chatId : params.recipient ?? null,
+        externalRef: delivery.delivered ? (delivery.sentMessageIds[0] ?? null) : null,
+        deliveredTo: delivery.delivered ? delivery.chatId : (params.recipient ?? null),
       } as const;
     }
     case "discord": {
@@ -251,7 +243,11 @@ export async function deliverImportantUpdateToEnabledChannels(params: {
   traceId: string;
 }) {
   const channels = await listEnabledOutboundChannels(params.dbClient);
-  const results: Array<{ channelType: OutboundChannelKey; delivered: boolean; detail: string | null }> = [];
+  const results: Array<{
+    channelType: OutboundChannelKey;
+    delivered: boolean;
+    detail: string | null;
+  }> = [];
 
   for (const channelType of channels) {
     try {

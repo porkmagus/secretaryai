@@ -1,20 +1,9 @@
-import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
-  activityTraces,
-  jobs,
-  memoryEntries,
-  memoryLinks,
-  tasks,
-  type DbClient,
-} from "@secretary/db";
-import {
-  createMessageId,
   type ActivityTraceResponse,
+  createMessageId,
   type InferenceProviderId,
   type MemoryCandidateJobPayload,
-
   type MemoryListResponse,
-
   type MemoryRecord,
   type MemoryType,
   type RuntimeMemoryContextItem,
@@ -24,14 +13,18 @@ import {
   type UpdateMemoryRequest,
 } from "@secretary/core-runtime";
 import {
-  buildTaskDraft,
-  normalizeTaskTitle,
-  titleCase,
-} from "./task-runtime.js";
-import { cleanText, logMemoryRetrieval } from "./utils/index.js";
+  activityTraces,
+  type DbClient,
+  jobs,
+  memoryEntries,
+  memoryLinks,
+  tasks,
+} from "@secretary/db";
 import { generateText } from "ai";
-import { resolveInferenceLanguageModel, type InferenceRuntimeConfig } from "./ai-sdk-registry.js";
-
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { type InferenceRuntimeConfig, resolveInferenceLanguageModel } from "./ai-sdk-registry.js";
+import { buildTaskDraft, normalizeTaskTitle, titleCase } from "./task-runtime.js";
+import { cleanText, logMemoryRetrieval } from "./utils/index.js";
 
 type MemoryCandidate = {
   memoryType: MemoryType;
@@ -177,7 +170,11 @@ function extractProjectMemory(text: string): MemoryCandidate[] {
 }
 
 function extractOperationalMemory(text: string): MemoryCandidate[] {
-  if (!/\b(repo|docker|postgres|redis|worker|desk|phase|codebase|database|server|api|endpoint|config|deploy|pipeline|workflow)\b/i.test(text)) {
+  if (
+    !/\b(repo|docker|postgres|redis|worker|desk|phase|codebase|database|server|api|endpoint|config|deploy|pipeline|workflow)\b/i.test(
+      text,
+    )
+  ) {
     return [];
   }
 
@@ -197,9 +194,7 @@ function extractOperationalMemory(text: string): MemoryCandidate[] {
 
 function extractPersonalFactMemory(text: string): MemoryCandidate[] {
   // "My X is Y" / "The X is Y" patterns — personal attributes
-  const factMatch = text.match(
-    /\b(?:my|the)\s+([a-z][a-z ]{1,24})\s+is\s+([^.!?]{4,60})/i,
-  );
+  const factMatch = text.match(/\b(?:my|the)\s+([a-z][a-z ]{1,24})\s+is\s+([^.!?]{4,60})/i);
   if (!factMatch) {
     return [];
   }
@@ -208,7 +203,19 @@ function extractPersonalFactMemory(text: string): MemoryCandidate[] {
   const value = cleanText(factMatch[2]).replace(/[.?!]+$/g, "");
 
   // Reject noise attributes
-  const skipAttributes = new Set(["question", "answer", "guess", "point", "thing", "issue", "result", "problem", "plan", "reason", "idea"]);
+  const skipAttributes = new Set([
+    "question",
+    "answer",
+    "guess",
+    "point",
+    "thing",
+    "issue",
+    "result",
+    "problem",
+    "plan",
+    "reason",
+    "idea",
+  ]);
   if (skipAttributes.has(attribute) || attribute.length < 2) {
     return [];
   }
@@ -229,15 +236,11 @@ function extractPersonalFactMemory(text: string): MemoryCandidate[] {
 
 function extractRelationshipMemory(text: string): MemoryCandidate[] {
   // "X is my Y" or "my Y X" or "my Y is named X"
-  const patternA = text.match(
-    /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+is\s+my\s+([a-z][a-z ]{2,24})/,
-  );
+  const patternA = text.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+is\s+my\s+([a-z][a-z ]{2,24})/);
   const patternB = text.match(
     /\bmy\s+([a-z][a-z ]{2,24})(?:'s name)?\s+is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/,
   );
-  const patternC = text.match(
-    /\bmy\s+([a-z][a-z ]{2,24})\s+([A-Z][a-z]+)(?:\s+[A-Z][a-z]+)?\b/,
-  );
+  const patternC = text.match(/\bmy\s+([a-z][a-z ]{2,24})\s+([A-Z][a-z]+)(?:\s+[A-Z][a-z]+)?\b/);
 
   const match = patternA ?? patternB ?? patternC;
   if (!match) {
@@ -261,9 +264,38 @@ function extractRelationshipMemory(text: string): MemoryCandidate[] {
   }
 
   const roleNormalized = role.toLowerCase().trim();
-  const validRoles = new Set(["wife", "husband", "partner", "girlfriend", "boyfriend", "son", "daughter", "sister", "brother", "mother", "father", "mom", "dad", "friend", "boss", "colleague", "manager", "coworker", "assistant", "mentor", "client", "cousin", "uncle", "aunt"]);
+  const validRoles = new Set([
+    "wife",
+    "husband",
+    "partner",
+    "girlfriend",
+    "boyfriend",
+    "son",
+    "daughter",
+    "sister",
+    "brother",
+    "mother",
+    "father",
+    "mom",
+    "dad",
+    "friend",
+    "boss",
+    "colleague",
+    "manager",
+    "coworker",
+    "assistant",
+    "mentor",
+    "client",
+    "cousin",
+    "uncle",
+    "aunt",
+  ]);
 
-  if (!validRoles.has(roleNormalized) && !roleNormalized.includes("project manager") && !roleNormalized.includes("team")) {
+  if (
+    !validRoles.has(roleNormalized) &&
+    !roleNormalized.includes("project manager") &&
+    !roleNormalized.includes("team")
+  ) {
     return [];
   }
 
@@ -282,13 +314,14 @@ function extractRelationshipMemory(text: string): MemoryCandidate[] {
 }
 
 function extractScheduleMemory(text: string): MemoryCandidate[] {
-  const scheduleMatch = text.match(
-    /\b(?:every|each)\s+([a-z]+(?:\s+and\s+[a-z]+)?(?:\s+at\s+[\d:]+ ?(?:am|pm)?)?)\b/i,
-  ) ?? text.match(
-    /\b(?:the\s+)?(?:standup|meeting|sync|call|check.?in|session|class|workout|run)\s+is\s+(?:every|on|at)\s+(.+)/i,
-  ) ?? text.match(
-    /\b(?:i\s+)?(?:usually|always|normally|typically)\s+([a-z][^.!?]{6,60})/i,
-  );
+  const scheduleMatch =
+    text.match(
+      /\b(?:every|each)\s+([a-z]+(?:\s+and\s+[a-z]+)?(?:\s+at\s+[\d:]+ ?(?:am|pm)?)?)\b/i,
+    ) ??
+    text.match(
+      /\b(?:the\s+)?(?:standup|meeting|sync|call|check.?in|session|class|workout|run)\s+is\s+(?:every|on|at)\s+(.+)/i,
+    ) ??
+    text.match(/\b(?:i\s+)?(?:usually|always|normally|typically)\s+([a-z][^.!?]{6,60})/i);
 
   if (!scheduleMatch) {
     return [];
@@ -323,7 +356,18 @@ function extractToolSoftwareMemory(text: string): MemoryCandidate[] {
 
   const toolText = cleanText(toolMatch[1]).replace(/[.?!,]+$/g, "");
   // Filter out noise
-  const noiseWords = new Set(["it", "that", "this", "them", "these", "those", "him", "her", "me", "you"]);
+  const noiseWords = new Set([
+    "it",
+    "that",
+    "this",
+    "them",
+    "these",
+    "those",
+    "him",
+    "her",
+    "me",
+    "you",
+  ]);
   if (noiseWords.has(toolText.toLowerCase()) || toolText.length < 2) {
     return [];
   }
@@ -470,7 +514,10 @@ If nothing meaningful is found, return [].`,
       prompt: params.text,
     });
 
-    const cleaned = jsonResponse.trim().replace(/^```json/, "").replace(/```$/, "");
+    const cleaned = jsonResponse
+      .trim()
+      .replace(/^```json/, "")
+      .replace(/```$/, "");
     const parsed = JSON.parse(cleaned);
 
     if (!Array.isArray(parsed)) {
@@ -482,8 +529,7 @@ If nothing meaningful is found, return [].`,
       contentText: params.text,
       canonicalKey: `${item.memoryType}:ai:${item.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     }));
-  } catch (err) {
-    console.error("AI Memory Extraction Failed:", err);
+  } catch (_err) {
     return [];
   }
 }
@@ -513,7 +559,6 @@ async function extractMemoryCandidates(params: {
     specificCandidates.push(...aiCandidates);
   }
 
-
   // Deduplicate by canonicalKey, keeping highest importanceScore per key
   const byKey = new Map<string, MemoryCandidate>();
   for (const candidate of specificCandidates) {
@@ -526,9 +571,7 @@ async function extractMemoryCandidates(params: {
   return [...byKey.values()];
 }
 
-function toMemoryRecord(
-  record: typeof memoryEntries.$inferSelect,
-): MemoryRecord {
+function toMemoryRecord(record: typeof memoryEntries.$inferSelect): MemoryRecord {
   return {
     id: record.id,
     memoryType: record.memoryType as MemoryType,
@@ -633,7 +676,11 @@ export async function listMemories(
   },
 ): Promise<MemoryListResponse> {
   const records = await dbClient.db.query.memoryEntries.findMany({
-    orderBy: [desc(memoryEntries.pinned), desc(memoryEntries.importanceScore), desc(memoryEntries.updatedAt)],
+    orderBy: [
+      desc(memoryEntries.pinned),
+      desc(memoryEntries.importanceScore),
+      desc(memoryEntries.updatedAt),
+    ],
     limit: 200,
   });
 
@@ -697,7 +744,10 @@ export async function listTasksForUser(
   userId: string,
 ): Promise<TaskListResponse> {
   const records = await dbClient.db.query.tasks.findMany({
-    where: and(eq(tasks.userId, userId), or(eq(tasks.status, "open"), eq(tasks.status, "in_progress"))),
+    where: and(
+      eq(tasks.userId, userId),
+      or(eq(tasks.status, "open"), eq(tasks.status, "in_progress")),
+    ),
     orderBy: [asc(tasks.reminderAt), asc(tasks.dueAt), desc(tasks.createdAt)],
     limit: 25,
   });
@@ -729,14 +779,15 @@ export async function getConversationActivity(
   };
 }
 
-export async function retrieveRelevantMemories(
-  dbClient: DbClient,
-  queryText: string,
-) {
+export async function retrieveRelevantMemories(dbClient: DbClient, queryText: string) {
   const startTime = performance.now();
   const records = await dbClient.db.query.memoryEntries.findMany({
     where: eq(memoryEntries.suppressed, false),
-    orderBy: [desc(memoryEntries.pinned), desc(memoryEntries.importanceScore), desc(memoryEntries.updatedAt)],
+    orderBy: [
+      desc(memoryEntries.pinned),
+      desc(memoryEntries.importanceScore),
+      desc(memoryEntries.updatedAt),
+    ],
     limit: 200,
   });
 
@@ -744,18 +795,30 @@ export async function retrieveRelevantMemories(
   const now = Date.now();
 
   // Detect query context signals for type-specific boosting
-  const queryHasPersonSignal = /\b(who|name|wife|husband|partner|son|daughter|sister|brother|mom|dad|friend|boss|colleague)\b/i.test(queryText);
-  const queryHasScheduleSignal = /\b(when|time|schedule|meeting|standup|every|weekly|monday|tuesday|wednesday|thursday|friday|daily|routine)\b/i.test(queryText);
-  const queryHasToolSignal = /\b(use|using|editor|tool|language|framework|stack|coding|development)\b/i.test(queryText);
-  const queryHasLocationSignal = /\b(where|timezone|location|city|office|remote)\b/i.test(queryText);
+  const queryHasPersonSignal =
+    /\b(who|name|wife|husband|partner|son|daughter|sister|brother|mom|dad|friend|boss|colleague)\b/i.test(
+      queryText,
+    );
+  const queryHasScheduleSignal =
+    /\b(when|time|schedule|meeting|standup|every|weekly|monday|tuesday|wednesday|thursday|friday|daily|routine)\b/i.test(
+      queryText,
+    );
+  const queryHasToolSignal =
+    /\b(use|using|editor|tool|language|framework|stack|coding|development)\b/i.test(queryText);
+  const queryHasLocationSignal = /\b(where|timezone|location|city|office|remote)\b/i.test(
+    queryText,
+  );
 
   const scored = records
     .map((record) => {
       const candidateTokens = unique(
         tokenize(
-          [record.title ?? "", record.summary ?? "", record.contentText, ...(record.tags ?? [])].join(
-            " ",
-          ),
+          [
+            record.title ?? "",
+            record.summary ?? "",
+            record.contentText,
+            ...(record.tags ?? []),
+          ].join(" "),
         ),
       );
       const haystack = [
@@ -763,7 +826,9 @@ export async function retrieveRelevantMemories(
         record.summary ?? "",
         record.contentText,
         ...(record.tags ?? []),
-      ].join(" ").toLowerCase();
+      ]
+        .join(" ")
+        .toLowerCase();
 
       const overlapTokens = unique(
         queryTokens.filter(
@@ -817,9 +882,7 @@ export async function retrieveRelevantMemories(
         ),
       );
       const lowSignalMemory =
-        record.memoryType === "semantic" &&
-        recordTokens.length < 2 &&
-        !record.pinned;
+        record.memoryType === "semantic" && recordTokens.length < 2 && !record.pinned;
 
       // Pinned memories: require token overlap now to prevent blind injection
       if (record.pinned) {
@@ -829,9 +892,7 @@ export async function retrieveRelevantMemories(
       return (
         !lowSignalMemory &&
         queryTokens.length > 0 &&
-        ((queryTokens.length <= 2 && overlap >= 1) ||
-          overlap >= 2 ||
-          overlapRatio >= 0.5) &&
+        ((queryTokens.length <= 2 && overlap >= 1) || overlap >= 2 || overlapRatio >= 0.5) &&
         score >= 25
       );
     })
@@ -861,12 +922,12 @@ export async function retrieveRelevantMemories(
   return scored.map(({ record }) => toRuntimeMemoryContextItem(record));
 }
 
-export async function getActiveTaskContext(
-  dbClient: DbClient,
-  userId: string,
-) {
+export async function getActiveTaskContext(dbClient: DbClient, userId: string) {
   const records = await dbClient.db.query.tasks.findMany({
-    where: and(eq(tasks.userId, userId), or(eq(tasks.status, "open"), eq(tasks.status, "in_progress"))),
+    where: and(
+      eq(tasks.userId, userId),
+      or(eq(tasks.status, "open"), eq(tasks.status, "in_progress")),
+    ),
     orderBy: [asc(tasks.reminderAt), asc(tasks.dueAt), desc(tasks.createdAt)],
     limit: 25,
   });
@@ -907,26 +968,29 @@ export async function processMemoryCandidateJob(params: {
   const jobPayload = payload as any; // Bypass stale type check if core-runtime build is lagging
   const candidates = await extractMemoryCandidates({
     text: jobPayload.text,
-    inference: jobPayload.inference ? {
-      ...jobPayload.inference,
-      enabled: true,
-      providerId: jobPayload.inference.selectedProviderId as InferenceProviderId,
-      reasoningEffort: jobPayload.inference.reasoningEffort ?? "low",
-      maxOutputTokens: jobPayload.inference.maxOutputTokens ? parseInt(jobPayload.inference.maxOutputTokens, 10) : null,
-    } : undefined,
+    inference: jobPayload.inference
+      ? {
+          ...jobPayload.inference,
+          enabled: true,
+          providerId: jobPayload.inference.selectedProviderId as InferenceProviderId,
+          reasoningEffort: jobPayload.inference.reasoningEffort ?? "low",
+          maxOutputTokens: jobPayload.inference.maxOutputTokens
+            ? parseInt(jobPayload.inference.maxOutputTokens, 10)
+            : null,
+        }
+      : undefined,
   });
-
-
 
   const createdMemoryIds: string[] = [];
   const createdTaskIds: string[] = [];
 
   const canonicalKeys = unique(candidates.map((c) => c.canonicalKey));
-  const existingEntries = canonicalKeys.length > 0
-    ? await dbClient.db.query.memoryEntries.findMany({
-        where: inArray(memoryEntries.canonicalKey, canonicalKeys),
-      })
-    : [];
+  const existingEntries =
+    canonicalKeys.length > 0
+      ? await dbClient.db.query.memoryEntries.findMany({
+          where: inArray(memoryEntries.canonicalKey, canonicalKeys),
+        })
+      : [];
 
   const existingMap = new Map(
     existingEntries
@@ -1022,8 +1086,7 @@ export async function processMemoryCandidateJob(params: {
     });
     const existingTask =
       openTasks.find(
-        (task) =>
-          normalizeTaskTitle(task.title) === normalizeTaskTitle(taskCandidate.title),
+        (task) => normalizeTaskTitle(task.title) === normalizeTaskTitle(taskCandidate.title),
       ) ?? null;
 
     if (existingTask) {

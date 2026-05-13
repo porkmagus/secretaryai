@@ -11,10 +11,7 @@ function resolveChannel(channel: string) {
   return channel;
 }
 
-export async function GET(
-  _: Request,
-  context: { params: Promise<{ channel: string }> },
-) {
+export async function GET(_: Request, context: { params: Promise<{ channel: string }> }) {
   const params = await context.params;
   const channel = resolveChannel(params.channel);
 
@@ -25,10 +22,7 @@ export async function GET(
   return proxyWorkerJson(`/runtime/integrations/${channel}`);
 }
 
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ channel: string }> },
-) {
+export async function PATCH(request: Request, context: { params: Promise<{ channel: string }> }) {
   const params = await context.params;
   const channel = resolveChannel(params.channel);
 

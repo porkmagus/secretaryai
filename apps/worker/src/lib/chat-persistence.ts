@@ -1,19 +1,8 @@
-import type { UIMessage } from "ai";
-import { and, asc, desc, eq } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
-  activityTraces,
-  conversations,
-  jobs,
-  messages,
-  personas,
-  users,
-  type DbClient,
-} from "@secretary/db";
-import {
-  type DeskChatMessageMetadata,
   createConversationId,
   createMessageId,
+  type DeskChatMessageMetadata,
   type MemoryCandidateJobPayload,
   type RuntimeChatRequest,
   type RuntimeChatResponse,
@@ -21,23 +10,28 @@ import {
   type RuntimeTurnContext,
 } from "@secretary/core-runtime";
 import {
-  getActiveTaskContext,
-  retrieveRelevantMemories,
-} from "./memory-engine.js";
+  activityTraces,
+  conversations,
+  type DbClient,
+  jobs,
+  messages,
+  personas,
+  users,
+} from "@secretary/db";
+import type { UIMessage } from "ai";
+import { and, asc, desc, eq } from "drizzle-orm";
+import { parseSecretaryCustomization } from "./admin-runtime.js";
+import type { InferenceRuntimeConfig } from "./ai-sdk-registry.js";
+import { generateConversationReply } from "./conversation-model.js";
+import { getInferenceRuntimeConfig } from "./inference-settings.js";
+import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
 import {
   defaultSecretaryName,
   defaultSecretarySoul,
   loadSecretaryPersonaProfile,
   loadSecretarySoul,
 } from "./persona-soul.js";
-import { parseSecretaryCustomization } from "./admin-runtime.js";
-import {
-  runResearchSpecialist,
-  shouldUseResearchSpecialist,
-} from "./research-specialist.js";
-import { generateConversationReply } from "./conversation-model.js";
-import type { InferenceRuntimeConfig } from "./ai-sdk-registry.js";
-import { getInferenceRuntimeConfig } from "./inference-settings.js";
+import { runResearchSpecialist, shouldUseResearchSpecialist } from "./research-specialist.js";
 
 type PersistTurnParams = {
   config: AppConfig;
@@ -48,9 +42,7 @@ type PersistTurnParams = {
   traceId: string;
 };
 
-type PersistedConversationMessage = Awaited<
-  ReturnType<typeof getConversationMessages>
->[number];
+type PersistedConversationMessage = Awaited<ReturnType<typeof getConversationMessages>>[number];
 
 export type PreparedChatTurn = {
   conversationId: string;
@@ -67,12 +59,7 @@ export function toRuntimeContextMessage(
   message: PersistedConversationMessage,
 ): RuntimeContextMessage {
   return {
-    role: message.role as
-      | "assistant"
-      | "specialist"
-      | "system"
-      | "tool"
-      | "user",
+    role: message.role as "assistant" | "specialist" | "system" | "tool" | "user",
     text: message.contentText,
   };
 }
@@ -171,8 +158,7 @@ async function ensureConversationEnvelope(params: PersistTurnParams) {
       : null);
   const conversationId = existingConversationId ?? createConversationId();
   const userId = params.request.userId || params.defaultUserId;
-  const userDisplayName =
-    params.request.metadata?.telegramUserDisplayName ?? "Local Owner";
+  const userDisplayName = params.request.metadata?.telegramUserDisplayName ?? "Local Owner";
   const userMessageId = createMessageId();
   const conversationTitle =
     params.request.channel === "telegram" && params.request.metadata?.telegramChatLabel
@@ -267,14 +253,9 @@ async function ensureConversationEnvelope(params: PersistTurnParams) {
   };
 }
 
-export async function prepareChatTurn(
-  params: PersistTurnParams,
-): Promise<PreparedChatTurn> {
+export async function prepareChatTurn(params: PersistTurnParams): Promise<PreparedChatTurn> {
   const envelope = await ensureConversationEnvelope(params);
-  const recentMessages = await getConversationMessages(
-    params.dbClient,
-    envelope.conversationId,
-  );
+  const recentMessages = await getConversationMessages(params.dbClient, envelope.conversationId);
   const relevantMemories = await retrieveRelevantMemories(
     params.dbClient,
     params.request.message.text,
@@ -287,9 +268,7 @@ export async function prepareChatTurn(
     (await params.dbClient.db.query.personas.findFirst({
       where: eq(personas.isDefault, true),
     }));
-  const soulText = await loadSecretarySoul(
-    personaRecord?.promptTemplate ?? defaultSecretarySoul,
-  );
+  const soulText = await loadSecretarySoul(personaRecord?.promptTemplate ?? defaultSecretarySoul);
   const personaProfileText = await loadSecretaryPersonaProfile();
   const researchResult = shouldUseResearchSpecialist(params.request.message.text)
     ? runResearchSpecialist(params.request.message.text)
@@ -506,11 +485,7 @@ type QueueMemoryJobParams = {
   traceId: string;
 };
 
-export async function createQueuedMemoryJob({
-  dbClient,
-  payload,
-  traceId,
-}: QueueMemoryJobParams) {
+export async function createQueuedMemoryJob({ dbClient, payload, traceId }: QueueMemoryJobParams) {
   const jobId = createMessageId();
 
   await dbClient.db.insert(jobs).values({
@@ -558,10 +533,7 @@ export async function markMemoryJobEnqueueFailed(
     .where(eq(jobs.id, jobId));
 }
 
-export async function getConversationMessages(
-  dbClient: DbClient,
-  conversationId: string,
-) {
+export async function getConversationMessages(dbClient: DbClient, conversationId: string) {
   return dbClient.db.query.messages.findMany({
     where: eq(messages.conversationId, conversationId),
     orderBy: asc(messages.createdAt),

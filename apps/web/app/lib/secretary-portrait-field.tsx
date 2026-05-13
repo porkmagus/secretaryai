@@ -1,10 +1,7 @@
 "use client";
 
+import type { PersonaAvatarRecord, PersonaSettingsResponse } from "@secretary/core-runtime";
 import { useMemo, useState } from "react";
-import type {
-  PersonaAvatarRecord,
-  PersonaSettingsResponse,
-} from "@secretary/core-runtime";
 
 type SecretaryPortraitFieldProps = {
   avatar: PersonaAvatarRecord | null | undefined;
@@ -117,9 +114,7 @@ export function SecretaryPortraitField({
       setSelectedFile(file);
       setSelectedImage(nextImage);
     } catch (error) {
-      setInlineError(
-        error instanceof Error ? error.message : "That image could not be used.",
-      );
+      setInlineError(error instanceof Error ? error.message : "That image could not be used.");
     }
   }
 
@@ -152,8 +147,7 @@ export function SecretaryPortraitField({
       setSelectedImage(null);
       setIsOpen(false);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to upload portrait.";
+      const message = error instanceof Error ? error.message : "Unable to upload portrait.";
       setInlineError(message);
       onStatusChange?.(message, "error");
     } finally {
@@ -162,17 +156,13 @@ export function SecretaryPortraitField({
   }
 
   return (
-    <div
-      className={`secretary-portrait-field secretary-portrait-field--${variant}`}
-    >
-      <div className={`desk-polaroid ${variant === "desk" ? "desk-polaroid--large" : "desk-polaroid--settings"}`}>
+    <div className={`secretary-portrait-field secretary-portrait-field--${variant}`}>
+      <div
+        className={`desk-polaroid ${variant === "desk" ? "desk-polaroid--large" : "desk-polaroid--settings"}`}
+      >
         <div className="desk-polaroid-photo">
           {portraitUrl ? (
-            <img
-              src={portraitUrl}
-              alt={`${name} portrait`}
-              className="desk-polaroid-image"
-            />
+            <img src={portraitUrl} alt={`${name} portrait`} className="desk-polaroid-image" />
           ) : (
             <div className="desk-portrait-placeholder" aria-hidden="true">
               <span className="desk-portrait-halo" />
@@ -216,62 +206,56 @@ export function SecretaryPortraitField({
             aria-label="Set secretary portrait"
           >
             <div className="secretary-portrait-popover__copy">
-            <p className="secretary-portrait-popover__title">Set portrait</p>
-            <p className="secretary-portrait-popover__text">
-              Use a centered head-and-shoulders photo with clean lighting for the
-              best polaroid crop.
-            </p>
-          </div>
+              <p className="secretary-portrait-popover__title">Set portrait</p>
+              <p className="secretary-portrait-popover__text">
+                Use a centered head-and-shoulders photo with clean lighting for the best polaroid
+                crop.
+              </p>
+            </div>
 
-          <div className="secretary-portrait-rules">
-            <span>JPG, PNG, or WebP</span>
-            <span>5 MB max</span>
-            <span>900 x 1100 px minimum</span>
-          </div>
+            <div className="secretary-portrait-rules">
+              <span>JPG, PNG, or WebP</span>
+              <span>5 MB max</span>
+              <span>900 x 1100 px minimum</span>
+            </div>
 
-          <label className="secretary-portrait-filefield">
-            <span>Portrait image</span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(event) => {
-                void handleFileSelection(event.target.files?.[0] ?? null);
-              }}
-            />
-          </label>
+            <label className="secretary-portrait-filefield">
+              <span>Portrait image</span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={(event) => {
+                  void handleFileSelection(event.target.files?.[0] ?? null);
+                }}
+              />
+            </label>
 
-          {selectedFile ? (
-            <p className="secretary-portrait-selection">
-              {selectedFile.name}
-              {selectedImage
-                ? ` · ${selectedImage.width} x ${selectedImage.height} · ${selectedImage.cropHint}`
-                : ""}
-            </p>
-          ) : null}
+            {selectedFile ? (
+              <p className="secretary-portrait-selection">
+                {selectedFile.name}
+                {selectedImage
+                  ? ` · ${selectedImage.width} x ${selectedImage.height} · ${selectedImage.cropHint}`
+                  : ""}
+              </p>
+            ) : null}
 
-          {inlineError ? (
-            <p className="secretary-portrait-error">{inlineError}</p>
-          ) : null}
+            {inlineError ? <p className="secretary-portrait-error">{inlineError}</p> : null}
 
-          <div className="secretary-portrait-actions">
-            <button
-              type="button"
-              className="button-secondary"
-              onClick={() => setIsOpen(false)}
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              className="button-primary"
-              disabled={isUploading || !selectedFile}
-              onClick={() => {
-                void uploadPortrait();
-              }}
-            >
-              {isUploading ? "Uploading..." : "Upload portrait"}
-            </button>
-          </div>
+            <div className="secretary-portrait-actions">
+              <button type="button" className="button-secondary" onClick={() => setIsOpen(false)}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="button-primary"
+                disabled={isUploading || !selectedFile}
+                onClick={() => {
+                  void uploadPortrait();
+                }}
+              >
+                {isUploading ? "Uploading..." : "Upload portrait"}
+              </button>
+            </div>
           </div>
         </>
       ) : null}

@@ -1,13 +1,13 @@
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 
 // Load .env file manually
 function loadEnvFile() {
   const envPath = resolve(root, ".env");
   if (!existsSync(envPath)) return;
-  
+
   const content = readFileSync(envPath, "utf-8");
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -17,8 +17,10 @@ function loadEnvFile() {
     const key = trimmed.slice(0, eqIndex).trim();
     let value = trimmed.slice(eqIndex + 1).trim();
     // Remove quotes if present
-    if ((value.startsWith('"') && value.endsWith('"')) || 
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       value = value.slice(1, -1);
     }
     if (!process.env[key]) {
@@ -38,12 +40,9 @@ const venvDir = resolve(root, "runtime/venvs/tts");
 const appDir = resolve(root, "services/tts-chatterbox");
 
 const pythonPath =
-  process.platform === "win32"
-    ? join(venvDir, "Scripts/python.exe")
-    : join(venvDir, "bin/python");
+  process.platform === "win32" ? join(venvDir, "Scripts/python.exe") : join(venvDir, "bin/python");
 
 if (!existsSync(pythonPath)) {
-  console.error("TTS virtual environment is missing. Run `npm run tts:setup` first.");
   process.exit(1);
 }
 

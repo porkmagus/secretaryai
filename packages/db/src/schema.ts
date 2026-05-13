@@ -1,19 +1,8 @@
-import {
-  boolean,
-  integer,
-  jsonb,
-  pgTable,
-  text,
-  timestamp,
-} from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 };
 
 export const users = pgTable("users", {
@@ -27,9 +16,7 @@ export const personas = pgTable("personas", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   toneProfile: jsonb("tone_profile").$type<Record<string, unknown>>().notNull(),
-  behaviorRules: jsonb("behavior_rules")
-    .$type<string[]>()
-    .notNull(),
+  behaviorRules: jsonb("behavior_rules").$type<string[]>().notNull(),
   voiceProfileId: text("voice_profile_id"),
   promptTemplate: text("prompt_template").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
@@ -46,9 +33,7 @@ export const conversations = pgTable("conversations", {
   channelLabel: text("channel_label"),
   title: text("title"),
   status: text("status").notNull().default("active"),
-  lastMessageAt: timestamp("last_message_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
   ...timestamps,
 });
 
@@ -62,9 +47,7 @@ export const messages = pgTable("messages", {
   contentJson: jsonb("content_json").$type<Record<string, unknown> | null>(),
   channelMessageId: text("channel_message_id"),
   parentMessageId: text("parent_message_id"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const memoryEntries = pgTable("memory_entries", {
@@ -94,9 +77,7 @@ export const memoryLinks = pgTable("memory_links", {
   linkType: text("link_type").notNull(),
   linkedEntityType: text("linked_entity_type").notNull(),
   linkedEntityId: text("linked_entity_id").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const tasks = pgTable("tasks", {
@@ -139,7 +120,10 @@ export const tools = pgTable("tools", {
   description: text("description").notNull(),
   enabled: boolean("enabled").notNull().default(true),
   approvalMode: text("approval_mode").notNull().default("ask_first"),
-  configSchemaJson: jsonb("config_schema_json").$type<Record<string, unknown>>().notNull().default({}),
+  configSchemaJson: jsonb("config_schema_json")
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default({}),
   healthStatus: text("health_status").notNull().default("ok"),
   ...timestamps,
 });
@@ -204,9 +188,7 @@ export const jobs = pgTable("jobs", {
   payloadJson: jsonb("payload_json").$type<Record<string, unknown>>().notNull(),
   resultJson: jsonb("result_json").$type<Record<string, unknown> | null>(),
   parentJobId: text("parent_job_id"),
-  scheduledFor: timestamp("scheduled_for", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   errorText: text("error_text"),
@@ -320,9 +302,7 @@ export const activityTraces = pgTable("activity_traces", {
   }),
   eventName: text("event_name").notNull(),
   payloadJson: jsonb("payload_json").$type<Record<string, unknown>>().notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const phaseOneTables = [
@@ -335,28 +315,13 @@ export const phaseOneTables = [
   "activity_traces",
 ] as const;
 
-export const phaseTwoTables = [
-  ...phaseOneTables,
-  "memory_links",
-  "tasks",
-] as const;
+export const phaseTwoTables = [...phaseOneTables, "memory_links", "tasks"] as const;
 
-export const phaseThreeTables = [
-  ...phaseTwoTables,
-  "integrations",
-] as const;
+export const phaseThreeTables = [...phaseTwoTables, "integrations"] as const;
 
-export const phaseFourTables = [
-  ...phaseThreeTables,
-  "voice_profiles",
-  "speech_artifacts",
-] as const;
+export const phaseFourTables = [...phaseThreeTables, "voice_profiles", "speech_artifacts"] as const;
 
-export const phaseFiveTables = [
-  ...phaseFourTables,
-  "tools",
-  "tool_executions",
-] as const;
+export const phaseFiveTables = [...phaseFourTables, "tools", "tool_executions"] as const;
 
 export const phaseSixTables = [
   ...phaseFiveTables,

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationListItem,
   ConversationListResponse,
@@ -12,7 +11,9 @@ import type {
   VoiceProfileRecord,
   WebSpeechTurnResponse,
 } from "@secretary/core-runtime";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchJson } from "../lib/fetch-json";
+import { formatTimestamp, snippet } from "../lib/presenters";
 import {
   ActionRow,
   AppPage,
@@ -24,7 +25,6 @@ import {
   StatGrid,
   SurfaceCard,
 } from "../lib/ui";
-import { formatTimestamp, snippet } from "../lib/presenters";
 
 type VoiceWorkspaceState = {
   conversations: ConversationListItem[];
@@ -89,7 +89,7 @@ const ghostButton = {
 } as const;
 
 function isAudioMime(mimeType: string | null) {
-  return Boolean(mimeType && mimeType.startsWith("audio/"));
+  return Boolean(mimeType?.startsWith("audio/"));
 }
 
 function buildFileUrl(storageKey: string, mimeType: string | null) {
@@ -121,7 +121,10 @@ export function VoiceConsole() {
     selectedConversationId: "all",
   });
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ tone: "info" | "success" | "warning" | "error"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{
+    tone: "info" | "success" | "warning" | "error";
+    text: string;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingSample, setIsUploadingSample] = useState(false);
@@ -144,7 +147,8 @@ export function VoiceConsole() {
     () => state.profiles.find((profile) => profile.isActive) ?? state.profiles[0] ?? null,
     [state.profiles],
   );
-  const activeVoiceMode = clearSampleOnSave || !activeProfile?.sampleStorageKey ? "default" : "custom";
+  const activeVoiceMode =
+    clearSampleOnSave || !activeProfile?.sampleStorageKey ? "default" : "custom";
   const summaryItems = useMemo(
     () => [
       ["Active voice", activeProfile?.name ?? "not set"],
@@ -197,7 +201,7 @@ export function VoiceConsole() {
       recorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, []);
+  }, [refreshCore, previewUrl]);
 
   async function refreshCore() {
     setIsLoading(true);
@@ -217,11 +221,16 @@ export function VoiceConsole() {
       setSpeechStatus(statusPayload.services);
       setDraft(active ? draftFromProfile(active) : null);
       setClearSampleOnSave(false);
-      if (recordingConversationId !== "new" && !conversations.some((conversation) => conversation.id === recordingConversationId)) {
+      if (
+        recordingConversationId !== "new" &&
+        !conversations.some((conversation) => conversation.id === recordingConversationId)
+      ) {
         setRecordingConversationId("new");
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load the voice workspace.");
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load the voice workspace.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -234,7 +243,9 @@ export function VoiceConsole() {
         conversationId === "all"
           ? "/api/speech/artifacts"
           : `/api/speech/artifacts?conversationId=${encodeURIComponent(conversationId)}`;
-      const payload = await fetchJson<SpeechArtifactListResponse>(artifactsUrl, { cache: "no-store" });
+      const payload = await fetchJson<SpeechArtifactListResponse>(artifactsUrl, {
+        cache: "no-store",
+      });
       setDiagnostics({
         artifacts: payload.artifacts,
         isLoading: false,
@@ -243,7 +254,9 @@ export function VoiceConsole() {
       });
     } catch (loadError) {
       setDiagnostics((current) => ({ ...current, isLoading: false }));
-      setError(loadError instanceof Error ? loadError.message : "Unable to load recent speech activity.");
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load recent speech activity.",
+      );
     }
   }
 
@@ -328,7 +341,9 @@ export function VoiceConsole() {
       });
       await refreshCore();
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload the voice sample.");
+      setError(
+        uploadError instanceof Error ? uploadError.message : "Unable to upload the voice sample.",
+      );
     } finally {
       setIsUploadingSample(false);
     }
@@ -352,7 +367,9 @@ export function VoiceConsole() {
         }),
       });
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({ error: "Unable to generate voice preview." }));
+        const payload = await response
+          .json()
+          .catch(() => ({ error: "Unable to generate voice preview." }));
         throw new Error(payload.error ?? "Unable to generate voice preview.");
       }
       const blob = await response.blob();
@@ -385,7 +402,9 @@ export function VoiceConsole() {
         : MediaRecorder.isTypeSupported("audio/webm")
           ? "audio/webm"
           : "";
-      const recorder = preferredMimeType ? new MediaRecorder(stream, { mimeType: preferredMimeType }) : new MediaRecorder(stream);
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
       chunksRef.current = [];
       streamRef.current = stream;
       recorderRef.current = recorder;
@@ -406,7 +425,9 @@ export function VoiceConsole() {
       recorder.start();
       setIsRecording(true);
     } catch (recordError) {
-      setRecordingError(recordError instanceof Error ? recordError.message : "Microphone capture failed.");
+      setRecordingError(
+        recordError instanceof Error ? recordError.message : "Microphone capture failed.",
+      );
     }
   }
 
@@ -420,14 +441,13 @@ export function VoiceConsole() {
     setIsSubmittingRecording(true);
     setRecordingError(null);
     try {
-      const extension =
-        mimeType.includes("ogg")
-          ? "ogg"
-          : mimeType.includes("mpeg")
-            ? "mp3"
-            : mimeType.includes("wav")
-              ? "wav"
-              : "webm";
+      const extension = mimeType.includes("ogg")
+        ? "ogg"
+        : mimeType.includes("mpeg")
+          ? "mp3"
+          : mimeType.includes("wav")
+            ? "wav"
+            : "webm";
       const form = new FormData();
       form.set("audio", blob, `voice-console-recording.${extension}`);
       if (recordingConversationId !== "new") form.set("conversationId", recordingConversationId);
@@ -576,12 +596,24 @@ export function VoiceConsole() {
                 }}
               >
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      color: "var(--accent)",
+                    }}
+                  >
                     Voice label
                   </span>
                   <input
                     value={draft.name}
-                    onChange={(event) => setDraft((current) => (current ? { ...current, name: event.target.value } : current))}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, name: event.target.value } : current,
+                      )
+                    }
                     placeholder="Secretary voice"
                     style={input}
                   />
@@ -589,12 +621,24 @@ export function VoiceConsole() {
                 </label>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      color: "var(--accent)",
+                    }}
+                  >
                     Engine
                   </span>
                   <select
                     value={draft.engineId}
-                    onChange={(event) => setDraft((current) => (current ? { ...current, engineId: event.target.value } : current))}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, engineId: event.target.value } : current,
+                      )
+                    }
                     style={input}
                   >
                     {engines.map((engine) => (
@@ -603,7 +647,9 @@ export function VoiceConsole() {
                       </option>
                     ))}
                   </select>
-                  <FieldHint>The active engine voice is used whenever you are not cloning from a sample.</FieldHint>
+                  <FieldHint>
+                    The active engine voice is used whenever you are not cloning from a sample.
+                  </FieldHint>
                 </label>
               </div>
 
@@ -615,7 +661,15 @@ export function VoiceConsole() {
                 }}
               >
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      color: "var(--accent)",
+                    }}
+                  >
                     Quality preset
                   </span>
                   <select
@@ -633,16 +687,30 @@ export function VoiceConsole() {
                       </option>
                     ))}
                   </select>
-                  <FieldHint>Choose a known preset instead of typing free-form engine tuning.</FieldHint>
+                  <FieldHint>
+                    Choose a known preset instead of typing free-form engine tuning.
+                  </FieldHint>
                 </label>
 
                 <label style={{ display: "grid", gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      letterSpacing: "0.04em",
+                      textTransform: "uppercase",
+                      color: "var(--accent)",
+                    }}
+                  >
                     Speaking style
                   </span>
                   <input
                     value={draft.speakingStyle}
-                    onChange={(event) => setDraft((current) => (current ? { ...current, speakingStyle: event.target.value } : current))}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current ? { ...current, speakingStyle: event.target.value } : current,
+                      )
+                    }
                     placeholder="Warm, poised, and clear"
                     style={input}
                   />
@@ -653,10 +721,20 @@ export function VoiceConsole() {
               <div className="section-rule" />
 
               <div className="stack-sm">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
                   <div style={{ display: "grid", gap: 4 }}>
                     <p style={{ margin: 0, fontWeight: 700 }}>
-                      {activeVoiceMode === "custom" ? "Custom sample active" : "Default voice active"}
+                      {activeVoiceMode === "custom"
+                        ? "Custom sample active"
+                        : "Default voice active"}
                     </p>
                     <FieldHint>
                       Upload one clean sample if you want cloning. Otherwise the secretary will use
@@ -692,7 +770,10 @@ export function VoiceConsole() {
                       type="button"
                       onClick={() => setClearSampleOnSave(true)}
                       disabled={activeVoiceMode === "default"}
-                      style={{ ...ghostButton, cursor: activeVoiceMode === "default" ? "not-allowed" : "pointer" }}
+                      style={{
+                        ...ghostButton,
+                        cursor: activeVoiceMode === "default" ? "not-allowed" : "pointer",
+                      }}
                     >
                       Use default voice
                     </button>
@@ -753,7 +834,15 @@ export function VoiceConsole() {
         >
           <div className="stack-md">
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  color: "var(--accent)",
+                }}
+              >
                 Preview script
               </span>
               <textarea
@@ -850,10 +939,15 @@ export function VoiceConsole() {
                     gap: 8,
                   }}
                 >
-                  <p style={{ margin: 0, fontWeight: 700 }}>Transcript: {pushToTalkResult.transcriptText}</p>
-                  <p style={{ margin: 0, color: "var(--muted)" }}>Reply: {pushToTalkResult.replyText}</p>
+                  <p style={{ margin: 0, fontWeight: 700 }}>
+                    Transcript: {pushToTalkResult.transcriptText}
+                  </p>
+                  <p style={{ margin: 0, color: "var(--muted)" }}>
+                    Reply: {pushToTalkResult.replyText}
+                  </p>
                   <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                    conversation {pushToTalkResult.conversationId} · artifact {pushToTalkResult.artifactId}
+                    conversation {pushToTalkResult.conversationId} · artifact{" "}
+                    {pushToTalkResult.artifactId}
                   </p>
                 </div>
               ) : null}
@@ -901,7 +995,15 @@ export function VoiceConsole() {
                   ["ffmpeg", speechStatus?.ffmpeg.summary ?? "loading"],
                 ].map(([label, value]) => (
                   <div key={label} style={{ padding: "10px 0", display: "grid", gap: 4 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--accent)" }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        color: "var(--accent)",
+                      }}
+                    >
                       {label}
                     </span>
                     <span style={{ color: "var(--muted)", fontSize: 13 }}>{value}</span>
@@ -910,7 +1012,15 @@ export function VoiceConsole() {
               </div>
 
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)" }}>
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    color: "var(--accent)",
+                  }}
+                >
                   Artifact scope
                 </span>
                 <select
@@ -940,15 +1050,36 @@ export function VoiceConsole() {
             ) : diagnostics.artifacts.length === 0 ? (
               <EmptyState
                 title="No recent speech activity in this view"
-                description={<p>Once you run previews or voice turns, the recent surviving artifacts will appear here.</p>}
+                description={
+                  <p>
+                    Once you run previews or voice turns, the recent surviving artifacts will appear
+                    here.
+                  </p>
+                }
                 tone="warm"
               />
             ) : (
               <div className="compact-list">
                 {diagnostics.artifacts.map((artifact) => (
                   <div key={artifact.id} style={{ padding: "12px 0", display: "grid", gap: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                      <p style={{ margin: 0, color: "var(--accent)", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "var(--accent)",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                        }}
+                      >
                         {artifact.artifactKind}
                       </p>
                       <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>

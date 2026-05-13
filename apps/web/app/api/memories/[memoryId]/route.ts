@@ -1,10 +1,7 @@
-import { NextResponse } from "next/server";
 import type { UpdateMemoryRequest } from "@secretary/core-runtime";
+import { NextResponse } from "next/server";
 
-export async function PATCH(
-  request: Request,
-  context: { params: Promise<{ memoryId: string }> },
-) {
+export async function PATCH(request: Request, context: { params: Promise<{ memoryId: string }> }) {
   const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
   const body = (await request.json()) as UpdateMemoryRequest;
   const { memoryId } = await context.params;
@@ -22,17 +19,11 @@ export async function PATCH(
     const payload = await response.json();
 
     if (!response.ok) {
-      return NextResponse.json(
-        payload,
-        { status: response.status },
-      );
+      return NextResponse.json(payload, { status: response.status });
     }
 
     return NextResponse.json(payload);
   } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "Worker is unavailable." }, { status: 503 });
   }
 }

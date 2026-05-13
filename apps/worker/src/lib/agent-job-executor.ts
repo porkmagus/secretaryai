@@ -1,21 +1,21 @@
 import { execFile, execSync } from "node:child_process";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { ToolLoopAgent, stepCountIs, tool, type ModelMessage, type ToolApprovalResponse } from "ai";
-import { z } from "zod";
 import type {
   AgentExecutionBackend,
   AgentJobApprovalMode,
   AgentJobRequirementKind,
   AgentJobSettingsRecord,
 } from "@secretary/core-runtime";
+import { type ModelMessage, stepCountIs, type ToolApprovalResponse, ToolLoopAgent, tool } from "ai";
+import { z } from "zod";
 import {
   createAgentJobArtifactStorageKey,
   ensureAgentJobArtifactStoragePath,
 } from "./agent-job-artifact-storage.js";
-import { resolveInferenceLanguageModel, type InferenceRuntimeConfig } from "./ai-sdk-registry.js";
+import { type InferenceRuntimeConfig, resolveInferenceLanguageModel } from "./ai-sdk-registry.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_FILE_READ_BYTES = 200_000;
@@ -141,11 +141,6 @@ function resolveExecutionBackend(backend: AgentExecutionBackend): AgentExecution
   if (backend === "wsl_bash" && process.platform !== "win32") {
     if (!wslFallbackWarned) {
       wslFallbackWarned = true;
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[Secretary] executionBackend is set to 'wsl_bash' but WSL is only available on Windows. " +
-          "Falling back to 'host_native'. Set executionBackend to 'host_native' to silence this.",
-      );
     }
     return "host_native";
   }
@@ -209,10 +204,7 @@ function ensureWithinWorkspace(workspacePath: string, targetPath: string) {
   return absoluteTarget;
 }
 
-function isWorkspaceAllowed(
-  settings: AgentJobSettingsRecord,
-  workspacePath: string,
-) {
+function isWorkspaceAllowed(settings: AgentJobSettingsRecord, workspacePath: string) {
   // Empty array means "deny all" — there is no catch-all allowed root.
   // Users populate the list via Settings > Agent > Allowed workspace roots.
   if (settings.allowedWorkspaceRoots.length === 0) {
@@ -221,10 +213,12 @@ function isWorkspaceAllowed(
 
   const candidate = resolve(workspacePath);
   return settings.allowedWorkspaceRoots.some((root) => {
-    const allowedRoot = resolve(
-      normalizeWorkspacePath(root, settings.executionBackend),
+    const allowedRoot = resolve(normalizeWorkspacePath(root, settings.executionBackend));
+    return (
+      candidate === allowedRoot ||
+      candidate.startsWith(`${allowedRoot}\\`) ||
+      candidate.startsWith(`${allowedRoot}/`)
     );
-    return candidate === allowedRoot || candidate.startsWith(`${allowedRoot}\\`) || candidate.startsWith(`${allowedRoot}/`);
   });
 }
 
@@ -236,10 +230,10 @@ function looksLikeNetworkCommand(command: string) {
 
 function redactSecrets(text: string) {
   return text
-    .replace(/\b(sk-[A-Za-z0-9_\-]{12,})\b/g, "[redacted-secret]")
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,})\b/g, "[redacted-secret]")
     .replace(/\b(ghp_[A-Za-z0-9]{12,})\b/g, "[redacted-secret]")
     .replace(/\b(xox[baprs]-[A-Za-z0-9-]{12,})\b/g, "[redacted-secret]")
-    .replace(/\b(Bearer\s+)[A-Za-z0-9._\-]{12,}\b/gi, "$1[redacted-secret]");
+    .replace(/\b(Bearer\s+)[A-Za-z0-9._-]{12,}\b/gi, "$1[redacted-secret]");
 }
 
 async function commandExists(command: string, backend: AgentExecutionBackend) {
@@ -486,10 +480,7 @@ export async function detectExecutionRequirements(params: {
 }) {
   const requirements: DetectedExecutionRequirement[] = [];
   const backend = resolveExecutionBackend(params.settings.executionBackend);
-  const normalizedWorkspacePath = normalizeWorkspacePath(
-    params.workspacePath,
-    backend,
-  );
+  const normalizedWorkspacePath = normalizeWorkspacePath(params.workspacePath, backend);
 
   if (!isWorkspaceAllowed(params.settings, normalizedWorkspacePath)) {
     requirements.push({
@@ -517,7 +508,8 @@ export async function detectExecutionRequirements(params: {
       requirements.push({
         kind: "service",
         label: "Docker daemon is not reachable",
-        detail: "Switch the execution backend to host native / WSL, or ensure the Docker daemon is running and accessible.",
+        detail:
+          "Switch the execution backend to host native / WSL, or ensure the Docker daemon is running and accessible.",
       });
     }
   }
@@ -528,7 +520,8 @@ export async function detectExecutionRequirements(params: {
       requirements.push({
         kind: "runtime",
         label: "WSL is required for the selected execution backend",
-        detail: "Switch the execution backend to host native or install and enable WSL before continuing.",
+        detail:
+          "Switch the execution backend to host native or install and enable WSL before continuing.",
       });
     }
   }
@@ -541,7 +534,8 @@ export async function detectExecutionRequirements(params: {
       requirements.push({
         kind: "network",
         label: "Network access is disabled",
-        detail: "Jobs can still work locally, but installs, remote fetches, and browser-heavy verification will stay blocked until network access is enabled.",
+        detail:
+          "Jobs can still work locally, but installs, remote fetches, and browser-heavy verification will stay blocked until network access is enabled.",
       });
     }
 
@@ -553,15 +547,18 @@ export async function detectExecutionRequirements(params: {
       requirements.push({
         kind: "runtime",
         label: "Node.js runtime is required",
-        detail: "This workspace has a package.json, so Node.js must be available before the job can continue.",
+        detail:
+          "This workspace has a package.json, so Node.js must be available before the job can continue.",
       });
     }
 
-    const packageManager =
-      entrySet.has("pnpm-lock.yaml") ? "pnpm" :
-      entrySet.has("yarn.lock") ? "yarn" :
-      entrySet.has("bun.lock") || entrySet.has("bun.lockb") ? "bun" :
-      "npm";
+    const packageManager = entrySet.has("pnpm-lock.yaml")
+      ? "pnpm"
+      : entrySet.has("yarn.lock")
+        ? "yarn"
+        : entrySet.has("bun.lock") || entrySet.has("bun.lockb")
+          ? "bun"
+          : "npm";
 
     if (!(await commandExists(packageManager, params.settings.executionBackend))) {
       requirements.push({
@@ -576,22 +573,30 @@ export async function detectExecutionRequirements(params: {
   }
 
   if (entrySet.has("pyproject.toml") || entrySet.has("requirements.txt")) {
-    if (!(await commandExists("python", params.settings.executionBackend)) &&
-        !(await commandExists("python3", params.settings.executionBackend))) {
+    if (
+      !(await commandExists("python", params.settings.executionBackend)) &&
+      !(await commandExists("python3", params.settings.executionBackend))
+    ) {
       requirements.push({
         kind: "runtime",
         label: "Python runtime is required",
-        detail: "This workspace includes Python project files, so Python must be available before the job can continue.",
+        detail:
+          "This workspace includes Python project files, so Python must be available before the job can continue.",
       });
     }
   }
 
-  if ((entrySet.has("docker-compose.yml") || entrySet.has("compose.yml") || entrySet.has("dockerfile")) &&
-      !(await commandExists("docker", params.settings.executionBackend))) {
+  if (
+    (entrySet.has("docker-compose.yml") ||
+      entrySet.has("compose.yml") ||
+      entrySet.has("dockerfile")) &&
+    !(await commandExists("docker", params.settings.executionBackend))
+  ) {
     requirements.push({
       kind: "service",
       label: "Docker is required for this workspace",
-      detail: "This workspace includes Docker resources, so Docker must be available before the job can continue.",
+      detail:
+        "This workspace includes Docker resources, so Docker must be available before the job can continue.",
     });
   }
 
@@ -615,7 +620,9 @@ function commandNeedsApproval(mode: AgentJobApprovalMode, command: string) {
     return false;
   }
 
-  return /(^|\s)(sudo|su\b|passwd\b|shutdown\b|reboot\b|mkfs\b|dd\b|mount\b|umount\b|systemctl\b|service\b|chown\b|useradd\b|userdel\b|groupadd\b|groupdel\b|chmod\s+[0-7]{3,4}\b|rm\s+-rf\b|git\s+reset\s+--hard\b|git\s+clean\s+-fd\b|git\s+push\s+--force\b|docker\s+system\s+prune\b|docker\s+volume\s+rm\b)/.test(command);
+  return /(^|\s)(sudo|su\b|passwd\b|shutdown\b|reboot\b|mkfs\b|dd\b|mount\b|umount\b|systemctl\b|service\b|chown\b|useradd\b|userdel\b|groupadd\b|groupdel\b|chmod\s+[0-7]{3,4}\b|rm\s+-rf\b|git\s+reset\s+--hard\b|git\s+clean\s+-fd\b|git\s+push\s+--force\b|docker\s+system\s+prune\b|docker\s+volume\s+rm\b)/.test(
+    command,
+  );
 }
 
 function isForbiddenCommand(command: string) {
@@ -632,9 +639,7 @@ function makeAgentInstructions(request: JobRequestShape) {
     "Run commands to install, build, lint, typecheck, and test when that helps finish the job.",
     "If a tool approval is denied, do not retry the same operation without changing approach.",
     "Before finishing, make sure the workspace changes actually satisfy the requested goal.",
-    request.constraints.length > 0
-      ? `Hard constraints: ${request.constraints.join("; ")}`
-      : null,
+    request.constraints.length > 0 ? `Hard constraints: ${request.constraints.join("; ")}` : null,
     request.deliverables.length > 0
       ? `Deliverables to cover: ${request.deliverables.join("; ")}`
       : null,
@@ -643,10 +648,7 @@ function makeAgentInstructions(request: JobRequestShape) {
   return lines.filter((line): line is string => Boolean(line)).join("\n");
 }
 
-function makeDraftingPrompt(params: {
-  request: JobRequestShape;
-  inspectionSummary: string;
-}) {
+function makeDraftingPrompt(params: { request: JobRequestShape; inspectionSummary: string }) {
   const lines = [
     `Job title: ${params.request.title}`,
     `Goal: ${params.request.goal}`,
@@ -735,7 +737,10 @@ function makeVerificationPrompt(params: {
   return lines.join("\n");
 }
 
-function guessVerificationCommands(workspacePath: string, packageMetadata: Record<string, unknown>) {
+function guessVerificationCommands(
+  _workspacePath: string,
+  packageMetadata: Record<string, unknown>,
+) {
   const commands: string[] = [];
   const scripts =
     packageMetadata && typeof packageMetadata.scripts === "object" && packageMetadata.scripts
@@ -776,21 +781,30 @@ async function listDirectoryImpl(workspacePath: string, pathValue: string) {
   };
 }
 
-async function searchFilesImpl(workspacePath: string, pattern: string, cwd?: string | null, maxResults = 40) {
+async function searchFilesImpl(
+  workspacePath: string,
+  pattern: string,
+  cwd?: string | null,
+  maxResults = 40,
+) {
   const targetCwd = ensureWithinWorkspace(workspacePath, cwd?.trim() || ".");
-  const { stdout } = await execFileAsync("rg", [
-    "-n",
-    "--no-heading",
-    "--color",
-    "never",
-    "-m",
-    String(Math.max(1, Math.min(200, maxResults))),
-    pattern,
-    targetCwd,
-  ], {
-    cwd: workspacePath,
-    maxBuffer: 1024 * 1024,
-  });
+  const { stdout } = await execFileAsync(
+    "rg",
+    [
+      "-n",
+      "--no-heading",
+      "--color",
+      "never",
+      "-m",
+      String(Math.max(1, Math.min(200, maxResults))),
+      pattern,
+      targetCwd,
+    ],
+    {
+      cwd: workspacePath,
+      maxBuffer: 1024 * 1024,
+    },
+  );
 
   return {
     cwd: targetCwd,
@@ -843,9 +857,7 @@ async function replaceInFileImpl(params: {
   const next = params.replaceAll
     ? existing.split(params.searchText).join(params.replaceText)
     : existing.replace(params.searchText, params.replaceText);
-  const replacements = params.replaceAll
-    ? existing.split(params.searchText).length - 1
-    : 1;
+  const replacements = params.replaceAll ? existing.split(params.searchText).length - 1 : 1;
 
   await writeFile(targetPath, next, "utf8");
 
@@ -899,7 +911,8 @@ async function runCommandImpl(params: {
       cwd: targetCwd,
       exitCode: 1,
       stdout: "",
-      stderr: "Blocked by agent safety policy: this command is too destructive to run automatically.",
+      stderr:
+        "Blocked by agent safety policy: this command is too destructive to run automatically.",
     };
   }
 
@@ -933,30 +946,32 @@ async function probeHttpImpl(url: string) {
 }
 
 async function checkPortImpl(host: string, port: number, timeoutMs = 2_000) {
-  return new Promise<{ host: string; port: number; open: boolean; error: string | null }>((resolvePromise) => {
-    const socket = new net.Socket();
-    let settled = false;
+  return new Promise<{ host: string; port: number; open: boolean; error: string | null }>(
+    (resolvePromise) => {
+      const socket = new net.Socket();
+      let settled = false;
 
-    const finish = (open: boolean, error: string | null) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      socket.destroy();
-      resolvePromise({
-        host,
-        port,
-        open,
-        error,
-      });
-    };
+      const finish = (open: boolean, error: string | null) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        socket.destroy();
+        resolvePromise({
+          host,
+          port,
+          open,
+          error,
+        });
+      };
 
-    socket.setTimeout(timeoutMs);
-    socket.once("connect", () => finish(true, null));
-    socket.once("timeout", () => finish(false, "Timed out"));
-    socket.once("error", (error) => finish(false, error.message));
-    socket.connect(port, host);
-  });
+      socket.setTimeout(timeoutMs);
+      socket.once("connect", () => finish(true, null));
+      socket.once("timeout", () => finish(false, "Timed out"));
+      socket.once("error", (error) => finish(false, error.message));
+      socket.connect(port, host);
+    },
+  );
 }
 
 async function browserVisitImpl(params: {
@@ -977,13 +992,19 @@ async function browserVisitImpl(params: {
     });
 
     if (params.waitForText?.trim()) {
-      await page.getByText(params.waitForText.trim(), { exact: false }).first().waitFor({
-        timeout: params.timeoutMs ?? 10_000,
-      });
+      await page
+        .getByText(params.waitForText.trim(), { exact: false })
+        .first()
+        .waitFor({
+          timeout: params.timeoutMs ?? 10_000,
+        });
     }
 
     const title = await page.title();
-    const bodyText = await page.locator("body").innerText().catch(() => "");
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
     const screenshot = await page.screenshot({ type: "png", fullPage: true });
     const storageKey = createAgentJobArtifactStorageKey("browser", "verification.png");
     const storagePath = await ensureAgentJobArtifactStoragePath(storageKey);
@@ -1074,7 +1095,10 @@ async function fetchUrlImpl(url: string, maxLength: number) {
       const page = await browser.newPage();
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
       const title = await page.title().catch(() => "");
-      const text = await page.locator("body").innerText().catch(() => "");
+      const text = await page
+        .locator("body")
+        .innerText()
+        .catch(() => "");
       return {
         url,
         title,
@@ -1154,7 +1178,8 @@ async function siteCrawlImpl(params: {
 
   const args = [
     "--recursive",
-    "--level", String(params.maxDepth),
+    "--level",
+    String(params.maxDepth),
     "--no-clobber",
     "--page-requisites",
     "--html-extension",
@@ -1233,7 +1258,11 @@ function createBuildAgent(params: {
       description: "Search text in workspace files using ripgrep.",
       inputSchema: z.object({
         pattern: z.string().describe("Literal text or regex to search for."),
-        cwd: z.string().nullable().optional().describe("Optional subdirectory inside the workspace."),
+        cwd: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Optional subdirectory inside the workspace."),
         maxResults: z.number().int().min(1).max(100).default(40),
       }),
       execute: async ({ pattern, cwd, maxResults }) =>
@@ -1252,10 +1281,7 @@ function createBuildAgent(params: {
         path: z.string().describe("File path relative to the workspace root."),
         content: z.string().describe("Full UTF-8 file contents to write."),
       }),
-      needsApproval:
-        params.approvalMode === "restrictive"
-          ? true
-          : false,
+      needsApproval: params.approvalMode === "restrictive",
       execute: async ({ path, content }) => writeFileImpl(params.workspacePath, path, content),
     }),
     replace_in_file: tool({
@@ -1266,10 +1292,7 @@ function createBuildAgent(params: {
         replaceText: z.string().describe("Replacement text."),
         replaceAll: z.boolean().default(false),
       }),
-      needsApproval:
-        params.approvalMode === "restrictive"
-          ? true
-          : false,
+      needsApproval: params.approvalMode === "restrictive",
       execute: async ({ path, searchText, replaceText, replaceAll }) =>
         replaceInFileImpl({
           workspacePath: params.workspacePath,
@@ -1284,10 +1307,7 @@ function createBuildAgent(params: {
       inputSchema: z.object({
         path: z.string().describe("Directory path relative to the workspace root."),
       }),
-      needsApproval:
-        params.approvalMode === "restrictive"
-          ? true
-          : false,
+      needsApproval: params.approvalMode === "restrictive",
       execute: async ({ path }) => makeDirectoryImpl(params.workspacePath, path),
     }),
     remove_path: tool({
@@ -1300,10 +1320,15 @@ function createBuildAgent(params: {
       execute: async ({ path }) => removePathImpl(params.workspacePath, path),
     }),
     run_command: tool({
-      description: "Run a shell command inside the workspace and return stdout, stderr, and exit code.",
+      description:
+        "Run a shell command inside the workspace and return stdout, stderr, and exit code.",
       inputSchema: z.object({
         command: z.string().describe("Shell command to execute."),
-        cwd: z.string().nullable().optional().describe("Optional working directory inside the workspace."),
+        cwd: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("Optional working directory inside the workspace."),
         timeoutSeconds: z.number().int().min(5).max(600).optional(),
       }),
       needsApproval: async ({ command }) => commandNeedsApproval(params.approvalMode, command),
@@ -1317,7 +1342,8 @@ function createBuildAgent(params: {
         }),
     }),
     probe_http: tool({
-      description: "Fetch an HTTP endpoint and capture status, headers, and a short response preview.",
+      description:
+        "Fetch an HTTP endpoint and capture status, headers, and a short response preview.",
       inputSchema: z.object({
         url: z.string().url(),
       }),
@@ -1333,7 +1359,8 @@ function createBuildAgent(params: {
       execute: async ({ host, port }) => checkPortImpl(host, port),
     }),
     browser_visit: tool({
-      description: "Open a URL in a headless browser, capture page metadata, and save a screenshot artifact.",
+      description:
+        "Open a URL in a headless browser, capture page metadata, and save a screenshot artifact.",
       inputSchema: z.object({
         url: z.string().url(),
         waitForText: z.string().nullable().optional(),
@@ -1348,19 +1375,33 @@ function createBuildAgent(params: {
         }),
     }),
     web_search: tool({
-      description: "Search the web using SearXNG for current information, documentation, or research.",
+      description:
+        "Search the web using SearXNG for current information, documentation, or research.",
       inputSchema: z.object({
         query: z.string().describe("Search query to look up."),
-        maxResults: z.number().int().min(1).max(10).optional().describe("Maximum results to return (default: 5)."),
+        maxResults: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe("Maximum results to return (default: 5)."),
       }),
       needsApproval: !params.settings.allowNetworkAccess,
       execute: async ({ query, maxResults }) => webSearchImpl(query, maxResults ?? 5),
     }),
     fetch_url: tool({
-      description: "Fetch and extract text content from a URL (useful for reading docs, articles, etc.)",
+      description:
+        "Fetch and extract text content from a URL (useful for reading docs, articles, etc.)",
       inputSchema: z.object({
         url: z.string().url().describe("URL to fetch content from."),
-        maxLength: z.number().int().min(100).max(50000).optional().describe("Maximum characters to return (default: 10000)."),
+        maxLength: z
+          .number()
+          .int()
+          .min(100)
+          .max(50000)
+          .optional()
+          .describe("Maximum characters to return (default: 10000)."),
       }),
       needsApproval: !params.settings.allowNetworkAccess,
       execute: async ({ url, maxLength }) => fetchUrlImpl(url, maxLength ?? 10000),
@@ -1369,7 +1410,10 @@ function createBuildAgent(params: {
       description: "Download a file from a URL and save it to the workspace.",
       inputSchema: z.object({
         url: z.string().url().describe("URL of the file to download."),
-        filename: z.string().optional().describe("Optional filename to save as (defaults to URL basename)."),
+        filename: z
+          .string()
+          .optional()
+          .describe("Optional filename to save as (defaults to URL basename)."),
         path: z.string().optional().describe("Optional subdirectory within workspace to save to."),
       }),
       needsApproval: !params.settings.allowNetworkAccess,
@@ -1382,13 +1426,29 @@ function createBuildAgent(params: {
         }),
     }),
     site_crawl: tool({
-      description: "Crawl a website and save pages locally using wget (respects robots.txt by default).",
+      description:
+        "Crawl a website and save pages locally using wget (respects robots.txt by default).",
       inputSchema: z.object({
         url: z.string().url().describe("Starting URL to crawl."),
-        maxDepth: z.number().int().min(1).max(5).optional().describe("Maximum crawl depth (default: 2)."),
-        maxPages: z.number().int().min(1).max(100).optional().describe("Maximum pages to download (default: 50)."),
+        maxDepth: z
+          .number()
+          .int()
+          .min(1)
+          .max(5)
+          .optional()
+          .describe("Maximum crawl depth (default: 2)."),
+        maxPages: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .optional()
+          .describe("Maximum pages to download (default: 50)."),
         sameDomain: z.boolean().optional().describe("Only crawl same domain (default: true)."),
-        outputDir: z.string().optional().describe("Output directory name (default: 'crawled-site')."),
+        outputDir: z
+          .string()
+          .optional()
+          .describe("Output directory name (default: 'crawled-site')."),
       }),
       needsApproval: !params.settings.allowNetworkAccess,
       execute: async ({ url, maxDepth, maxPages, sameDomain, outputDir }) =>
@@ -1414,15 +1474,17 @@ function createBuildAgent(params: {
   });
 }
 
-function serializeStepSnapshots(stepResults: Array<{
-  stepNumber: number;
-  finishReason: string;
-  text: string;
-  reasoningText?: string;
-  toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>;
-  toolResults: Array<{ toolCallId: string; toolName: string; output: unknown }>;
-  usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
-}>): AgentStepSnapshot[] {
+function serializeStepSnapshots(
+  stepResults: Array<{
+    stepNumber: number;
+    finishReason: string;
+    text: string;
+    reasoningText?: string;
+    toolCalls: Array<{ toolCallId: string; toolName: string; input: unknown }>;
+    toolResults: Array<{ toolCallId: string; toolName: string; output: unknown }>;
+    usage: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  }>,
+): AgentStepSnapshot[] {
   return stepResults.map((step) => ({
     stepNumber: step.stepNumber,
     finishReason: step.finishReason,
@@ -1442,7 +1504,9 @@ function collectApprovalRequests(content: Array<{ type: string; [key: string]: u
   return content
     .filter((part) => part.type === "tool-approval-request")
     .map((part) => {
-      const toolCall = part.toolCall as { toolCallId?: string; toolName?: string; input?: unknown } | undefined;
+      const toolCall = part.toolCall as
+        | { toolCallId?: string; toolName?: string; input?: unknown }
+        | undefined;
       return {
         approvalId: String(part.approvalId),
         toolCallId: toolCall?.toolCallId ?? String(part.approvalId),
@@ -1457,7 +1521,11 @@ function collectCommandLogs(stepSnapshots: AgentStepSnapshot[]) {
 
   for (const step of stepSnapshots) {
     for (const result of step.toolResults) {
-      if (result.toolName !== "run_command" || typeof result.output !== "object" || !result.output) {
+      if (
+        result.toolName !== "run_command" ||
+        typeof result.output !== "object" ||
+        !result.output
+      ) {
         continue;
       }
 
@@ -1560,30 +1628,39 @@ async function runAgentLoop(params: {
           },
     );
 
-    const baseMessages = params.messages ?? [{ role: "user", content: params.prompt ?? "" } satisfies ModelMessage];
+    const baseMessages = params.messages ?? [
+      { role: "user", content: params.prompt ?? "" } satisfies ModelMessage,
+    ];
     const nextMessages = [...baseMessages, ...result.response.messages] as SerializedAgentMessage[];
-    const approvalRequests = collectApprovalRequests(result.content as Array<{ type: string; [key: string]: unknown }>);
-    const serializedSteps = stepSnapshots.length > 0 ? stepSnapshots : serializeStepSnapshots(result.steps.map((step) => ({
-      stepNumber: step.stepNumber,
-      finishReason: step.finishReason,
-      text: step.text,
-      reasoningText: step.reasoningText ?? undefined,
-      toolCalls: step.toolCalls.map((call) => ({
-        toolCallId: call.toolCallId,
-        toolName: call.toolName,
-        input: call.input,
-      })),
-      toolResults: step.toolResults.map((toolResult) => ({
-        toolCallId: toolResult.toolCallId,
-        toolName: toolResult.toolName,
-        output: toolResult.output,
-      })),
-      usage: {
-        inputTokens: step.usage.inputTokens,
-        outputTokens: step.usage.outputTokens,
-        totalTokens: step.usage.totalTokens,
-      },
-    })) );
+    const approvalRequests = collectApprovalRequests(
+      result.content as Array<{ type: string; [key: string]: unknown }>,
+    );
+    const serializedSteps =
+      stepSnapshots.length > 0
+        ? stepSnapshots
+        : serializeStepSnapshots(
+            result.steps.map((step) => ({
+              stepNumber: step.stepNumber,
+              finishReason: step.finishReason,
+              text: step.text,
+              reasoningText: step.reasoningText ?? undefined,
+              toolCalls: step.toolCalls.map((call) => ({
+                toolCallId: call.toolCallId,
+                toolName: call.toolName,
+                input: call.input,
+              })),
+              toolResults: step.toolResults.map((toolResult) => ({
+                toolCallId: toolResult.toolCallId,
+                toolName: toolResult.toolName,
+                output: toolResult.output,
+              })),
+              usage: {
+                inputTokens: step.usage.inputTokens,
+                outputTokens: step.usage.outputTokens,
+                totalTokens: step.usage.totalTokens,
+              },
+            })),
+          );
 
     return {
       kind: approvalRequests.length > 0 ? "needs_approval" : "completed",
@@ -1702,17 +1779,15 @@ export async function runVerificationAgent(params: {
       browserVerificationEnabled: params.settings.browserVerificationEnabled,
     }),
     messages: params.messages,
-    activeTools:
-      params.activeTools ??
-      [
-        "list_directory",
-        "search_files",
-        "read_file",
-        "run_command",
-        "probe_http",
-        "check_port",
-        ...(params.settings.browserVerificationEnabled ? (["browser_visit"] as const) : []),
-      ],
+    activeTools: params.activeTools ?? [
+      "list_directory",
+      "search_files",
+      "read_file",
+      "run_command",
+      "probe_http",
+      "check_port",
+      ...(params.settings.browserVerificationEnabled ? (["browser_visit"] as const) : []),
+    ],
   });
 }
 

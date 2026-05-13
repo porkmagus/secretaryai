@@ -1,1 +1,1 @@
-export { loadAppConfig, type AppConfig } from "./env.js";
+export { type AppConfig, loadAppConfig } from "./env.js";

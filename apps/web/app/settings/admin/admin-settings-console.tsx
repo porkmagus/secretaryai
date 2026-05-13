@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import type {
   AdminMaintenanceAction,
   AdminMaintenanceActionResponse,
   AdminMaintenanceOverviewResponse,
 } from "@secretary/core-runtime";
+import { useEffect, useState } from "react";
 import { fetchJson } from "../../lib/fetch-json";
 import { LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../../lib/ui";
 
@@ -18,25 +18,29 @@ const actions: Array<{
   {
     action: "clear_stale_agent_jobs",
     title: "Clear stale job residue",
-    description: "Remove agent jobs and launch intents whose workspace paths are no longer reachable.",
+    description:
+      "Remove agent jobs and launch intents whose workspace paths are no longer reachable.",
     tone: "dark",
   },
   {
     action: "clear_stale_speech_media",
     title: "Clear stale speech residue",
-    description: "Remove speech artifact records and broken voice sample references that point at files no longer on disk.",
+    description:
+      "Remove speech artifact records and broken voice sample references that point at files no longer on disk.",
     tone: "dark",
   },
   {
     action: "cancel_active_agent_jobs",
     title: "Cancel active jobs",
-    description: "Stop every queued, running, or waiting job so the system can return to an idle state.",
+    description:
+      "Stop every queued, running, or waiting job so the system can return to an idle state.",
     tone: "soft",
   },
   {
     action: "flush_agent_queue",
     title: "Flush agent queue",
-    description: "Drain queued queue entries and clear retained queue state when jobs and Redis drift apart.",
+    description:
+      "Drain queued queue entries and clear retained queue state when jobs and Redis drift apart.",
     tone: "soft",
   },
   {
@@ -80,17 +84,21 @@ export function AdminSettingsConsole() {
 
   async function loadOverview() {
     try {
-      const payload = await fetchJson<AdminMaintenanceOverviewResponse>("/api/admin/maintenance", { cache: "no-store" });
+      const payload = await fetchJson<AdminMaintenanceOverviewResponse>("/api/admin/maintenance", {
+        cache: "no-store",
+      });
       setOverview(payload);
       setError(null);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load admin maintenance status.");
+      setError(
+        loadError instanceof Error ? loadError.message : "Unable to load admin maintenance status.",
+      );
     }
   }
 
   useEffect(() => {
     void loadOverview();
-  }, []);
+  }, [loadOverview]);
 
   async function runAction(action: AdminMaintenanceAction) {
     setBusyAction(action);
@@ -109,7 +117,9 @@ export function AdminSettingsConsole() {
       setError(null);
       setStatus(result.summary);
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "Unable to run maintenance action.");
+      setError(
+        actionError instanceof Error ? actionError.message : "Unable to run maintenance action.",
+      );
     } finally {
       setBusyAction(null);
     }
@@ -150,14 +160,54 @@ export function AdminSettingsConsole() {
         {overview ? (
           <div style={{ display: "grid", gap: 16 }}>
             <StatGrid>
-              <StatCard label="Default workspace" value={overview.defaultWorkspacePath ?? "Not set"} detail="Primary agent-job working root" tone="soft" />
-              <StatCard label="Active jobs" value={String(overview.jobs.active)} detail="Runs in motion right now" tone="soft" />
-              <StatCard label="Waiting jobs" value={String(overview.jobs.waiting)} detail="Runs blocked on approval or runtime" tone="soft" />
-              <StatCard label="Finished jobs" value={String(overview.jobs.finished)} detail="Completed, failed, or cancelled runs" tone="soft" />
-              <StatCard label="Stale jobs" value={String(overview.jobs.staleWorkspaceJobs)} detail="Workspace paths no longer reachable" tone="soft" />
-              <StatCard label="Stale intents" value={String(overview.jobs.staleWorkspaceLaunchIntents)} detail="Conversation launch intents pointing at dead paths" tone="soft" />
-              <StatCard label="Stale speech" value={String(overview.speech.staleArtifacts)} detail="Speech records whose media is gone" tone="soft" />
-              <StatCard label="Broken samples" value={String(overview.speech.staleProfileSamples)} detail="Voice samples missing from disk" tone="soft" />
+              <StatCard
+                label="Default workspace"
+                value={overview.defaultWorkspacePath ?? "Not set"}
+                detail="Primary agent-job working root"
+                tone="soft"
+              />
+              <StatCard
+                label="Active jobs"
+                value={String(overview.jobs.active)}
+                detail="Runs in motion right now"
+                tone="soft"
+              />
+              <StatCard
+                label="Waiting jobs"
+                value={String(overview.jobs.waiting)}
+                detail="Runs blocked on approval or runtime"
+                tone="soft"
+              />
+              <StatCard
+                label="Finished jobs"
+                value={String(overview.jobs.finished)}
+                detail="Completed, failed, or cancelled runs"
+                tone="soft"
+              />
+              <StatCard
+                label="Stale jobs"
+                value={String(overview.jobs.staleWorkspaceJobs)}
+                detail="Workspace paths no longer reachable"
+                tone="soft"
+              />
+              <StatCard
+                label="Stale intents"
+                value={String(overview.jobs.staleWorkspaceLaunchIntents)}
+                detail="Conversation launch intents pointing at dead paths"
+                tone="soft"
+              />
+              <StatCard
+                label="Stale speech"
+                value={String(overview.speech.staleArtifacts)}
+                detail="Speech records whose media is gone"
+                tone="soft"
+              />
+              <StatCard
+                label="Broken samples"
+                value={String(overview.speech.staleProfileSamples)}
+                detail="Voice samples missing from disk"
+                tone="soft"
+              />
             </StatGrid>
 
             <div className="admin-health-grid">

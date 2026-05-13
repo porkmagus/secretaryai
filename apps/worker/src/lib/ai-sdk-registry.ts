@@ -12,18 +12,19 @@
  * removed provider, restore its import and case statement here and its definition in
  * `inference-provider-definitions.ts`.
  */
-import { createProviderRegistry } from "ai";
+
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createHuggingFace } from "@ai-sdk/huggingface";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import type { InferenceProviderId } from "@secretary/core-runtime";
+import { createProviderRegistry } from "ai";
 import { createClaudeCode } from "ai-sdk-provider-claude-code";
 import { createCodexCli } from "ai-sdk-provider-codex-cli";
 import { createGeminiProvider } from "ai-sdk-provider-gemini-cli";
 import { createOllama } from "ollama-ai-provider-v2";
-import type { LanguageModelV3, SharedV3ProviderOptions } from "@ai-sdk/provider";
-import type { InferenceProviderId } from "@secretary/core-runtime";
 import {
   getInferenceProviderDefinition,
   providerSupportsStoredApiKey,
@@ -54,9 +55,7 @@ type InferenceResolutionOptions = {
   workspacePath?: string | null;
 };
 
-function hasElevatedReasoning(
-  reasoningEffort: InferenceRuntimeConfig["reasoningEffort"],
-) {
+function _hasElevatedReasoning(reasoningEffort: InferenceRuntimeConfig["reasoningEffort"]) {
   return reasoningEffort === "medium" || reasoningEffort === "high";
 }
 
@@ -231,10 +230,7 @@ function createProviderForDefinition(
   }
 }
 
-function buildRegistry(
-  inference: InferenceRuntimeConfig,
-  options: InferenceResolutionOptions,
-) {
+function buildRegistry(inference: InferenceRuntimeConfig, options: InferenceResolutionOptions) {
   const definition = getInferenceProviderDefinition(inference.providerId);
   const provider = createProviderForDefinition(inference, options);
 
@@ -285,8 +281,9 @@ export function resolveInferenceLanguageModel(
     return null;
   }
 
-  const modelId =
-    `${definition.id}:${inference.model}` as Parameters<typeof registry.languageModel>[0];
+  const modelId = `${definition.id}:${inference.model}` as Parameters<
+    typeof registry.languageModel
+  >[0];
 
   return {
     model: registry.languageModel(modelId),

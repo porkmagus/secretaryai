@@ -1,6 +1,6 @@
 import assert from "node:assert";
-import test from "node:test";
 import { createHash, timingSafeEqual } from "node:crypto";
+import test from "node:test";
 
 // Minimal reproduction of the fixed functions for testing
 function passwordsMatch(input: string, expected: string) {

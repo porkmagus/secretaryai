@@ -27,8 +27,6 @@ try {
     resolve(inputDir, "runtime", "speech", "profiles"),
     resolveRepoPath("runtime", "speech", "profiles"),
   );
-
-  console.log(JSON.stringify({ restoredFrom: inputDir }, null, 2));
 } finally {
   await client.end();
 }

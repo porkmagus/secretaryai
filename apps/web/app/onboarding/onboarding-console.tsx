@@ -1,8 +1,8 @@
 "use client";
 
+import type { OnboardingStatusResponse } from "@secretary/core-runtime";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { OnboardingStatusResponse } from "@secretary/core-runtime";
 import { AppPage, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
 
 function stepTone(status: OnboardingStatusResponse["steps"][number]["status"]) {
@@ -69,8 +69,8 @@ export function OnboardingConsole() {
         title="System overview"
         description={
           <p>
-            This page is the broad view of what is configured, what still needs
-            attention, and which parts of the Secretary stack are ready for daily use.
+            This page is the broad view of what is configured, what still needs attention, and which
+            parts of the Secretary stack are ready for daily use.
           </p>
         }
         meta={
@@ -98,74 +98,82 @@ export function OnboardingConsole() {
           }
           detail="Whether secretary text chat is using a real model or local fallback logic"
         />
-        <StatCard label="Primary channels" value="Web + Telegram" detail="Desk and bot are active entry points" />
-        <StatCard label="Voice path" value="Local STT + TTS" detail="Speech stays inside the local stack" />
-        <StatCard label="Next habit" value="Backup first" detail="Take a snapshot before risky changes or imports" tone="soft" />
+        <StatCard
+          label="Primary channels"
+          value="Web + Telegram"
+          detail="Desk and bot are active entry points"
+        />
+        <StatCard
+          label="Voice path"
+          value="Local STT + TTS"
+          detail="Speech stays inside the local stack"
+        />
+        <StatCard
+          label="Next habit"
+          value="Backup first"
+          detail="Take a snapshot before risky changes or imports"
+          tone="soft"
+        />
       </StatGrid>
 
       <section className="stack-md">
-          {(data?.steps ?? []).map((step) => {
-            const tone = stepTone(step.status);
+        {(data?.steps ?? []).map((step) => {
+          const tone = stepTone(step.status);
 
-            return (
-              <SurfaceCard
-                key={step.id}
-                className="stack-sm"
+          return (
+            <SurfaceCard key={step.id} className="stack-sm">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div>
-                    <p
-                      style={{
-                        margin: 0,
-                        color: "var(--accent)",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      {step.id}
-                    </p>
-                    <h2 style={{ margin: "6px 0 0", fontSize: 24 }}>{step.title}</h2>
-                  </div>
-                  <span
+                <div>
+                  <p
                     style={{
-                      padding: "6px 10px",
-                      borderRadius: 999,
-                      background: tone.background,
-                      border: `1px solid ${tone.border}`,
-                      color: tone.badge,
+                      margin: 0,
+                      color: "var(--accent)",
                       fontSize: 12,
                       fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
                     }}
                   >
-                    {step.status.replace("_", " ")}
-                  </span>
+                    {step.id}
+                  </p>
+                  <h2 style={{ margin: "6px 0 0", fontSize: 24 }}>{step.title}</h2>
                 </div>
-                <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>
-                  {step.detail}
-                </p>
-                <Link
-                  href={step.href}
+                <span
                   style={{
-                    color: "var(--accent)",
-                    textDecoration: "none",
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    background: tone.background,
+                    border: `1px solid ${tone.border}`,
+                    color: tone.badge,
+                    fontSize: 12,
                     fontWeight: 700,
                   }}
                 >
-                  Open {step.href}
-                </Link>
-              </SurfaceCard>
-            );
-          })}
+                  {step.status.replace("_", " ")}
+                </span>
+              </div>
+              <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.6 }}>{step.detail}</p>
+              <Link
+                href={step.href}
+                style={{
+                  color: "var(--accent)",
+                  textDecoration: "none",
+                  fontWeight: 700,
+                }}
+              >
+                Open {step.href}
+              </Link>
+            </SurfaceCard>
+          );
+        })}
       </section>
     </AppPage>
   );

@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const workerBaseUrl = process.env.WORKER_BASE_URL ?? "http://127.0.0.1:4000";
@@ -105,7 +105,7 @@ async function run() {
       return jobs.jobs.find((job) => job.conversationId === webLaunch.conversationId) ?? null;
     }, "web-launched agent job");
 
-    const blockedDetail = await waitFor(async () => {
+    const _blockedDetail = await waitFor(async () => {
       const detail = await fetchJson(`/runtime/agent-jobs/${launchedJob.id}`);
       return detail.requirements.length > 0 ? detail : null;
     }, "runtime-blocked job detail");
@@ -188,21 +188,6 @@ async function run() {
       },
       body: "{}",
     });
-
-    console.log(
-      JSON.stringify(
-        {
-          webConversationId: webLaunch.conversationId,
-          webJobId: launchedJob.id,
-          webRequirementCount: blockedDetail.requirements.length,
-          telegramConversationId: telegramLaunch.conversationId,
-          telegramJobId: telegramJob.id,
-          workerReady: true,
-        },
-        null,
-        2,
-      ),
-    );
   } finally {
     await fetchJson("/runtime/agent-job-settings", {
       method: "PATCH",
@@ -214,7 +199,6 @@ async function run() {
   }
 }
 
-run().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+run().catch((_error) => {
   process.exitCode = 1;
 });

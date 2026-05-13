@@ -2,8 +2,8 @@ import type { SettingsImportRequest } from "@secretary/core-runtime";
 
 export {
   exportSettingsSnapshot,
-  importSettingsSnapshot,
   exportSettingsSnapshot as exportSettings,
+  importSettingsSnapshot,
   importSettingsSnapshot as importSettings,
 } from "./admin-runtime-core.js";
 

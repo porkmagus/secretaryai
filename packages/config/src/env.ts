@@ -10,9 +10,7 @@ function emptyStringToUndefined(value: unknown) {
 }
 
 const appConfigSchema = z.object({
-  NODE_ENV: z
-    .enum(["development", "test", "production"])
-    .default("development"),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_BASE_URL: z.string().url(),
   WORKER_BASE_URL: z.string().url(),
   WEB_PORT: z.coerce.number().int().positive().default(3000),
@@ -23,86 +21,35 @@ const appConfigSchema = z.object({
   DEFAULT_USER_ID: z.string().min(1),
   DEFAULT_PERSONA_ID: z.string().min(1),
   OPENAI_API_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
-  OPENAI_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
+  OPENAI_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
   OPENAI_MODEL: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
   OPENAI_REASONING_EFFORT: z.preprocess(
     emptyStringToUndefined,
     z.enum(["minimal", "low", "medium", "high"]).optional(),
   ),
-  SEARXNG_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
-  CRAWL4AI_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
+  SEARXNG_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+  CRAWL4AI_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
   TELEGRAM_API_BASE_URL: z.string().url().default("https://api.telegram.org"),
   TELEGRAM_BOT_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
   TELEGRAM_WEBHOOK_SECRET: z.preprocess(
     emptyStringToUndefined,
     z.string().min(1).max(256).optional(),
   ),
-  TELEGRAM_WEBHOOK_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
-  TELEGRAM_DEFAULT_CHAT_ID: z.preprocess(
-    emptyStringToUndefined,
-    z.string().min(1).optional(),
-  ),
-  DISCORD_WEBHOOK_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
-  SLACK_WEBHOOK_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
-  RESEND_API_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
+  TELEGRAM_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+  TELEGRAM_DEFAULT_CHAT_ID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  DISCORD_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+  SLACK_WEBHOOK_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+  RESEND_API_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
   RESEND_API_KEY: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
-  EMAIL_FROM_ADDRESS: z.preprocess(
-    emptyStringToUndefined,
-    z.string().email().optional(),
-  ),
-  EMAIL_DEFAULT_TO: z.preprocess(
-    emptyStringToUndefined,
-    z.string().min(1).optional(),
-  ),
-  TWILIO_API_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
-  TWILIO_ACCOUNT_SID: z.preprocess(
-    emptyStringToUndefined,
-    z.string().min(1).optional(),
-  ),
-  TWILIO_AUTH_TOKEN: z.preprocess(
-    emptyStringToUndefined,
-    z.string().min(1).optional(),
-  ),
-  TWILIO_FROM_NUMBER: z.preprocess(
-    emptyStringToUndefined,
-    z.string().min(1).optional(),
-  ),
-  SMS_DEFAULT_TO: z.preprocess(
-    emptyStringToUndefined,
-    z.string().min(1).optional(),
-  ),
-  STT_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
-  TTS_BASE_URL: z.preprocess(
-    emptyStringToUndefined,
-    z.string().url().optional(),
-  ),
+  EMAIL_FROM_ADDRESS: z.preprocess(emptyStringToUndefined, z.string().email().optional()),
+  EMAIL_DEFAULT_TO: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  TWILIO_API_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+  TWILIO_ACCOUNT_SID: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  TWILIO_AUTH_TOKEN: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  TWILIO_FROM_NUMBER: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  SMS_DEFAULT_TO: z.preprocess(emptyStringToUndefined, z.string().min(1).optional()),
+  STT_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
+  TTS_BASE_URL: z.preprocess(emptyStringToUndefined, z.string().url().optional()),
 });
 
 export type AppConfig = {

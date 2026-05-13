@@ -1,39 +1,38 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type ModelMessage } from "ai";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import type {
   AgentJobActionResponse,
   AgentJobApprovalMode,
   AgentJobArtifactKind,
-  AgentJobArtifactRecord,
   AgentJobDetailResponse,
   AgentJobListResponse,
   AgentJobRecord,
   AgentJobRequirementDecisionRequest,
   AgentJobRequirementKind,
-  AgentJobRequirementRecord,
   AgentJobRequirementStatus,
-  AgentJobSettingsResponse,
   AgentJobStatus,
   AgentJobStepKind,
-  AgentJobStepRecord,
   AgentJobStepStatus,
   CreateAgentJobRequest,
 } from "@secretary/core-runtime";
 import { createMessageId } from "@secretary/core-runtime";
 import {
+  activityTraces,
   agentJobArtifacts,
   agentJobRequirements,
   agentJobSteps,
   agentJobs,
-  activityTraces,
+  type DbClient,
   jobs,
   users,
-  type DbClient,
 } from "@secretary/db";
-import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
+import type { ModelMessage } from "ai";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import {
+  buildAgentJobLocationHint,
+  postAgentJobConversationUpdate,
+} from "./agent-job-conversation-updates.js";
 import {
   buildApprovalResponseMessages,
   detectExecutionRequirements,
@@ -42,28 +41,21 @@ import {
   runImplementationAgent,
   runVerificationAgent,
 } from "./agent-job-executor.js";
+import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import {
   getAgentJobSettings,
   loadAgentJobSettings,
   updateAgentJobSettings,
 } from "./agent-job-settings.js";
 import {
-  buildAgentJobLocationHint,
-  postAgentJobConversationUpdate,
-} from "./agent-job-conversation-updates.js";
-import { getInferenceRuntimeConfig } from "./inference-settings.js";
-import { pathExists, normalizeApprovalMode, logError } from "./utils.js";
-
-import {
   type JobRow,
   toAgentJobRecord,
-  toStepRecord,
   toArtifactRecord,
   toRequirementRecord,
+  toStepRecord,
 } from "./agent-job-transformers.js";
-
-
-
+import { getInferenceRuntimeConfig } from "./inference-settings.js";
+import { logError, normalizeApprovalMode, pathExists } from "./utils.js";
 
 type CreateAgentJobParams = {
   config: AppConfig;
@@ -83,7 +75,6 @@ type StepPlan = {
   summary?: string | null;
 };
 
-
 async function ensureDefaultUser(dbClient: DbClient, config: AppConfig) {
   const existing = await dbClient.db.query.users.findFirst({
     where: eq(users.id, config.defaultUserId),
@@ -99,7 +90,6 @@ async function ensureDefaultUser(dbClient: DbClient, config: AppConfig) {
     defaultPersonaId: config.defaultPersonaId,
   });
 }
-
 
 function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
   const deliverables = request.deliverables?.filter(Boolean) ?? [];
@@ -122,7 +112,8 @@ function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
     {
       stepKey: "draft_plan",
       title: "Draft an execution plan",
-      detail: "Explore the codebase using search tools to build a comprehensive plan before editing files.",
+      detail:
+        "Explore the codebase using search tools to build a comprehensive plan before editing files.",
       kind: "plan",
       status: "pending",
       dependsOnStepIds: ["inspect_workspace"],
@@ -145,7 +136,8 @@ function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
     {
       stepKey: "verify_result",
       title: "Run verification and capture evidence",
-      detail: "Run the strongest available checks, capture logs, and decide whether the workspace is genuinely ready to hand off.",
+      detail:
+        "Run the strongest available checks, capture logs, and decide whether the workspace is genuinely ready to hand off.",
       kind: "verify",
       status: "pending",
       dependsOnStepIds: ["implement_scope"],
@@ -155,7 +147,8 @@ function buildInitialPlan(request: CreateAgentJobRequest): StepPlan[] {
     {
       stepKey: "finalize_handoff",
       title: "Finalize the handoff summary",
-      detail: "Summarize what changed, what remains, and which artifacts or commands matter to the operator.",
+      detail:
+        "Summarize what changed, what remains, and which artifacts or commands matter to the operator.",
       kind: "finalize",
       status: "pending",
       dependsOnStepIds: ["verify_result"],
@@ -190,10 +183,7 @@ async function inspectWorkspace(workspacePath: string) {
         name: typeof parsed.name === "string" ? parsed.name : null,
         private: parsed.private === true,
         workspaces: Array.isArray(parsed.workspaces) ? parsed.workspaces : [],
-        scripts:
-          parsed.scripts && typeof parsed.scripts === "object"
-            ? parsed.scripts
-            : {},
+        scripts: parsed.scripts && typeof parsed.scripts === "object" ? parsed.scripts : {},
       };
       const workspaceCount = Array.isArray(parsed.workspaces) ? parsed.workspaces.length : 0;
       packageSummary = [
@@ -238,7 +228,9 @@ async function inspectWorkspace(workspacePath: string) {
 }
 
 async function readDirectorySafe(workspacePath: string) {
-  const dirents = await (await import("node:fs/promises")).readdir(workspacePath, { withFileTypes: true });
+  const dirents = await (await import("node:fs/promises")).readdir(workspacePath, {
+    withFileTypes: true,
+  });
   return dirents.map((entry) => ({
     name: entry.name,
     kind: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
@@ -416,15 +408,22 @@ function getRequestFromRow(row: JobRow): CreateAgentJobRequest {
     conversationId: row.agent.conversationId ?? null,
     approvalMode: row.agent.approvalMode as AgentJobApprovalMode,
     constraints: Array.isArray(row.job.payloadJson.constraints)
-      ? row.job.payloadJson.constraints.filter((value): value is string => typeof value === "string")
+      ? row.job.payloadJson.constraints.filter(
+          (value): value is string => typeof value === "string",
+        )
       : [],
     deliverables: Array.isArray(row.job.payloadJson.deliverables)
-      ? row.job.payloadJson.deliverables.filter((value): value is string => typeof value === "string")
+      ? row.job.payloadJson.deliverables.filter(
+          (value): value is string => typeof value === "string",
+        )
       : [],
   };
 }
 
-function getCurrentStep(steps: Array<typeof agentJobSteps.$inferSelect>, currentStepId: string | null) {
+function getCurrentStep(
+  steps: Array<typeof agentJobSteps.$inferSelect>,
+  currentStepId: string | null,
+) {
   return (
     steps.find((step) => step.id === currentStepId) ??
     steps.find((step) => step.status !== "completed" && step.status !== "cancelled") ??
@@ -504,18 +503,24 @@ async function updateJobState(params: {
   finishedAt?: Date | null;
 }) {
   const now = new Date();
-  await params.dbClient.db.update(jobs).set({
-    ...(params.status ? { status: params.status } : {}),
-    ...(params.errorText !== undefined ? { errorText: params.errorText } : {}),
-    ...(params.finishedAt !== undefined ? { finishedAt: params.finishedAt } : {}),
-    updatedAt: now,
-  }).where(eq(jobs.id, params.jobId));
+  await params.dbClient.db
+    .update(jobs)
+    .set({
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.errorText !== undefined ? { errorText: params.errorText } : {}),
+      ...(params.finishedAt !== undefined ? { finishedAt: params.finishedAt } : {}),
+      updatedAt: now,
+    })
+    .where(eq(jobs.id, params.jobId));
 
-  await params.dbClient.db.update(agentJobs).set({
-    ...(params.blockerSummary !== undefined ? { blockerSummary: params.blockerSummary } : {}),
-    ...(params.currentStepId !== undefined ? { currentStepId: params.currentStepId } : {}),
-    ...(params.resultSummary !== undefined ? { resultSummary: params.resultSummary } : {}),
-  }).where(eq(agentJobs.jobId, params.jobId));
+  await params.dbClient.db
+    .update(agentJobs)
+    .set({
+      ...(params.blockerSummary !== undefined ? { blockerSummary: params.blockerSummary } : {}),
+      ...(params.currentStepId !== undefined ? { currentStepId: params.currentStepId } : {}),
+      ...(params.resultSummary !== undefined ? { resultSummary: params.resultSummary } : {}),
+    })
+    .where(eq(agentJobs.jobId, params.jobId));
 }
 
 async function updateStepState(params: {
@@ -528,15 +533,18 @@ async function updateStepState(params: {
   startedAt?: Date | null;
   finishedAt?: Date | null;
 }) {
-  await params.dbClient.db.update(agentJobSteps).set({
-    ...(params.status ? { status: params.status } : {}),
-    ...(params.outputJson !== undefined ? { outputJson: params.outputJson } : {}),
-    ...(params.summary !== undefined ? { summary: params.summary } : {}),
-    ...(params.errorText !== undefined ? { errorText: params.errorText } : {}),
-    ...(params.startedAt !== undefined ? { startedAt: params.startedAt } : {}),
-    ...(params.finishedAt !== undefined ? { finishedAt: params.finishedAt } : {}),
-    updatedAt: new Date(),
-  }).where(eq(agentJobSteps.id, params.stepId));
+  await params.dbClient.db
+    .update(agentJobSteps)
+    .set({
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.outputJson !== undefined ? { outputJson: params.outputJson } : {}),
+      ...(params.summary !== undefined ? { summary: params.summary } : {}),
+      ...(params.errorText !== undefined ? { errorText: params.errorText } : {}),
+      ...(params.startedAt !== undefined ? { startedAt: params.startedAt } : {}),
+      ...(params.finishedAt !== undefined ? { finishedAt: params.finishedAt } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(agentJobSteps.id, params.stepId));
 }
 
 async function prepareInitialPlan(params: {
@@ -557,12 +565,15 @@ async function prepareInitialPlan(params: {
   const now = new Date();
   const stepIdByKey = new Map<string, string>();
 
-  await params.dbClient.db.update(jobs).set({
-    status: workspaceReady ? "running" : "waiting_for_runtime",
-    startedAt: params.row.job.startedAt ?? now,
-    updatedAt: now,
-    errorText: null,
-  }).where(eq(jobs.id, params.jobId));
+  await params.dbClient.db
+    .update(jobs)
+    .set({
+      status: workspaceReady ? "running" : "waiting_for_runtime",
+      startedAt: params.row.job.startedAt ?? now,
+      updatedAt: now,
+      errorText: null,
+    })
+    .where(eq(jobs.id, params.jobId));
 
   for (const [index, step] of plannedSteps.entries()) {
     const stepId = createMessageId();
@@ -592,11 +603,16 @@ async function prepareInitialPlan(params: {
   }
 
   const currentStepId = stepIdByKey.get("inspect_workspace") ?? null;
-  await params.dbClient.db.update(agentJobs).set({
-    currentStepId,
-    blockerSummary: workspaceReady ? null : `Workspace path is not reachable yet: ${params.row.agent.workspacePath}`,
-    resultSummary: null,
-  }).where(eq(agentJobs.jobId, params.jobId));
+  await params.dbClient.db
+    .update(agentJobs)
+    .set({
+      currentStepId,
+      blockerSummary: workspaceReady
+        ? null
+        : `Workspace path is not reachable yet: ${params.row.agent.workspacePath}`,
+      resultSummary: null,
+    })
+    .where(eq(agentJobs.jobId, params.jobId));
 
   await insertArtifact({
     dbClient: params.dbClient,
@@ -656,9 +672,7 @@ async function prepareInitialPlan(params: {
     config: params.config,
     conversationId: params.row.agent.conversationId ?? null,
     jobId: params.jobId,
-    eventName: workspaceReady
-      ? "agent.job.chat.plan_ready"
-      : "agent.job.chat.runtime_blocked",
+    eventName: workspaceReady ? "agent.job.chat.plan_ready" : "agent.job.chat.runtime_blocked",
     importance: workspaceReady ? "normal" : "important",
     text: workspaceReady
       ? `I mapped out the build job and I’m starting with a workspace inspection in ${params.row.agent.workspacePath}.`
@@ -700,11 +714,20 @@ async function satisfyRuntimeRequirement(params: {
   inspectStep: typeof agentJobSteps.$inferSelect;
   conversationId: string | null;
 }) {
-  await params.dbClient.db.update(agentJobRequirements).set({
-    status: "satisfied",
-    resolutionText: "Workspace path became reachable.",
-    updatedAt: new Date(),
-  }).where(and(eq(agentJobRequirements.jobId, params.jobId), eq(agentJobRequirements.stepId, params.inspectStep.id), eq(agentJobRequirements.status, "pending")));
+  await params.dbClient.db
+    .update(agentJobRequirements)
+    .set({
+      status: "satisfied",
+      resolutionText: "Workspace path became reachable.",
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(agentJobRequirements.jobId, params.jobId),
+        eq(agentJobRequirements.stepId, params.inspectStep.id),
+        eq(agentJobRequirements.status, "pending"),
+      ),
+    );
 
   await updateStepState({
     dbClient: params.dbClient,
@@ -886,11 +909,15 @@ async function clearPendingRequirementsForStep(params: {
   jobId: string;
   stepId: string;
 }) {
-  await params.dbClient.db.delete(agentJobRequirements).where(and(
-    eq(agentJobRequirements.jobId, params.jobId),
-    eq(agentJobRequirements.stepId, params.stepId),
-    eq(agentJobRequirements.status, "pending"),
-  ));
+  await params.dbClient.db
+    .delete(agentJobRequirements)
+    .where(
+      and(
+        eq(agentJobRequirements.jobId, params.jobId),
+        eq(agentJobRequirements.stepId, params.stepId),
+        eq(agentJobRequirements.status, "pending"),
+      ),
+    );
 }
 
 async function syncDetectedRequirements(params: {
@@ -899,12 +926,22 @@ async function syncDetectedRequirements(params: {
   stepId: string;
   detected: Awaited<ReturnType<typeof detectExecutionRequirements>>;
 }) {
-  await params.dbClient.db.delete(agentJobRequirements).where(and(
-    eq(agentJobRequirements.jobId, params.jobId),
-    eq(agentJobRequirements.stepId, params.stepId),
-    inArray(agentJobRequirements.requirementKind, ["runtime", "package_manager", "service", "network", "port"]),
-    eq(agentJobRequirements.status, "pending"),
-  ));
+  await params.dbClient.db
+    .delete(agentJobRequirements)
+    .where(
+      and(
+        eq(agentJobRequirements.jobId, params.jobId),
+        eq(agentJobRequirements.stepId, params.stepId),
+        inArray(agentJobRequirements.requirementKind, [
+          "runtime",
+          "package_manager",
+          "service",
+          "network",
+          "port",
+        ]),
+        eq(agentJobRequirements.status, "pending"),
+      ),
+    );
 
   await insertRequirements({
     dbClient: params.dbClient,
@@ -948,9 +985,7 @@ async function storeVerificationEvidenceArtifacts(params: {
           ? (result.output as Record<string, unknown>)
           : null;
       const contentText =
-        typeof result.output === "string"
-          ? result.output
-          : JSON.stringify(result.output, null, 2);
+        typeof result.output === "string" ? result.output : JSON.stringify(result.output, null, 2);
 
       await insertArtifact({
         dbClient: params.dbClient,
@@ -971,8 +1006,7 @@ async function storeVerificationEvidenceArtifacts(params: {
         typeof outputRecord.screenshot === "object"
       ) {
         const screenshot = outputRecord.screenshot as Record<string, unknown>;
-        const storageKey =
-          typeof screenshot.storageKey === "string" ? screenshot.storageKey : null;
+        const storageKey = typeof screenshot.storageKey === "string" ? screenshot.storageKey : null;
         const mimeType =
           typeof screenshot.mimeType === "string" ? screenshot.mimeType : "image/png";
 
@@ -1012,7 +1046,7 @@ function collectVerificationBlockers(params: {
     .filter((entry) => entry.exitCode !== 0)
     .map((entry) => `${entry.command} exited with ${entry.exitCode}`);
 
-  const requirements: Array<{
+  const _requirements: Array<{
     jobId: string;
     stepId: string | null;
     kind: AgentJobRequirementKind;
@@ -1060,12 +1094,16 @@ async function syncVerificationRequirements(params: {
     }>;
   }>;
 }) {
-  await params.dbClient.db.delete(agentJobRequirements).where(and(
-    eq(agentJobRequirements.jobId, params.jobId),
-    eq(agentJobRequirements.stepId, params.stepId),
-    inArray(agentJobRequirements.requirementKind, ["network", "port", "service"]),
-    eq(agentJobRequirements.status, "pending"),
-  ));
+  await params.dbClient.db
+    .delete(agentJobRequirements)
+    .where(
+      and(
+        eq(agentJobRequirements.jobId, params.jobId),
+        eq(agentJobRequirements.stepId, params.stepId),
+        inArray(agentJobRequirements.requirementKind, ["network", "port", "service"]),
+        eq(agentJobRequirements.status, "pending"),
+      ),
+    );
 
   const requirements: Array<{
     jobId: string;
@@ -1110,7 +1148,8 @@ async function syncVerificationRequirements(params: {
             stepId: params.stepId,
             kind: "network",
             label: `HTTP probe returned ${status}`,
-            detail: "The verification pass reached the endpoint, but the response was not healthy yet.",
+            detail:
+              "The verification pass reached the endpoint, but the response was not healthy yet.",
             metadataJson: {
               url: output.url,
               status,
@@ -1137,8 +1176,7 @@ async function recoverInterruptedStep(params: {
     return params.currentStep;
   }
 
-  const recoveredStatus =
-    params.currentStep.stepKey === "verify_result" ? "retrying" : "ready";
+  const recoveredStatus = params.currentStep.stepKey === "verify_result" ? "retrying" : "ready";
 
   await updateStepState({
     dbClient: params.dbClient,
@@ -1394,7 +1432,10 @@ async function executeImplementationStep(params: {
 
   if (!inference.enabled) {
     const existingCredentialRequirement = params.requirements.find(
-      (requirement) => requirement.stepId === params.implementStep.id && requirement.requirementKind === "credential" && requirement.status === "pending",
+      (requirement) =>
+        requirement.stepId === params.implementStep.id &&
+        requirement.requirementKind === "credential" &&
+        requirement.status === "pending",
     );
 
     if (!existingCredentialRequirement) {
@@ -1404,7 +1445,8 @@ async function executeImplementationStep(params: {
         stepId: params.implementStep.id,
         kind: "credential",
         label: "Inference provider must be configured",
-        detail: "Autonomous build jobs need an active AI SDK inference provider before execution can continue.",
+        detail:
+          "Autonomous build jobs need an active AI SDK inference provider before execution can continue.",
         metadataJson: {
           providerSummary: inference.summary,
         },
@@ -1441,10 +1483,14 @@ async function executeImplementationStep(params: {
   }
 
   const pendingApprovals = params.requirements.filter(
-    (requirement) => requirement.stepId === params.implementStep.id && requirement.status === "pending",
+    (requirement) =>
+      requirement.stepId === params.implementStep.id && requirement.status === "pending",
   );
   const resolvedApprovals = params.requirements.filter(
-    (requirement) => requirement.stepId === params.implementStep.id && requirement.requirementKind === "approval" && requirement.status !== "pending",
+    (requirement) =>
+      requirement.stepId === params.implementStep.id &&
+      requirement.requirementKind === "approval" &&
+      requirement.status !== "pending",
   );
 
   const detectedRequirements = await detectExecutionRequirements({
@@ -1503,16 +1549,20 @@ async function executeImplementationStep(params: {
   const storedMessages = parseStoredMessages(params.implementStep.outputJson?.agentMessages);
   const approvalMessages = buildApprovalResponseMessages({
     approvalDecisions: resolvedApprovals.map((requirement) => ({
-      approvalId: typeof requirement.metadataJson?.approvalId === "string" ? requirement.metadataJson.approvalId : requirement.id,
+      approvalId:
+        typeof requirement.metadataJson?.approvalId === "string"
+          ? requirement.metadataJson.approvalId
+          : requirement.id,
       approved: requirement.status === "satisfied",
       reason: requirement.resolutionText ?? undefined,
     })),
   });
-  const messages = storedMessages.length > 0 && approvalMessages.length > 0
-    ? [...storedMessages, ...approvalMessages]
-    : storedMessages.length > 0
-      ? storedMessages
-      : undefined;
+  const messages =
+    storedMessages.length > 0 && approvalMessages.length > 0
+      ? [...storedMessages, ...approvalMessages]
+      : storedMessages.length > 0
+        ? storedMessages
+        : undefined;
 
   await updateStepState({
     dbClient: params.dbClient,
@@ -1571,7 +1621,8 @@ async function executeImplementationStep(params: {
     stepId: params.implementStep.id,
     kind: "note",
     label: "Implementation agent summary",
-    contentText: result.finalText || "The implementation agent completed without a final text summary.",
+    contentText:
+      result.finalText || "The implementation agent completed without a final text summary.",
     mimeType: "text/plain",
     metadataJson: {
       usage: result.usage,
@@ -1693,7 +1744,8 @@ async function executeImplementationStep(params: {
     jobId: params.jobId,
     stepId: params.implementStep.id,
     label: "Implementation completed",
-    contentText: result.finalText || "Implementation pass completed and handed off to verification.",
+    contentText:
+      result.finalText || "Implementation pass completed and handed off to verification.",
     metadataJson: {
       commandLogCount: result.commandLogs.length,
       nextStepId: verifyStep?.id ?? null,
@@ -1774,10 +1826,14 @@ async function executeVerificationStep(params: {
   }
 
   const pendingApprovals = params.requirements.filter(
-    (requirement) => requirement.stepId === params.verifyStep.id && requirement.status === "pending",
+    (requirement) =>
+      requirement.stepId === params.verifyStep.id && requirement.status === "pending",
   );
   const resolvedApprovals = params.requirements.filter(
-    (requirement) => requirement.stepId === params.verifyStep.id && requirement.requirementKind === "approval" && requirement.status !== "pending",
+    (requirement) =>
+      requirement.stepId === params.verifyStep.id &&
+      requirement.requirementKind === "approval" &&
+      requirement.status !== "pending",
   );
 
   const detectedRequirements = await detectExecutionRequirements({
@@ -1836,16 +1892,20 @@ async function executeVerificationStep(params: {
   const storedMessages = parseStoredMessages(params.verifyStep.outputJson?.agentMessages);
   const approvalMessages = buildApprovalResponseMessages({
     approvalDecisions: resolvedApprovals.map((requirement) => ({
-      approvalId: typeof requirement.metadataJson?.approvalId === "string" ? requirement.metadataJson.approvalId : requirement.id,
+      approvalId:
+        typeof requirement.metadataJson?.approvalId === "string"
+          ? requirement.metadataJson.approvalId
+          : requirement.id,
       approved: requirement.status === "satisfied",
       reason: requirement.resolutionText ?? undefined,
     })),
   });
-  const messages = storedMessages.length > 0 && approvalMessages.length > 0
-    ? [...storedMessages, ...approvalMessages]
-    : storedMessages.length > 0
-      ? storedMessages
-      : undefined;
+  const messages =
+    storedMessages.length > 0 && approvalMessages.length > 0
+      ? [...storedMessages, ...approvalMessages]
+      : storedMessages.length > 0
+        ? storedMessages
+        : undefined;
 
   await updateStepState({
     dbClient: params.dbClient,
@@ -2009,7 +2069,9 @@ async function executeVerificationStep(params: {
           attemptCount,
           lastFailureNotes: failureNotes,
         },
-        summary: result.finalText || "Verification found blockers and scheduled another implementation pass.",
+        summary:
+          result.finalText ||
+          "Verification found blockers and scheduled another implementation pass.",
         errorText: failureNotes.join("; "),
       });
       if (implementStep) {
@@ -2173,8 +2235,12 @@ async function executeFinalizeStep(params: {
   steps: Array<typeof agentJobSteps.$inferSelect>;
 }) {
   const implementationSummary = getImplementationSummary(params.steps);
-  const verificationSummary = params.steps.find((step) => step.stepKey === "verify_result")?.outputJson?.finalText;
-  const verificationText = typeof verificationSummary === "string" ? verificationSummary : "Verification summary unavailable.";
+  const verificationSummary = params.steps.find((step) => step.stepKey === "verify_result")
+    ?.outputJson?.finalText;
+  const verificationText =
+    typeof verificationSummary === "string"
+      ? verificationSummary
+      : "Verification summary unavailable.";
   const lines = [
     `Goal: ${params.row.agent.goal}`,
     "",
@@ -2269,7 +2335,10 @@ export async function listAgentJobs(dbClient: DbClient): Promise<AgentJobListRes
   };
 }
 
-export async function getAgentJobDetail(dbClient: DbClient, jobId: string): Promise<AgentJobDetailResponse | null> {
+export async function getAgentJobDetail(
+  dbClient: DbClient,
+  jobId: string,
+): Promise<AgentJobDetailResponse | null> {
   const row = await getAgentJobRow(dbClient, jobId);
 
   if (!row) {
@@ -2295,7 +2364,9 @@ export async function getAgentJobDetail(dbClient: DbClient, jobId: string): Prom
 
 export async function createAgentJob(params: CreateAgentJobParams): Promise<AgentJobRecord> {
   const settings = await loadAgentJobSettings();
-  const approvalMode = normalizeApprovalMode(params.request.approvalMode ?? settings.defaultApprovalMode);
+  const approvalMode = normalizeApprovalMode(
+    params.request.approvalMode ?? settings.defaultApprovalMode,
+  );
   const normalizedWorkspacePath = normalizeWorkspacePath(
     params.request.workspacePath?.trim() || settings.defaultWorkspacePath || process.cwd(),
     settings.executionBackend,
@@ -2355,16 +2426,22 @@ export async function createAgentJob(params: CreateAgentJobParams): Promise<Agen
     const errorText = error instanceof Error ? error.message : "Unknown queue enqueue error";
     const failedAt = new Date();
 
-    await params.dbClient.db.update(jobs).set({
-      status: "failed",
-      errorText,
-      finishedAt: failedAt,
-      updatedAt: failedAt,
-    }).where(eq(jobs.id, jobId));
+    await params.dbClient.db
+      .update(jobs)
+      .set({
+        status: "failed",
+        errorText,
+        finishedAt: failedAt,
+        updatedAt: failedAt,
+      })
+      .where(eq(jobs.id, jobId));
 
-    await params.dbClient.db.update(agentJobs).set({
-      blockerSummary: errorText,
-    }).where(eq(agentJobs.jobId, jobId));
+    await params.dbClient.db
+      .update(agentJobs)
+      .set({
+        blockerSummary: errorText,
+      })
+      .where(eq(agentJobs.jobId, jobId));
 
     await insertTrace({
       dbClient: params.dbClient,
@@ -2396,16 +2473,22 @@ export async function markAgentJobFailed(
   const row = await getAgentJobRow(dbClient, jobId);
   const finishedAt = new Date();
 
-  await dbClient.db.update(jobs).set({
-    status: "failed",
-    errorText,
-    finishedAt,
-    updatedAt: finishedAt,
-  }).where(eq(jobs.id, jobId));
+  await dbClient.db
+    .update(jobs)
+    .set({
+      status: "failed",
+      errorText,
+      finishedAt,
+      updatedAt: finishedAt,
+    })
+    .where(eq(jobs.id, jobId));
 
-  await dbClient.db.update(agentJobs).set({
-    blockerSummary: errorText,
-  }).where(eq(agentJobs.jobId, jobId));
+  await dbClient.db
+    .update(agentJobs)
+    .set({
+      blockerSummary: errorText,
+    })
+    .where(eq(agentJobs.jobId, jobId));
 
   await insertTrace({
     dbClient,
@@ -2485,11 +2568,27 @@ export async function cancelAgentJob(params: {
   }
 
   const finishedAt = new Date();
-  await params.dbClient.db.update(agentJobSteps).set({
-    status: "cancelled",
-    finishedAt,
-    updatedAt: finishedAt,
-  }).where(and(eq(agentJobSteps.jobId, params.jobId), inArray(agentJobSteps.status, ["pending", "ready", "running", "retrying", "waiting_for_approval", "waiting_for_runtime", "blocked"])));
+  await params.dbClient.db
+    .update(agentJobSteps)
+    .set({
+      status: "cancelled",
+      finishedAt,
+      updatedAt: finishedAt,
+    })
+    .where(
+      and(
+        eq(agentJobSteps.jobId, params.jobId),
+        inArray(agentJobSteps.status, [
+          "pending",
+          "ready",
+          "running",
+          "retrying",
+          "waiting_for_approval",
+          "waiting_for_runtime",
+          "blocked",
+        ]),
+      ),
+    );
 
   await updateJobState({
     dbClient: params.dbClient,
@@ -2526,18 +2625,26 @@ export async function decideAgentJobRequirement(params: {
   notifyConversation?: boolean;
 }): Promise<AgentJobActionResponse | null> {
   const requirement = await params.dbClient.db.query.agentJobRequirements.findFirst({
-    where: and(eq(agentJobRequirements.id, params.requirementId), eq(agentJobRequirements.jobId, params.jobId)),
+    where: and(
+      eq(agentJobRequirements.id, params.requirementId),
+      eq(agentJobRequirements.jobId, params.jobId),
+    ),
   });
 
   if (!requirement) {
     return null;
   }
 
-  await params.dbClient.db.update(agentJobRequirements).set({
-    status: params.decision.approved ? "satisfied" : "rejected",
-    resolutionText: params.decision.reason?.trim() || (params.decision.approved ? "Approved by operator." : "Denied by operator."),
-    updatedAt: new Date(),
-  }).where(eq(agentJobRequirements.id, params.requirementId));
+  await params.dbClient.db
+    .update(agentJobRequirements)
+    .set({
+      status: params.decision.approved ? "satisfied" : "rejected",
+      resolutionText:
+        params.decision.reason?.trim() ||
+        (params.decision.approved ? "Approved by operator." : "Denied by operator."),
+      updatedAt: new Date(),
+    })
+    .where(eq(agentJobRequirements.id, params.requirementId));
 
   const row = await getAgentJobRow(params.dbClient, params.jobId);
   if (!row) {
@@ -2595,14 +2702,17 @@ export async function processAgentJob(
     throw new Error(`Agent job ${jobId} not found.`);
   }
 
-  if (row.job.status === "completed" || row.job.status === "cancelled" || row.job.status === "failed") {
+  if (
+    row.job.status === "completed" ||
+    row.job.status === "cancelled" ||
+    row.job.status === "failed"
+  ) {
     return;
   }
 
   if (
     row.job.startedAt &&
-    Date.now() - row.job.startedAt.getTime() >
-      settings.maxJobRuntimeMinutes * 60 * 1000
+    Date.now() - row.job.startedAt.getTime() > settings.maxJobRuntimeMinutes * 60 * 1000
   ) {
     const errorText = `Job exceeded the configured runtime limit of ${settings.maxJobRuntimeMinutes} minutes.`;
     await markAgentJobFailed(config, dbClient, jobId, errorText);
@@ -2666,7 +2776,11 @@ export async function processAgentJob(
 
   switch (refreshedCurrentStep.stepKey) {
     case "inspect_workspace":
-      if (refreshedCurrentStep.status === "ready" || refreshedCurrentStep.status === "retrying" || refreshedCurrentStep.status === "running") {
+      if (
+        refreshedCurrentStep.status === "ready" ||
+        refreshedCurrentStep.status === "retrying" ||
+        refreshedCurrentStep.status === "running"
+      ) {
         await executeInspectStep({
           config,
           dbClient,
@@ -2679,7 +2793,11 @@ export async function processAgentJob(
       }
       return;
     case "draft_plan":
-      if (refreshedCurrentStep.status === "ready" || refreshedCurrentStep.status === "retrying" || refreshedCurrentStep.status === "running") {
+      if (
+        refreshedCurrentStep.status === "ready" ||
+        refreshedCurrentStep.status === "retrying" ||
+        refreshedCurrentStep.status === "running"
+      ) {
         await executeDraftingStep({
           config,
           dbClient,
@@ -2692,7 +2810,11 @@ export async function processAgentJob(
       }
       return;
     case "implement_scope":
-      if (["ready", "retrying", "running", "waiting_for_approval"].includes(refreshedCurrentStep.status)) {
+      if (
+        ["ready", "retrying", "running", "waiting_for_approval"].includes(
+          refreshedCurrentStep.status,
+        )
+      ) {
         await executeImplementationStep({
           config,
           dbClient,
@@ -2706,7 +2828,11 @@ export async function processAgentJob(
       }
       return;
     case "verify_result":
-      if (["ready", "retrying", "running", "waiting_for_approval"].includes(refreshedCurrentStep.status)) {
+      if (
+        ["ready", "retrying", "running", "waiting_for_approval"].includes(
+          refreshedCurrentStep.status,
+        )
+      ) {
         await executeVerificationStep({
           config,
           dbClient,
@@ -2736,7 +2862,4 @@ export async function processAgentJob(
   }
 }
 
-export {
-  getAgentJobSettings,
-  updateAgentJobSettings,
-};
+export { getAgentJobSettings, updateAgentJobSettings };

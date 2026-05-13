@@ -1,6 +1,5 @@
-import { access, rm, unlink } from "node:fs/promises";
+import { rm, unlink } from "node:fs/promises";
 import { resolve } from "node:path";
-import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
 import {
   type AdminMaintenanceAction,
@@ -9,10 +8,10 @@ import {
   createMessageId,
   type OnboardingStatusResponse,
   type PersonaAvatarRecord,
-  type SecretaryCustomizationRecord,
   type PersonaGender,
   type PersonaSettingsRecord,
   type PersonaSettingsResponse,
+  type SecretaryCustomizationRecord,
   type SettingsExportResponse,
   type SettingsImportRequest,
   type SettingsImportResponse,
@@ -20,29 +19,26 @@ import {
   type UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
 import {
+  activityTraces,
   agentJobArtifacts,
   agentJobLaunchIntents,
-  agentJobRequirements,
-  agentJobSteps,
-  agentJobs,
-  activityTraces,
-  conversations,
+  type DbClient,
   integrations,
   jobs,
-  memoryEntries,
-  memoryLinks,
-  messages,
   personas,
   phaseSixTables,
   speechArtifacts,
-  tasks,
-  toolExecutions,
   tools,
   users,
   voiceProfiles,
-  type DbClient,
 } from "@secretary/db";
-import { getSpeechServiceStatus } from "./speech-health.js";
+import { asc, eq, inArray, sql } from "drizzle-orm";
+import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage.js";
+import { loadAgentJobSettings } from "./agent-job-settings.js";
+import { cancelAgentJob } from "./agent-jobs.js";
+import { getHeartbeatIntegrationStatus } from "./heartbeat-runtime.js";
+import { loadInferenceSettings } from "./inference-settings.js";
+import type { Infrastructure } from "./infrastructure.js";
 import {
   defaultSecretaryName,
   defaultSecretaryPersonaProfile,
@@ -54,6 +50,7 @@ import {
   saveSecretaryPersonaProfile,
   saveSecretarySoul,
 } from "./persona-soul.js";
+import { getSpeechServiceStatus } from "./speech-health.js";
 import {
   activateVoiceProfile,
   ensureDefaultVoiceProfile,
@@ -62,17 +59,11 @@ import {
   isBuiltInGenderVoiceProfileName,
   listVoiceProfiles,
 } from "./speech-runtime.js";
+import { resolveManagedSpeechStoragePath } from "./speech-storage.js";
 import { getTelegramIntegrationStatus } from "./telegram-integration.js";
 import { listTools } from "./tools-runtime.js";
-import type { Infrastructure } from "./infrastructure.js";
-import { loadInferenceSettings } from "./inference-settings.js";
-import { getHeartbeatIntegrationStatus } from "./heartbeat-runtime.js";
-import { loadAgentJobSettings } from "./agent-job-settings.js";
-import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage.js";
-import { cancelAgentJob } from "./agent-jobs.js";
-import { resolveManagedSpeechStoragePath } from "./speech-storage.js";
-import { pathExists, logError } from "./utils.js";
 import { repoRoot } from "./utils/index.js";
+import { logError, pathExists } from "./utils.js";
 
 function normalizePersonaGender(value: unknown): PersonaGender {
   return value === "male" ? "male" : "female";
@@ -114,8 +105,7 @@ function parsePersonaAvatar(
   return {
     storageKey: avatar.storageKey,
     mimeType: typeof avatar.mimeType === "string" ? avatar.mimeType : null,
-    updatedAt:
-      typeof avatar.updatedAt === "string" ? avatar.updatedAt : new Date().toISOString(),
+    updatedAt: typeof avatar.updatedAt === "string" ? avatar.updatedAt : new Date().toISOString(),
   };
 }
 
@@ -133,9 +123,10 @@ export function parseSecretaryCustomization(
   }
 
   return {
-    title: typeof customization.title === "string" && customization.title.trim().length > 0
-      ? customization.title.trim()
-      : null,
+    title:
+      typeof customization.title === "string" && customization.title.trim().length > 0
+        ? customization.title.trim()
+        : null,
     mode:
       customization.mode === "personal" ||
       customization.mode === "travel" ||
@@ -158,8 +149,7 @@ export function parseSecretaryCustomization(
         ? customization.presenceStyle
         : defaults.presenceStyle,
     responseLength:
-      customization.responseLength === "concise" ||
-      customization.responseLength === "expansive"
+      customization.responseLength === "concise" || customization.responseLength === "expansive"
         ? customization.responseLength
         : defaults.responseLength,
     directness:
@@ -171,13 +161,11 @@ export function parseSecretaryCustomization(
         ? customization.initiative
         : defaults.initiative,
     planningStyle:
-      customization.planningStyle === "checklist" ||
-      customization.planningStyle === "narrative"
+      customization.planningStyle === "checklist" || customization.planningStyle === "narrative"
         ? customization.planningStyle
         : defaults.planningStyle,
     greetingStyle:
-      customization.greetingStyle === "name_forward" ||
-      customization.greetingStyle === "warm"
+      customization.greetingStyle === "name_forward" || customization.greetingStyle === "warm"
         ? customization.greetingStyle
         : defaults.greetingStyle,
     closingStyle:
@@ -185,8 +173,7 @@ export function parseSecretaryCustomization(
         ? customization.closingStyle
         : defaults.closingStyle,
     clarifyingStyle:
-      customization.clarifyingStyle === "balanced" ||
-      customization.clarifyingStyle === "proactive"
+      customization.clarifyingStyle === "balanced" || customization.clarifyingStyle === "proactive"
         ? customization.clarifyingStyle
         : defaults.clarifyingStyle,
     reminderStyle:
@@ -205,8 +192,7 @@ export function parseSecretaryCustomization(
           .filter(Boolean)
       : defaults.avoidances,
     exampleReply:
-      typeof customization.exampleReply === "string" &&
-      customization.exampleReply.trim().length > 0
+      typeof customization.exampleReply === "string" && customization.exampleReply.trim().length > 0
         ? customization.exampleReply.trim()
         : null,
     antiExampleReply:
@@ -222,8 +208,7 @@ function toPersonaRecord(record: typeof personas.$inferSelect): PersonaSettingsR
     id: record.id,
     name: record.name,
     promptTemplate: record.promptTemplate,
-    toneMode:
-      typeof record.toneProfile?.mode === "string" ? record.toneProfile.mode : null,
+    toneMode: typeof record.toneProfile?.mode === "string" ? record.toneProfile.mode : null,
     gender: normalizePersonaGender(record.toneProfile?.gender),
     avatar: parsePersonaAvatar(record.toneProfile),
     customization: parseSecretaryCustomization(record.toneProfile),
@@ -235,12 +220,11 @@ function toPersonaRecord(record: typeof personas.$inferSelect): PersonaSettingsR
   };
 }
 
-async function getConversationEngineStatus(config: AppConfig) {
+async function getConversationEngineStatus(_config: AppConfig) {
   const inference = await loadInferenceSettings();
   const selectedProvider =
-    inference.providers.find(
-      (provider) => provider.id === inference.settings.selectedProviderId,
-    ) ?? null;
+    inference.providers.find((provider) => provider.id === inference.settings.selectedProviderId) ??
+    null;
 
   if (inference.settings.mode === "provider") {
     if (!selectedProvider) {
@@ -267,7 +251,6 @@ async function getConversationEngineStatus(config: AppConfig) {
     summary: inference.settings.summary,
   };
 }
-
 
 async function deleteFileIfPresent(path: string) {
   try {
@@ -300,7 +283,9 @@ async function getAgentJobWorkspaceRows(dbClient: DbClient): Promise<AgentJobWor
   return result.rows;
 }
 
-async function getLaunchIntentWorkspaceRows(dbClient: DbClient): Promise<LaunchIntentWorkspaceRow[]> {
+async function getLaunchIntentWorkspaceRows(
+  dbClient: DbClient,
+): Promise<LaunchIntentWorkspaceRow[]> {
   const result = await dbClient.pool.query<LaunchIntentWorkspaceRow>(
     `select id, status, workspace_path as "workspacePath"
      from agent_job_launch_intents`,
@@ -428,7 +413,6 @@ async function removeArtifactFilesByJobIds(dbClient: DbClient, jobIds: string[])
         error,
         metadataJson: { storageKey: artifact.storageKey },
       });
-      continue;
     }
   }
 
@@ -464,15 +448,15 @@ async function removePathIfPresent(path: string) {
       maxRetries: 2,
     });
     return true;
-    } catch (error) {
-      logError({
-        service: "worker",
-        event: "admin.maintenance.path_removal_failed",
-        error,
-        metadataJson: { path },
-      });
-      return false;
-    }
+  } catch (error) {
+    logError({
+      service: "worker",
+      event: "admin.maintenance.path_removal_failed",
+      error,
+      metadataJson: { path },
+    });
+    return false;
+  }
 }
 
 async function flushQueueRetainedState(
@@ -518,9 +502,7 @@ async function resetSecretaryFileBackings() {
   };
 }
 
-async function purgeSecretaryRuntimeDirectories(params: {
-  includeGeneratedState: boolean;
-}) {
+async function purgeSecretaryRuntimeDirectories(params: { includeGeneratedState: boolean }) {
   const targets = [
     resolve(repoRoot, "runtime/persona/avatars"),
     resolve(repoRoot, "runtime/speech/inbound"),
@@ -549,15 +531,9 @@ async function purgeSecretaryRuntimeDirectories(params: {
   };
 }
 
-async function reseedFreshSecretaryState(params: {
-  config: AppConfig;
-  dbClient: DbClient;
-}) {
+async function reseedFreshSecretaryState(params: { config: AppConfig; dbClient: DbClient }) {
   await ensureDefaultPersonaRecord(params.dbClient, params.config);
-  await Promise.all([
-    listTools(params.dbClient),
-    ensureDefaultVoiceProfile(params.dbClient),
-  ]);
+  await Promise.all([listTools(params.dbClient), ensureDefaultVoiceProfile(params.dbClient)]);
 }
 
 async function resetSecretaryState(params: {
@@ -629,9 +605,14 @@ async function getAdminMaintenanceOverview(params: {
     generatedAt: new Date().toISOString(),
     defaultWorkspacePath: settings.defaultWorkspacePath,
     jobs: {
-      active: jobRows.filter((row) => ["queued", "planning", "running", "retrying"].includes(row.status)).length,
-      waiting: jobRows.filter((row) => ["waiting_for_approval", "waiting_for_runtime", "blocked"].includes(row.status)).length,
-      finished: jobRows.filter((row) => ["completed", "failed", "cancelled"].includes(row.status)).length,
+      active: jobRows.filter((row) =>
+        ["queued", "planning", "running", "retrying"].includes(row.status),
+      ).length,
+      waiting: jobRows.filter((row) =>
+        ["waiting_for_approval", "waiting_for_runtime", "blocked"].includes(row.status),
+      ).length,
+      finished: jobRows.filter((row) => ["completed", "failed", "cancelled"].includes(row.status))
+        .length,
       staleWorkspaceJobs: staleJobs.length,
       staleWorkspaceLaunchIntents: staleLaunchIntents.length,
     },
@@ -665,30 +646,40 @@ export async function runAdminMaintenanceAction(params: {
   if (params.action === "clear_stale_agent_jobs") {
     const staleJobs = await findStaleAgentJobIds(dbClient);
     const staleLaunchIntents = await findStaleLaunchIntentIds(dbClient);
-    const deleted = await deleteAgentJobsByIds(dbClient, staleJobs.map((row) => row.jobId));
+    const deleted = await deleteAgentJobsByIds(
+      dbClient,
+      staleJobs.map((row) => row.jobId),
+    );
 
     if (staleLaunchIntents.length > 0) {
-      await dbClient.db
-        .delete(agentJobLaunchIntents)
-        .where(inArray(agentJobLaunchIntents.id, staleLaunchIntents.map((row) => row.id)));
+      await dbClient.db.delete(agentJobLaunchIntents).where(
+        inArray(
+          agentJobLaunchIntents.id,
+          staleLaunchIntents.map((row) => row.id),
+        ),
+      );
     }
 
-    summary = staleJobs.length || staleLaunchIntents.length
-      ? "Cleared stale agent jobs and unreachable launch intents."
-      : "No stale agent jobs or launch intents were found.";
+    summary =
+      staleJobs.length || staleLaunchIntents.length
+        ? "Cleared stale agent jobs and unreachable launch intents."
+        : "No stale agent jobs or launch intents were found.";
     details = {
       staleJobsCleared: staleJobs.length,
       staleLaunchIntentsCleared: staleLaunchIntents.length,
       artifactFilesDeleted: deleted.deletedArtifactFiles,
-      };
+    };
   } else if (params.action === "clear_stale_speech_media") {
     const staleArtifacts = await findStaleSpeechArtifacts(dbClient);
     const staleProfileSamples = await findStaleVoiceProfileSamples(dbClient);
 
     if (staleArtifacts.length > 0) {
-      await dbClient.db
-        .delete(speechArtifacts)
-        .where(inArray(speechArtifacts.id, staleArtifacts.map((row) => row.id)));
+      await dbClient.db.delete(speechArtifacts).where(
+        inArray(
+          speechArtifacts.id,
+          staleArtifacts.map((row) => row.id),
+        ),
+      );
     }
 
     if (staleProfileSamples.length > 0) {
@@ -700,12 +691,18 @@ export async function runAdminMaintenanceAction(params: {
           sampleDurationMs: null,
           updatedAt: new Date(),
         })
-        .where(inArray(voiceProfiles.id, staleProfileSamples.map((row) => row.id)));
+        .where(
+          inArray(
+            voiceProfiles.id,
+            staleProfileSamples.map((row) => row.id),
+          ),
+        );
     }
 
-    summary = staleArtifacts.length || staleProfileSamples.length
-      ? "Cleared stale speech artifacts and broken voice sample references."
-      : "No stale speech artifacts or broken voice sample references were found.";
+    summary =
+      staleArtifacts.length || staleProfileSamples.length
+        ? "Cleared stale speech artifacts and broken voice sample references."
+        : "No stale speech artifacts or broken voice sample references were found.";
     details = {
       staleSpeechArtifactsCleared: staleArtifacts.length,
       staleVoiceProfileSamplesCleared: staleProfileSamples.length,
@@ -718,10 +715,14 @@ export async function runAdminMaintenanceAction(params: {
        where jobs.status in ('completed', 'failed', 'cancelled')`,
     );
 
-    const deleted = await deleteAgentJobsByIds(dbClient, result.rows.map((row) => row.id));
-    summary = deleted.deletedJobs > 0
-      ? "Cleared finished agent job history."
-      : "No finished agent jobs were available to clear.";
+    const deleted = await deleteAgentJobsByIds(
+      dbClient,
+      result.rows.map((row) => row.id),
+    );
+    summary =
+      deleted.deletedJobs > 0
+        ? "Cleared finished agent job history."
+        : "No finished agent jobs were available to clear.";
     details = {
       finishedJobsCleared: deleted.deletedJobs,
       artifactFilesDeleted: deleted.deletedArtifactFiles,
@@ -742,16 +743,16 @@ export async function runAdminMaintenanceAction(params: {
       });
     }
 
-    summary = result.rows.length > 0
-      ? "Cancelled active and waiting agent jobs."
-      : "No active or waiting agent jobs were running.";
+    summary =
+      result.rows.length > 0
+        ? "Cancelled active and waiting agent jobs."
+        : "No active or waiting agent jobs were running.";
     details = {
       cancelledJobs: result.rows.length,
     };
   } else if (params.action === "flush_agent_queue") {
     const queue = params.infrastructure.agentJobQueue.queue;
     await flushQueueRetainedState(queue);
-
 
     const queueCounts = await queue.getJobCounts(
       "wait",
@@ -837,8 +838,7 @@ async function ensureDefaultPersonaRecord(dbClient: DbClient, config: AppConfig)
         "Answer naturally instead of narrating internal system state unless the user asks for it.",
         "Protect local-first privacy defaults.",
       ],
-      promptTemplate:
-        defaultSecretarySoul,
+      promptTemplate: defaultSecretarySoul,
       isDefault: true,
       voiceProfileId: null,
     })
@@ -966,9 +966,7 @@ export async function updatePersonaSettings(params: {
 }) {
   const persona = await ensureDefaultPersonaRecord(params.dbClient, params.config);
   const currentGender = normalizePersonaGender(persona.toneProfile?.gender);
-  const gender = normalizePersonaGender(
-    params.request.gender ?? persona.toneProfile?.gender,
-  );
+  const gender = normalizePersonaGender(params.request.gender ?? persona.toneProfile?.gender);
   const toneMode =
     params.request.toneMode?.trim() ||
     (typeof persona.toneProfile?.mode === "string" ? persona.toneProfile.mode : "calm");
@@ -987,9 +985,7 @@ export async function updatePersonaSettings(params: {
         : currentCustomization.addressPreference,
     avoidances:
       params.request.customization?.avoidances !== undefined
-        ? params.request.customization.avoidances
-            .map((entry) => entry.trim())
-            .filter(Boolean)
+        ? params.request.customization.avoidances.map((entry) => entry.trim()).filter(Boolean)
         : currentCustomization.avoidances,
     exampleReply:
       params.request.customization?.exampleReply !== undefined
@@ -1160,12 +1156,11 @@ export async function getSystemHealth(params: {
         summary: telegramStatus.integration.healthSummary,
       },
       heartbeat: {
-        status:
-          heartbeatStatus.integration.enabled
-            ? heartbeatStatus.integration.healthStatus === "degraded"
-              ? "degraded"
-              : "ok"
-            : "not_configured",
+        status: heartbeatStatus.integration.enabled
+          ? heartbeatStatus.integration.healthStatus === "degraded"
+            ? "degraded"
+            : "ok"
+          : "not_configured",
         summary: heartbeatStatus.integration.healthSummary,
       },
       stt: {
@@ -1258,10 +1253,9 @@ export async function getOnboardingStatus(params: {
     {
       id: "tools",
       title: "Tool approval baseline is reviewed",
-      status:
-        toolsResponse.tools.some((tool) => tool.approvalMode === "ask_first")
-          ? "complete"
-          : "attention",
+      status: toolsResponse.tools.some((tool) => tool.approvalMode === "ask_first")
+        ? "complete"
+        : "attention",
       detail: `${toolsResponse.tools.length} tools are registered for review.`,
       href: "/tools",
     },
@@ -1385,9 +1379,7 @@ export async function importSettingsSnapshot(params: {
 
     if (snapshot.integrations.length > 0) {
       const existingIntegrations = await tx.select().from(integrations);
-      const integrationMap = new Map(
-        existingIntegrations.map((i) => [i.integrationType, i]),
-      );
+      const integrationMap = new Map(existingIntegrations.map((i) => [i.integrationType, i]));
       const now = new Date();
 
       await tx

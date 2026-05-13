@@ -8,10 +8,7 @@ export async function POST(request: Request) {
     const audio = incoming.get("audio");
 
     if (!(audio instanceof File)) {
-      return NextResponse.json(
-        { error: "Audio recording is required." },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Audio recording is required." }, { status: 400 });
     }
 
     const form = new FormData();
@@ -38,9 +35,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(payload);
   } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "Worker is unavailable." }, { status: 503 });
   }
 }

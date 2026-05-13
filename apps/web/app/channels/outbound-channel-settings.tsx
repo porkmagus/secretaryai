@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import type {
   DiscordTestMessageResponse,
   EmailTestMessageResponse,
@@ -9,8 +8,18 @@ import type {
   SlackTestMessageResponse,
   SmsTestMessageResponse,
 } from "@secretary/core-runtime";
+import { useEffect, useMemo, useState } from "react";
 import { fetchJson } from "../lib/fetch-json";
-import { ActionRow, EmptyState, LoadingSurface, NoticeBanner, StatCard, StatGrid, SurfaceCard, ToggleField } from "../lib/ui";
+import {
+  ActionRow,
+  EmptyState,
+  LoadingSurface,
+  NoticeBanner,
+  StatCard,
+  StatGrid,
+  SurfaceCard,
+  ToggleField,
+} from "../lib/ui";
 
 type OutboundChannelDescriptor = {
   key: OutboundChannelKey;
@@ -36,11 +45,23 @@ const initialDraft: DraftState = {
 function statusTone(status: string | null | undefined) {
   switch (status) {
     case "ok":
-      return { label: "ready", color: "var(--success-soft-text)", border: "var(--success-soft-border)" };
+      return {
+        label: "ready",
+        color: "var(--success-soft-text)",
+        border: "var(--success-soft-border)",
+      };
     case "degraded":
-      return { label: "needs attention", color: "var(--warning-soft-text)", border: "var(--warning-soft-border)" };
+      return {
+        label: "needs attention",
+        color: "var(--warning-soft-text)",
+        border: "var(--warning-soft-border)",
+      };
     case "disabled":
-      return { label: "disabled", color: "var(--neutral-soft-text)", border: "var(--neutral-soft-border)" };
+      return {
+        label: "disabled",
+        color: "var(--neutral-soft-text)",
+        border: "var(--neutral-soft-border)",
+      };
     default:
       return {
         label: status ?? "not configured",
@@ -50,11 +71,7 @@ function statusTone(status: string | null | undefined) {
   }
 }
 
-export function OutboundChannelSettings({
-  descriptor,
-}: {
-  descriptor: OutboundChannelDescriptor;
-}) {
+export function OutboundChannelSettings({ descriptor }: { descriptor: OutboundChannelDescriptor }) {
   const [status, setStatus] = useState<OutboundChannelStatusResponse["integration"] | null>(null);
   const [draft, setDraft] = useState<DraftState>(initialDraft);
   const [testRecipient, setTestRecipient] = useState("");
@@ -70,16 +87,19 @@ export function OutboundChannelSettings({
 
   useEffect(() => {
     void refresh();
-  }, [descriptor.key]);
+  }, [refresh]);
 
   async function refresh() {
     setIsLoading(true);
     setError(null);
 
     try {
-      const payload = await fetchJson<OutboundChannelStatusResponse>(`/api/integrations/${descriptor.key}`, {
-        cache: "no-store",
-      });
+      const payload = await fetchJson<OutboundChannelStatusResponse>(
+        `/api/integrations/${descriptor.key}`,
+        {
+          cache: "no-store",
+        },
+      );
       const integration = payload.integration;
       setStatus(integration);
       setDraft({
@@ -91,7 +111,11 @@ export function OutboundChannelSettings({
       setTestRecipient((current) => current || integration.defaultRecipient || "");
       setTestSubject("");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : `Unable to load ${descriptor.label} settings.`);
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : `Unable to load ${descriptor.label} settings.`,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -120,18 +144,25 @@ export function OutboundChannelSettings({
             };
 
     try {
-      const payload = await fetchJson<OutboundChannelStatusResponse>(`/api/integrations/${descriptor.key}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
+      const payload = await fetchJson<OutboundChannelStatusResponse>(
+        `/api/integrations/${descriptor.key}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      });
+      );
       const integration = payload.integration;
       setStatus(integration);
       setNotice(`${descriptor.label} settings saved.`);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : `Unable to save ${descriptor.label} settings.`);
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : `Unable to save ${descriptor.label} settings.`,
+      );
     } finally {
       setIsSaving(false);
     }
@@ -160,10 +191,10 @@ export function OutboundChannelSettings({
 
     try {
       const payload = await fetchJson<
-        DiscordTestMessageResponse |
-        EmailTestMessageResponse |
-        SlackTestMessageResponse |
-        SmsTestMessageResponse
+        | DiscordTestMessageResponse
+        | EmailTestMessageResponse
+        | SlackTestMessageResponse
+        | SmsTestMessageResponse
       >(`/api/integrations/${descriptor.key}/test-message`, {
         method: "POST",
         headers: {
@@ -192,7 +223,11 @@ export function OutboundChannelSettings({
 
       await refresh();
     } catch (testError) {
-      setError(testError instanceof Error ? testError.message : `Unable to send ${descriptor.label} test message.`);
+      setError(
+        testError instanceof Error
+          ? testError.message
+          : `Unable to send ${descriptor.label} test message.`,
+      );
     } finally {
       setIsTesting(false);
     }
@@ -209,14 +244,24 @@ export function OutboundChannelSettings({
         done: Boolean(draft.enabled),
       },
       {
-        label: descriptor.key === "email" || descriptor.key === "sms" ? "Default recipient saved" : "Target labeled",
+        label:
+          descriptor.key === "email" || descriptor.key === "sms"
+            ? "Default recipient saved"
+            : "Target labeled",
         done:
           descriptor.key === "email" || descriptor.key === "sms"
             ? Boolean(draft.defaultRecipient.trim())
             : Boolean(draft.targetLabel.trim() || status?.targetLabel),
       },
     ],
-    [descriptor.key, draft.defaultRecipient, draft.enabled, draft.targetLabel, status?.envConfigured, status?.targetLabel],
+    [
+      descriptor.key,
+      draft.defaultRecipient,
+      draft.enabled,
+      draft.targetLabel,
+      status?.envConfigured,
+      status?.targetLabel,
+    ],
   );
 
   return (
@@ -242,7 +287,12 @@ export function OutboundChannelSettings({
         <ActionRow align="between">
           <div
             className="pill"
-            style={{ borderColor: tone.border, color: tone.color, minWidth: 180, justifyContent: "center" }}
+            style={{
+              borderColor: tone.border,
+              color: tone.color,
+              minWidth: 180,
+              justifyContent: "center",
+            }}
           >
             {descriptor.label}: {isLoading ? "loading" : tone.label}
           </div>
@@ -254,24 +304,54 @@ export function OutboundChannelSettings({
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
           {error ??
             notice ??
-            (isLoading ? `Loading ${descriptor.label} channel...` : status?.healthSummary ?? `${descriptor.label} channel ready.`)}
+            (isLoading
+              ? `Loading ${descriptor.label} channel...`
+              : (status?.healthSummary ?? `${descriptor.label} channel ready.`))}
         </p>
         <StatGrid>
-          <StatCard label="Health" value={status?.healthStatus ?? (isLoading ? "loading" : "unknown")} detail={status?.healthSummary ?? "Waiting for worker status"} tone="soft" />
-          <StatCard label="Provider" value={status?.providerLabel ?? "Waiting for worker"} detail="Credentials stay in your local environment" tone="soft" />
-          <StatCard label="Target" value={status?.targetLabel ?? status?.defaultRecipient ?? "not set"} detail={descriptor.bestFor} tone="soft" />
-          <StatCard label="Sender" value={status?.senderIdentity ?? "n/a"} detail="Identity used when this channel sends on your behalf" tone="soft" />
+          <StatCard
+            label="Health"
+            value={status?.healthStatus ?? (isLoading ? "loading" : "unknown")}
+            detail={status?.healthSummary ?? "Waiting for worker status"}
+            tone="soft"
+          />
+          <StatCard
+            label="Provider"
+            value={status?.providerLabel ?? "Waiting for worker"}
+            detail="Credentials stay in your local environment"
+            tone="soft"
+          />
+          <StatCard
+            label="Target"
+            value={status?.targetLabel ?? status?.defaultRecipient ?? "not set"}
+            detail={descriptor.bestFor}
+            tone="soft"
+          />
+          <StatCard
+            label="Sender"
+            value={status?.senderIdentity ?? "n/a"}
+            detail="Identity used when this channel sends on your behalf"
+            tone="soft"
+          />
         </StatGrid>
       </SurfaceCard>
 
       {error ? <NoticeBanner tone="error">{error}</NoticeBanner> : null}
       {!error && notice ? <NoticeBanner tone="info">{notice}</NoticeBanner> : null}
 
-      <section style={{ display: "grid", gap: 20, gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.95fr)" }}>
+      <section
+        style={{
+          display: "grid",
+          gap: 20,
+          gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.95fr)",
+        }}
+      >
         <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
           <SurfaceCard
             title={`${descriptor.label} settings`}
-            description={<p>{status?.healthSummary ?? `Loading ${descriptor.label} integration health...`}</p>}
+            description={
+              <p>{status?.healthSummary ?? `Loading ${descriptor.label} integration health...`}</p>
+            }
             className="stack-md"
           >
             <ActionRow align="between">
@@ -282,17 +362,24 @@ export function OutboundChannelSettings({
                 hint="Credentials stay in the local environment. This page controls runtime behavior and test routing."
               />
               <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                Keep each channel focused: one setup surface, one test path, one place to see readiness.
+                Keep each channel focused: one setup surface, one test path, one place to see
+                readiness.
               </p>
             </ActionRow>
 
-            {(descriptor.key === "discord" || descriptor.key === "slack") ? (
+            {descriptor.key === "discord" || descriptor.key === "slack" ? (
               <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>Target label for this webhook</span>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>
+                  Target label for this webhook
+                </span>
                 <input
                   value={draft.targetLabel}
-                  onChange={(event) => setDraft((current) => ({ ...current, targetLabel: event.target.value }))}
-                  placeholder={descriptor.key === "discord" ? "#secretary-updates" : "#ops-secretary"}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, targetLabel: event.target.value }))
+                  }
+                  placeholder={
+                    descriptor.key === "discord" ? "#secretary-updates" : "#ops-secretary"
+                  }
                 />
               </label>
             ) : (
@@ -301,7 +388,9 @@ export function OutboundChannelSettings({
                   <span style={{ color: "var(--muted)", fontSize: 13 }}>Default recipient</span>
                   <input
                     value={draft.defaultRecipient}
-                    onChange={(event) => setDraft((current) => ({ ...current, defaultRecipient: event.target.value }))}
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, defaultRecipient: event.target.value }))
+                    }
                     placeholder={descriptor.key === "email" ? "name@example.com" : "+15555551234"}
                   />
                 </label>
@@ -311,7 +400,9 @@ export function OutboundChannelSettings({
                     <span style={{ color: "var(--muted)", fontSize: 13 }}>Sender label</span>
                     <input
                       value={draft.senderLabel}
-                      onChange={(event) => setDraft((current) => ({ ...current, senderLabel: event.target.value }))}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, senderLabel: event.target.value }))
+                      }
                       placeholder="Secretary alerts"
                     />
                   </label>
@@ -322,14 +413,16 @@ export function OutboundChannelSettings({
             <div className="section-rule" />
 
             <div style={{ display: "grid", gap: 10 }}>
-              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
-                Quick outbound test
-              </p>
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>Quick outbound test</p>
               {descriptor.key === "email" || descriptor.key === "sms" ? (
                 <input
                   value={testRecipient}
                   onChange={(event) => setTestRecipient(event.target.value)}
-                  placeholder={descriptor.key === "email" ? "Override recipient email" : "Override recipient number"}
+                  placeholder={
+                    descriptor.key === "email"
+                      ? "Override recipient email"
+                      : "Override recipient number"
+                  }
                 />
               ) : null}
               {descriptor.key === "email" ? (
@@ -355,10 +448,22 @@ export function OutboundChannelSettings({
             </div>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-              <button type="button" onClick={() => void saveSettings()} disabled={isSaving} className="button-primary" style={{ opacity: isSaving ? 0.7 : 1 }}>
+              <button
+                type="button"
+                onClick={() => void saveSettings()}
+                disabled={isSaving}
+                className="button-primary"
+                style={{ opacity: isSaving ? 0.7 : 1 }}
+              >
                 {isSaving ? "Saving..." : "Save Settings"}
               </button>
-              <button type="button" onClick={() => void sendTest()} disabled={isTesting} className="button-secondary" style={{ opacity: isTesting ? 0.7 : 1 }}>
+              <button
+                type="button"
+                onClick={() => void sendTest()}
+                disabled={isTesting}
+                className="button-secondary"
+                style={{ opacity: isTesting ? 0.7 : 1 }}
+              >
                 {isTesting ? "Sending..." : `Send Test ${descriptor.label}`}
               </button>
             </div>
@@ -373,9 +478,22 @@ export function OutboundChannelSettings({
           >
             <div className="compact-list">
               {readiness.map((entry) => (
-                <div key={entry.label} style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "var(--muted)", padding: "9px 0" }}>
+                <div
+                  key={entry.label}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    color: "var(--muted)",
+                    padding: "9px 0",
+                  }}
+                >
                   <span>{entry.label}</span>
-                  <strong style={{ color: entry.done ? "var(--success-soft-text)" : "var(--warning-soft-text)" }}>
+                  <strong
+                    style={{
+                      color: entry.done ? "var(--success-soft-text)" : "var(--warning-soft-text)",
+                    }}
+                  >
                     {entry.done ? "ready" : "missing"}
                   </strong>
                 </div>
@@ -383,16 +501,22 @@ export function OutboundChannelSettings({
             </div>
             <div className="section-rule" />
             <p style={{ margin: 0, color: "var(--muted)" }}>
-              Provider: <strong style={{ color: "var(--text)" }}>{status?.providerLabel ?? "n/a"}</strong>
+              Provider:{" "}
+              <strong style={{ color: "var(--text)" }}>{status?.providerLabel ?? "n/a"}</strong>
             </p>
             <p style={{ margin: 0, color: "var(--muted)" }}>
-              Sender: <strong style={{ color: "var(--text)" }}>{status?.senderIdentity ?? "n/a"}</strong>
+              Sender:{" "}
+              <strong style={{ color: "var(--text)" }}>{status?.senderIdentity ?? "n/a"}</strong>
             </p>
             <p style={{ margin: 0, color: "var(--muted)" }}>
-              Target: <strong style={{ color: "var(--text)" }}>{status?.targetLabel ?? status?.defaultRecipient ?? "not set"}</strong>
+              Target:{" "}
+              <strong style={{ color: "var(--text)" }}>
+                {status?.targetLabel ?? status?.defaultRecipient ?? "not set"}
+              </strong>
             </p>
             <p style={{ margin: 0, color: "var(--muted)" }}>
-              Last check: <strong style={{ color: "var(--text)" }}>{status?.lastCheckedAt ?? "n/a"}</strong>
+              Last check:{" "}
+              <strong style={{ color: "var(--text)" }}>{status?.lastCheckedAt ?? "n/a"}</strong>
             </p>
             {status?.lastError ? (
               <NoticeBanner tone="warning">{status.lastError}</NoticeBanner>
@@ -401,7 +525,8 @@ export function OutboundChannelSettings({
                 title={`${descriptor.label} is staged cleanly`}
                 description={
                   <p>
-                    Keep credentials in the environment, use this tab for enablement and routing, and use the test button any time you want a quick confidence check.
+                    Keep credentials in the environment, use this tab for enablement and routing,
+                    and use the test button any time you want a quick confidence check.
                   </p>
                 }
                 tone="warm"

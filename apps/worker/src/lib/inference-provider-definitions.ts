@@ -263,8 +263,7 @@ const ollamaLocalDef: InferenceProviderDefinition = {
 const opencodeDef: InferenceProviderDefinition = {
   id: "opencode",
   label: "OpenCode",
-  description:
-    "Local or account-authorized OpenCode runtime for subscription-backed access.",
+  description: "Local or account-authorized OpenCode runtime for subscription-backed access.",
   authMode: "account_authorized",
   docsUrl: `${docsBase}/providers/community-providers/opencode-sdk`,
   packageName: "ai-sdk-provider-opencode-sdk",
@@ -318,8 +317,7 @@ const geminiCliDef: InferenceProviderDefinition = {
 const claudeCodeDef: InferenceProviderDefinition = {
   id: "claude_code",
   label: "Claude Code",
-  description:
-    "Claude Code local/account-linked provider through the community SDK package.",
+  description: "Claude Code local/account-linked provider through the community SDK package.",
   authMode: "account_authorized",
   docsUrl: `${docsBase}/providers/community-providers/claude-code`,
   packageName: "ai-sdk-provider-claude-code",

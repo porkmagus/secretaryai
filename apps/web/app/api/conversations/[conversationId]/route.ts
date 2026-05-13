@@ -10,7 +10,5 @@ type RouteContext = {
 export async function GET(_: Request, context: RouteContext) {
   const { conversationId } = await context.params;
 
-  return proxyWorkerJson<ConversationHistoryResponse>(
-    `/runtime/conversations/${conversationId}`,
-  );
+  return proxyWorkerJson<ConversationHistoryResponse>(`/runtime/conversations/${conversationId}`);
 }

@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { type ReactNode, useId } from "react";
 
 function joinClasses(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(" ");
@@ -189,7 +189,13 @@ export function ActionRow({
   align?: "start" | "end" | "between";
 }) {
   return (
-    <div className={joinClasses("action-row", align === "start" && "action-row--start", align === "between" && "action-row--between")}>
+    <div
+      className={joinClasses(
+        "action-row",
+        align === "start" && "action-row--start",
+        align === "between" && "action-row--between",
+      )}
+    >
       {children}
     </div>
   );

@@ -1,5 +1,5 @@
-import type { DbClient } from "@secretary/db";
 import type { RuntimeChatRequest } from "@secretary/core-runtime";
+import type { DbClient } from "@secretary/db";
 import { findConversationIdByChannelRef } from "../chat-persistence.js";
 
 /**

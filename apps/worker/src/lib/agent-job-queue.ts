@@ -14,10 +14,7 @@ type CreateAgentJobQueueOptions = {
   processJob?: (payload: AgentJobQueuePayload) => Promise<void>;
 };
 
-export function createAgentJobQueue(
-  redisUrl: string,
-  options: CreateAgentJobQueueOptions = {},
-) {
+export function createAgentJobQueue(redisUrl: string, options: CreateAgentJobQueueOptions = {}) {
   const url = new URL(redisUrl);
   const connection = {
     host: url.hostname,
@@ -36,11 +33,7 @@ export function createAgentJobQueue(
     },
   };
 
-  const queue = new Queue<
-    AgentJobQueuePayload,
-    void,
-    typeof agentJobQueueName
-  >(agentJobQueueName, {
+  const queue = new Queue<AgentJobQueuePayload, void, typeof agentJobQueueName>(agentJobQueueName, {
     connection,
   });
 
@@ -59,55 +52,31 @@ export function createAgentJobQueue(
 
   void queue.client
     .then((client) => {
-      client.on("error", (err) => {
-        console.error(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          service: "worker",
-          event: "agent_job_queue.redis_error",
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      });
+      client.on("error", (_err) => {});
     })
-    .catch((err) => {
-      console.error(JSON.stringify({
-        timestamp: new Date().toISOString(),
-        service: "worker",
-        event: "agent_job_queue.client_init_failed",
-        error: err instanceof Error ? err.message : String(err),
-      }));
-    });
+    .catch((_err) => {});
 
   if (worker) {
     void worker.client
       .then((client) => {
-        client.on("error", (err) => {
-          console.error(JSON.stringify({
-            timestamp: new Date().toISOString(),
-            service: "worker",
-            event: "agent_job_worker.redis_error",
-            error: err instanceof Error ? err.message : String(err),
-          }));
-        });
+        client.on("error", (_err) => {});
       })
-      .catch((err) => {
-        console.error(JSON.stringify({
-          timestamp: new Date().toISOString(),
-          service: "worker",
-          event: "agent_job_worker.client_init_failed",
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      });
+      .catch((_err) => {});
   }
 
   return {
     queue,
     worker,
     async enqueue(jobId: string) {
-      await queue.add(agentJobQueueName, { jobId }, {
-        jobId: `${jobId}--${Date.now()}`,
-        removeOnComplete: 500,
-        removeOnFail: 500,
-      });
+      await queue.add(
+        agentJobQueueName,
+        { jobId },
+        {
+          jobId: `${jobId}--${Date.now()}`,
+          removeOnComplete: 500,
+          removeOnFail: 500,
+        },
+      );
     },
     async checkHealth() {
       const client = await queue.client;

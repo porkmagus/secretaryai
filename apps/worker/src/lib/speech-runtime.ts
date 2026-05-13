@@ -1,14 +1,7 @@
 import { access } from "node:fs/promises";
-import { eq } from "drizzle-orm";
 import {
-  activityTraces,
-  speechArtifacts,
-  voiceProfiles,
-  type DbClient,
-} from "@secretary/db";
-import {
-  createMessageId,
   type CreateVoiceProfileRequest,
+  createMessageId,
   type PersonaGender,
   type SpeechArtifactListResponse,
   type SpeechArtifactRecord,
@@ -16,10 +9,9 @@ import {
   type VoiceProfileListResponse,
   type VoiceProfileRecord,
 } from "@secretary/core-runtime";
-import {
-  normalizeSpeechStorageKey,
-  resolveManagedSpeechStoragePath,
-} from "./speech-storage.js";
+import { activityTraces, type DbClient, speechArtifacts, voiceProfiles } from "@secretary/db";
+import { eq } from "drizzle-orm";
+import { normalizeSpeechStorageKey, resolveManagedSpeechStoragePath } from "./speech-storage.js";
 
 const builtInVoiceProfiles: Record<
   PersonaGender,
@@ -45,9 +37,7 @@ export function isBuiltInGenderVoiceProfileName(name: string) {
   return Object.values(builtInVoiceProfiles).some((profile) => profile.name === name);
 }
 
-function toSpeechArtifactRecord(
-  record: typeof speechArtifacts.$inferSelect,
-): SpeechArtifactRecord {
+function toSpeechArtifactRecord(record: typeof speechArtifacts.$inferSelect): SpeechArtifactRecord {
   return {
     id: record.id,
     conversationId: record.conversationId,
@@ -65,9 +55,7 @@ function toSpeechArtifactRecord(
   };
 }
 
-function toVoiceProfileRecord(
-  record: typeof voiceProfiles.$inferSelect,
-): VoiceProfileRecord {
+function toVoiceProfileRecord(record: typeof voiceProfiles.$inferSelect): VoiceProfileRecord {
   return {
     id: record.id,
     name: record.name,
@@ -145,9 +133,7 @@ export async function ensureDefaultVoiceProfile(dbClient: DbClient) {
   });
 }
 
-export async function listVoiceProfiles(
-  dbClient: DbClient,
-): Promise<VoiceProfileListResponse> {
+export async function listVoiceProfiles(dbClient: DbClient): Promise<VoiceProfileListResponse> {
   await ensureDefaultVoiceProfile(dbClient);
 
   const records = await dbClient.db.query.voiceProfiles.findMany({
@@ -156,7 +142,9 @@ export async function listVoiceProfiles(
   });
 
   return {
-    profiles: await Promise.all(records.map((record) => sanitizeVoiceProfileRecord(dbClient, record))),
+    profiles: await Promise.all(
+      records.map((record) => sanitizeVoiceProfileRecord(dbClient, record)),
+    ),
   };
 }
 
@@ -174,10 +162,7 @@ export async function getVoiceProfileById(dbClient: DbClient, profileId: string)
   });
 }
 
-export async function ensureGenderVoiceProfile(
-  dbClient: DbClient,
-  gender: PersonaGender,
-) {
+export async function ensureGenderVoiceProfile(dbClient: DbClient, gender: PersonaGender) {
   const definition = builtInVoiceProfiles[gender];
   const existing = await dbClient.db.query.voiceProfiles.findFirst({
     where: eq(voiceProfiles.name, definition.name),
@@ -227,10 +212,7 @@ export async function activateVoiceProfile(dbClient: DbClient, profileId: string
     .where(eq(voiceProfiles.id, profileId));
 }
 
-export async function createVoiceProfile(
-  dbClient: DbClient,
-  request: CreateVoiceProfileRequest,
-) {
+export async function createVoiceProfile(dbClient: DbClient, request: CreateVoiceProfileRequest) {
   const id = createMessageId();
 
   if (request.isActive) {

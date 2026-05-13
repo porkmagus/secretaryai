@@ -68,12 +68,7 @@ export type DeskChatMessageMetadata = {
   totalTokens?: number;
 };
 
-export type MemoryType =
-  | "semantic"
-  | "episodic"
-  | "project"
-  | "relationship"
-  | "operational";
+export type MemoryType = "semantic" | "episodic" | "project" | "relationship" | "operational";
 
 export type SpeechArtifactKind =
   | "telegram_voice_note"
@@ -82,12 +77,7 @@ export type SpeechArtifactKind =
   | "tts_output"
   | "voice_sample";
 
-export type SpeechArtifactStatus =
-  | "received"
-  | "stored"
-  | "transcribed"
-  | "synthesized"
-  | "failed";
+export type SpeechArtifactStatus = "received" | "stored" | "transcribed" | "synthesized" | "failed";
 
 export type MemoryCandidateJobPayload = {
   conversationId: string;
@@ -106,7 +96,6 @@ export type MemoryCandidateJobPayload = {
     reasoningEffort?: "minimal" | "low" | "medium" | "high" | null;
   } | null;
 };
-
 
 export type SpeechArtifactRecord = {
   id: string;
@@ -183,11 +172,7 @@ export type ToolApprovalState =
   | "approved"
   | "denied"
   | "policy_denied";
-export type ToolExecutionStatus =
-  | "awaiting_approval"
-  | "completed"
-  | "denied"
-  | "failed";
+export type ToolExecutionStatus = "awaiting_approval" | "completed" | "denied" | "failed";
 
 export type ToolRecord = {
   id: string;
@@ -236,12 +221,10 @@ export type UpdateToolRequest = {
 export type ToolApprovalDecisionResponse = {
   execution: ToolExecutionRecord;
   conversationId: string | null;
-  assistantMessage:
-    | {
-        id: string;
-        text: string;
-      }
-    | null;
+  assistantMessage: {
+    id: string;
+    text: string;
+  } | null;
 };
 
 export type AgentJobStatus =
@@ -302,10 +285,7 @@ export type AgentJobRequirementKind =
   | "network"
   | "port";
 
-export type AgentJobRequirementStatus =
-  | "pending"
-  | "satisfied"
-  | "rejected";
+export type AgentJobRequirementStatus = "pending" | "satisfied" | "rejected";
 
 export type AgentJobRecord = {
   id: string;
@@ -462,12 +442,7 @@ export type UpdateAgentJobSettingsRequest = {
 
 export type PersonaGender = "male" | "female";
 
-export type SecretaryMode =
-  | "workday"
-  | "personal"
-  | "travel"
-  | "deep_focus"
-  | "operator";
+export type SecretaryMode = "workday" | "personal" | "travel" | "deep_focus" | "operator";
 
 export type SecretaryRelationshipRole =
   | "private_secretary"
@@ -476,12 +451,7 @@ export type SecretaryRelationshipRole =
   | "companion"
   | "household_coordinator";
 
-export type SecretaryPresenceStyle =
-  | "composed"
-  | "warm"
-  | "playful"
-  | "formal"
-  | "assertive";
+export type SecretaryPresenceStyle = "composed" | "warm" | "playful" | "formal" | "assertive";
 
 export type SecretaryResponseLength = "concise" | "balanced" | "expansive";
 export type SecretaryDirectness = "soft" | "balanced" | "direct";
@@ -555,10 +525,7 @@ export type InferenceProviderAuthMode =
   | "api_key_or_account";
 
 export type InferenceTarget = "provider" | "local";
-export type InferenceProviderCatalogFamily =
-  | "ai_sdk_provider"
-  | "openai_compatible"
-  | "community";
+export type InferenceProviderCatalogFamily = "ai_sdk_provider" | "openai_compatible" | "community";
 export type InferenceProviderCatalogAccessMode =
   | "direct_api"
   | "linked_account"
@@ -973,13 +940,11 @@ export type TelegramIntegrationStatusResponse = {
     desiredWebhookUrl: string | null;
     pendingUpdateCount: number | null;
     defaultChatId: string | null;
-    botUser:
-      | {
-          id: string;
-          username: string | null;
-          displayName: string;
-        }
-      | null;
+    botUser: {
+      id: string;
+      username: string | null;
+      displayName: string;
+    } | null;
     conversationCount: number;
     messageCount: number;
     dueReminderCount: number;
@@ -1037,11 +1002,7 @@ export type TelegramReminderDispatchResponse = {
 
 export type OutboundChannelKey = "discord" | "slack" | "email" | "sms";
 
-export type OutboundChannelHealthStatus =
-  | "ok"
-  | "disabled"
-  | "degraded"
-  | "not_configured";
+export type OutboundChannelHealthStatus = "ok" | "disabled" | "degraded" | "not_configured";
 
 export type OutboundChannelStatusRecord = {
   channelKey: OutboundChannelKey;
@@ -1184,47 +1145,11 @@ function firstSentence(text: string | undefined) {
   return match?.[0]?.trim() ?? normalized;
 }
 
-function isGreeting(text: string) {
-  return /^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(
-    text,
-  );
+function _isGreeting(text: string) {
+  return /^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(text);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function soulStyleLead(context: RuntimeTurnContext) {
+function _soulStyleLead(context: RuntimeTurnContext) {
   const personaName = context.persona?.name?.trim() || "Secretary";
   const tone = context.persona?.toneMode?.trim();
   const soulLine = firstSentence(context.persona?.soul);
@@ -1238,7 +1163,7 @@ function soulStyleLead(context: RuntimeTurnContext) {
   };
 }
 
-function pickReplyShape<T>(
+function _pickReplyShape<T>(
   context: RuntimeTurnContext,
   options: {
     concise: T;
@@ -1259,7 +1184,7 @@ function pickReplyShape<T>(
   return options.balanced;
 }
 
-function pickDirectness<T>(
+function _pickDirectness<T>(
   context: RuntimeTurnContext,
   options: {
     soft: T;
@@ -1270,9 +1195,6 @@ function pickDirectness<T>(
   const preference = context.persona?.customization?.directness ?? "balanced";
   return options[preference];
 }
-
-
-
 
 export type SecretaryFallbackReason =
   | "no_inference"

@@ -1,7 +1,7 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
 import type { AppConfig } from "@secretary/config";
-import { agentJobRequirements, agentJobs, jobs, type DbClient } from "@secretary/db";
 import { createMessageId, type RuntimeChatRequest } from "@secretary/core-runtime";
+import { agentJobRequirements, agentJobs, type DbClient, jobs } from "@secretary/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { decideAgentJobRequirement } from "./agent-jobs.js";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
@@ -18,7 +18,8 @@ type MaybeHandleAgentJobRequirementTurnParams = {
   traceId: string;
 };
 
-const requirementHelpPattern = /\b(blocked|requirement|requirements|approve|approval|deny|denied|runtime|what do you need)\b/i;
+const requirementHelpPattern =
+  /\b(blocked|requirement|requirements|approve|approval|deny|denied|runtime|what do you need)\b/i;
 
 // Note: resolveConversationId is now imported from utils/conversation.ts
 

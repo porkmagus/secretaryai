@@ -1,6 +1,6 @@
 import type { VoicePreviewRequest } from "@secretary/core-runtime";
-import { workerUrl } from "../../_lib/worker-proxy";
 import { NextResponse } from "next/server";
+import { workerUrl } from "../../_lib/worker-proxy";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as VoicePreviewRequest;
@@ -27,14 +27,10 @@ export async function POST(request: Request) {
       status: 200,
       headers: {
         "Content-Type": response.headers.get("content-type") ?? "audio/wav",
-        "X-Secretary-Artifact-Id":
-          response.headers.get("x-secretary-artifact-id") ?? "",
+        "X-Secretary-Artifact-Id": response.headers.get("x-secretary-artifact-id") ?? "",
       },
     });
   } catch {
-    return NextResponse.json(
-      { error: "Worker is unavailable." },
-      { status: 503 },
-    );
+    return NextResponse.json({ error: "Worker is unavailable." }, { status: 503 });
   }
 }

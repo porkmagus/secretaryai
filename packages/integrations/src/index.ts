@@ -73,13 +73,11 @@ export type NormalizedTelegramInboundMessage = {
   userDisplayName: string;
   text: string | null;
   hasVoice: boolean;
-  voice:
-    | {
-        fileId: string;
-        mimeType: string | null;
-        durationMs: number | null;
-      }
-    | null;
+  voice: {
+    fileId: string;
+    mimeType: string | null;
+    durationMs: number | null;
+  } | null;
 };
 
 type TelegramMethodResponse<T> = {
@@ -93,11 +91,7 @@ function trimToNull(value: string | null | undefined) {
   return normalized ? normalized : null;
 }
 
-function formatTelegramDisplayName(
-  firstName?: string,
-  lastName?: string,
-  username?: string,
-) {
+function formatTelegramDisplayName(firstName?: string, lastName?: string, username?: string) {
   return trimToNull([firstName, lastName].filter(Boolean).join(" ")) ?? username ?? "Telegram user";
 }
 
@@ -133,9 +127,7 @@ export function normalizeTelegramUpdate(update: TelegramUpdate) {
           fileId: message.voice.file_id,
           mimeType: trimToNull(message.voice.mime_type),
           durationMs:
-            typeof message.voice.duration === "number"
-              ? message.voice.duration * 1000
-              : null,
+            typeof message.voice.duration === "number" ? message.voice.duration * 1000 : null,
         }
       : null,
   } satisfies NormalizedTelegramInboundMessage;
@@ -177,10 +169,7 @@ export function createTelegramWebhookUrl(baseUrl: string) {
   return `${baseUrl.replace(/\/+$/g, "")}/integrations/telegram/webhook`;
 }
 
-export function createTelegramClient(options: {
-  apiBaseUrl: string;
-  botToken: string;
-}) {
+export function createTelegramClient(options: { apiBaseUrl: string; botToken: string }) {
   const apiRoot = options.apiBaseUrl.replace(/\/+$/g, "");
   const baseUrl = `${apiRoot}/bot${options.botToken}`;
   const fileBaseUrl = `${apiRoot}/file/bot${options.botToken}`;

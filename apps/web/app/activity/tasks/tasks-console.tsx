@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
 import type { TaskListResponse, TaskRecord } from "@secretary/core-runtime";
-import { AppPage, LoadingSurface, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
+import { useEffect, useMemo, useState } from "react";
 import { formatTimestamp } from "../../lib/presenters";
+import { AppPage, LoadingSurface, NoticeBanner, PageHero, SurfaceCard } from "../../lib/ui";
 
 function taskTone(task: TaskRecord) {
   if (task.lastDeliveryError) {
@@ -114,9 +114,9 @@ export function TasksConsole() {
         title="Tasks and follow-through"
         description={
           <p>
-            Tasks are part of the secretary&apos;s activity stream for now: reminders,
-            delivery attempts, and open follow-through items that may grow into a fuller
-            tasking system later.
+            Tasks are part of the secretary&apos;s activity stream for now: reminders, delivery
+            attempts, and open follow-through items that may grow into a fuller tasking system
+            later.
           </p>
         }
         meta={
@@ -196,7 +196,8 @@ export function TasksConsole() {
                       <strong style={{ fontSize: 14 }}>{task.title}</strong>
                     </div>
                     <p style={{ margin: 0, color: "var(--muted)", fontSize: 12 }}>
-                      {task.status} · due {formatTimestamp(task.dueAt)} · reminder {formatTimestamp(task.reminderAt)}
+                      {task.status} · due {formatTimestamp(task.dueAt)} · reminder{" "}
+                      {formatTimestamp(task.reminderAt)}
                     </p>
                   </div>
                   <div className="stack-sm" style={{ gap: 6 }}>
@@ -211,7 +212,14 @@ export function TasksConsole() {
                       {task.deliveryTargetRef ? ` · ${task.deliveryTargetRef}` : ""}
                     </p>
                     {task.lastDeliveryError ? (
-                      <p style={{ margin: 0, color: "var(--danger-soft-text)", fontSize: 12, lineHeight: 1.45 }}>
+                      <p
+                        style={{
+                          margin: 0,
+                          color: "var(--danger-soft-text)",
+                          fontSize: 12,
+                          lineHeight: 1.45,
+                        }}
+                      >
                         {task.lastDeliveryError}
                       </p>
                     ) : task.deliveredAt ? (

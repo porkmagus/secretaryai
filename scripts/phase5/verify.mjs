@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
-import net from "node:net";
 import { mkdir, writeFile } from "node:fs/promises";
+import net from "node:net";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -235,7 +235,7 @@ async function getAgentJobs(workerPort) {
   return payload.jobs;
 }
 
-async function getAgentJobDetail(workerPort, jobId) {
+async function _getAgentJobDetail(workerPort, jobId) {
   const response = await fetch(`http://127.0.0.1:${workerPort}/runtime/agent-jobs/${jobId}`, {
     cache: "no-store",
   });
@@ -249,9 +249,12 @@ async function getAgentJobDetail(workerPort, jobId) {
 }
 
 async function cancelAgentJob(workerPort, jobId) {
-  const response = await fetch(`http://127.0.0.1:${workerPort}/runtime/agent-jobs/${jobId}/cancel`, {
-    method: "POST",
-  });
+  const response = await fetch(
+    `http://127.0.0.1:${workerPort}/runtime/agent-jobs/${jobId}/cancel`,
+    {
+      method: "POST",
+    },
+  );
   const payload = await response.json();
 
   if (!response.ok) {
@@ -284,13 +287,17 @@ await runCommand(npmCommand, ["run", "storage:prepare"]);
 await mkdir(verificationWorkspace, { recursive: true });
 await writeFile(
   resolve(verificationWorkspace, "package.json"),
-  JSON.stringify({
-    name: "phase5-verify-workspace",
-    private: true,
-    scripts: {
-      verify: "echo verify",
+  JSON.stringify(
+    {
+      name: "phase5-verify-workspace",
+      private: true,
+      scripts: {
+        verify: "echo verify",
+      },
     },
-  }, null, 2),
+    null,
+    2,
+  ),
   "utf8",
 );
 await waitForDatabase(postgresAdminUrl);
@@ -320,7 +327,7 @@ try {
     throw new Error(`Tools API failed: ${JSON.stringify(toolsBody)}`);
   }
 
-  const toolKeys = toolsBody.tools.map((tool) => tool.key).sort();
+  const _toolKeys = toolsBody.tools.map((tool) => tool.key).sort();
   const searchTurn = await postChat(workerPort, {
     text: "search the web for secretary assistant architecture",
   });
@@ -335,7 +342,9 @@ try {
   });
 
   if (!approvalTurn.pendingApproval?.executionId) {
-    throw new Error(`Expected shell command approval request. Got: ${JSON.stringify(approvalTurn)}`);
+    throw new Error(
+      `Expected shell command approval request. Got: ${JSON.stringify(approvalTurn)}`,
+    );
   }
 
   const approvedExecution = await postApproval(
@@ -345,7 +354,9 @@ try {
   );
 
   if (approvedExecution.execution.executionStatus !== "completed") {
-    throw new Error(`Expected approved execution to complete. Got: ${JSON.stringify(approvedExecution)}`);
+    throw new Error(
+      `Expected approved execution to complete. Got: ${JSON.stringify(approvedExecution)}`,
+    );
   }
 
   const deniedTurn = await postChat(workerPort, {
@@ -364,7 +375,9 @@ try {
   );
 
   if (deniedExecution.execution.executionStatus !== "denied") {
-    throw new Error(`Expected denied execution to stay denied. Got: ${JSON.stringify(deniedExecution)}`);
+    throw new Error(
+      `Expected denied execution to stay denied. Got: ${JSON.stringify(deniedExecution)}`,
+    );
   }
 
   const taskCreateTurn = await postChat(workerPort, {
@@ -390,7 +403,7 @@ try {
     text: "mark send the invoice done",
   });
 
-  if (!String(taskDoneTurn.outputText).includes("marked \"Send The Invoice\" as done")) {
+  if (!String(taskDoneTurn.outputText).includes('marked "Send The Invoice" as done')) {
     throw new Error(`Expected task completion output. Got: ${JSON.stringify(taskDoneTurn)}`);
   }
 
@@ -410,7 +423,9 @@ try {
   );
 
   if (!String(telegramTaskTurn.outputText).includes("Ping The Contractor")) {
-    throw new Error(`Expected telegram task creation output. Got: ${JSON.stringify(telegramTaskTurn)}`);
+    throw new Error(
+      `Expected telegram task creation output. Got: ${JSON.stringify(telegramTaskTurn)}`,
+    );
   }
 
   const telegramApprovalPrompt = await postChat(
@@ -430,7 +445,9 @@ try {
   );
 
   if (!String(telegramApprovalPrompt.outputText).includes("needs approval")) {
-    throw new Error(`Expected telegram approval prompt. Got: ${JSON.stringify(telegramApprovalPrompt)}`);
+    throw new Error(
+      `Expected telegram approval prompt. Got: ${JSON.stringify(telegramApprovalPrompt)}`,
+    );
   }
 
   const telegramApprovalDecision = await postChat(
@@ -450,7 +467,9 @@ try {
   );
 
   if (!String(telegramApprovalDecision.outputText).includes("approved")) {
-    throw new Error(`Expected telegram approval execution output. Got: ${JSON.stringify(telegramApprovalDecision)}`);
+    throw new Error(
+      `Expected telegram approval execution output. Got: ${JSON.stringify(telegramApprovalDecision)}`,
+    );
   }
 
   const emailDraftTurn = await postChat(workerPort, {
@@ -499,7 +518,9 @@ try {
   }
 
   const launchedJobs = await getAgentJobs(workerPort);
-  const launchedJobRecord = launchedJobs.find((job) => job.conversationId === searchTurn.conversationId);
+  const launchedJobRecord = launchedJobs.find(
+    (job) => job.conversationId === searchTurn.conversationId,
+  );
 
   if (!launchedJobRecord) {
     throw new Error(`Expected launched agent job record. Got: ${JSON.stringify(launchedJobs)}`);
@@ -540,7 +561,9 @@ try {
   });
 
   if (!String(requirementApprovalTurn.outputText).includes("continuing the build job")) {
-    throw new Error(`Expected requirement approval output. Got: ${JSON.stringify(requirementApprovalTurn)}`);
+    throw new Error(
+      `Expected requirement approval output. Got: ${JSON.stringify(requirementApprovalTurn)}`,
+    );
   }
 
   await cancelAgentJob(workerPort, launchedJobRecord.id);
@@ -555,8 +578,14 @@ try {
   }
 
   const telegramTask = tasksBody.tasks.find((task) => task.title === "Ping The Contractor");
-  if (!telegramTask || telegramTask.deliveryChannelType !== "telegram" || telegramTask.deliveryTargetRef !== "tg-chat-1") {
-    throw new Error(`Expected telegram task delivery metadata. Got: ${JSON.stringify(telegramTask ?? null)}`);
+  if (
+    !telegramTask ||
+    telegramTask.deliveryChannelType !== "telegram" ||
+    telegramTask.deliveryTargetRef !== "tg-chat-1"
+  ) {
+    throw new Error(
+      `Expected telegram task delivery metadata. Got: ${JSON.stringify(telegramTask ?? null)}`,
+    );
   }
 
   const executionResponse = await fetch(
@@ -571,50 +600,11 @@ try {
     throw new Error(`Tool executions API failed: ${JSON.stringify(executionBody)}`);
   }
 
-  const statuses = executionBody.executions.map((execution) => ({
+  const _statuses = executionBody.executions.map((execution) => ({
     key: execution.toolKey,
     status: execution.executionStatus,
     approval: execution.approvalState,
   }));
-
-  console.log(
-    JSON.stringify(
-      {
-        conversationId: searchTurn.conversationId,
-        toolKeys,
-        approvedExecutionId: approvedExecution.execution.id,
-        deniedExecutionId: deniedExecution.execution.id,
-        taskCreateOutput: taskCreateTurn.outputText,
-        taskListOutput: taskListTurn.outputText,
-        taskDoneOutput: taskDoneTurn.outputText,
-        telegramTaskOutput: telegramTaskTurn.outputText,
-        telegramApprovalOutput: telegramApprovalDecision.outputText,
-        emailDraftOutput: emailDraftTurn.outputText,
-        calendarOutput: calendarTurn.outputText,
-        browserOutput: browserTurn.outputText,
-        launchPromptOutput: launchPromptTurn.outputText,
-        launchApprovedOutput: launchApprovedTurn.outputText,
-        requirementApprovalOutput: requirementApprovalTurn.outputText,
-        executionStatuses: statuses,
-      },
-      null,
-      2,
-    ),
-  );
-} catch (error) {
-  console.log(
-    JSON.stringify(
-      {
-        error: error instanceof Error ? error.message : String(error),
-        workerLogs: worker.logs(),
-        webLogs: web.logs(),
-      },
-      null,
-      2,
-    ),
-  );
-
-  throw error;
 } finally {
   await killTree(web.child);
   await killTree(worker.child);

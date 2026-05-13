@@ -1,4 +1,3 @@
-import { type Dispatch, type SetStateAction } from "react";
 import type {
   SecretaryClarifyingStyle,
   SecretaryClosingStyle,
@@ -12,6 +11,7 @@ import type {
   SecretaryReminderStyle,
   SecretaryResponseLength,
 } from "@secretary/core-runtime";
+import type { Dispatch, SetStateAction } from "react";
 import { FieldHint as FieldNote, SurfaceCard } from "../lib/ui";
 import {
   clarifyingStyles,
@@ -71,7 +71,10 @@ export function PersonaWritingSection({
       <SurfaceCard
         title="Presence and posture"
         description={
-          <p>How the secretary should show up, take initiative, and frame the relationship before a single reply is written.</p>
+          <p>
+            How the secretary should show up, take initiative, and frame the relationship before a
+            single reply is written.
+          </p>
         }
         className="stack-md"
       >
@@ -93,7 +96,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Sets the secretary&apos;s overall operating context, so the same persona can feel different during work, travel, or deep-focus sessions.
+              Sets the secretary&apos;s overall operating context, so the same persona can feel
+              different during work, travel, or deep-focus sessions.
             </FieldNote>
           </label>
 
@@ -119,7 +123,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Defines the role posture the model should adopt when it decides how to help, lead, or follow.
+              Defines the role posture the model should adopt when it decides how to help, lead, or
+              follow.
             </FieldNote>
           </label>
 
@@ -142,7 +147,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Controls the emotional texture of replies: composed, warmer, more formal, more playful, or more forceful.
+              Controls the emotional texture of replies: composed, warmer, more formal, more
+              playful, or more forceful.
             </FieldNote>
           </label>
 
@@ -165,7 +171,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Decides how often the secretary should volunteer next steps, reminders, or useful nudges without waiting to be asked.
+              Decides how often the secretary should volunteer next steps, reminders, or useful
+              nudges without waiting to be asked.
             </FieldNote>
           </label>
         </div>
@@ -182,18 +189,23 @@ export function PersonaWritingSection({
             style={{ maxWidth: 420 }}
           />
           <FieldNote>
-            Use a title only if you want the secretary to occasionally identify herself with a role beyond her name.
+            Use a title only if you want the secretary to occasionally identify herself with a role
+            beyond her name.
           </FieldNote>
         </label>
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.55 }}>
-          These controls are fed into the live model instructions, so they change both the feel of model-backed replies and the fallback guidance.
+          These controls are fed into the live model instructions, so they change both the feel of
+          model-backed replies and the fallback guidance.
         </p>
       </SurfaceCard>
 
       <SurfaceCard
         title="Habits and preferences"
         description={
-          <p>Compact habits that change how replies are phrased, structured, and delivered turn after turn.</p>
+          <p>
+            Compact habits that change how replies are phrased, structured, and delivered turn after
+            turn.
+          </p>
         }
         className="stack-md"
       >
@@ -217,7 +229,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Shapes how much the secretary says before she stops, from clipped answers to fuller, more developed replies.
+              Shapes how much the secretary says before she stops, from clipped answers to fuller,
+              more developed replies.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -239,7 +252,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Tunes whether the secretary sounds gentler, balanced, or blunt when she gives an answer or correction.
+              Tunes whether the secretary sounds gentler, balanced, or blunt when she gives an
+              answer or correction.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -261,7 +275,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Guides whether plans come back as checklists, narrative guidance, or crisp executive-style summaries.
+              Guides whether plans come back as checklists, narrative guidance, or crisp
+              executive-style summaries.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -283,7 +298,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Controls how reminders and nudges should feel when the secretary follows up on pending work.
+              Controls how reminders and nudges should feel when the secretary follows up on pending
+              work.
             </FieldNote>
           </label>
         </div>
@@ -330,7 +346,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Tells the secretary whether to end cleanly, summarize, or naturally point toward the next step.
+              Tells the secretary whether to end cleanly, summarize, or naturally point toward the
+              next step.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -355,7 +372,8 @@ export function PersonaWritingSection({
               ))}
             </select>
             <FieldNote>
-              Sets how eager the secretary should be to ask follow-up questions before acting or answering.
+              Sets how eager the secretary should be to ask follow-up questions before acting or
+              answering.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -370,19 +388,24 @@ export function PersonaWritingSection({
               placeholder="Preferred form of address for the user"
             />
             <FieldNote>
-              If you want a stable form of address, set it here and the secretary can use it naturally in greetings and warmer replies.
+              If you want a stable form of address, set it here and the secretary can use it
+              naturally in greetings and warmer replies.
             </FieldNote>
           </label>
         </div>
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.55 }}>
-          Use this row for durable habits. Save one-off wording or richer demonstrations for the examples section below.
+          Use this row for durable habits. Save one-off wording or richer demonstrations for the
+          examples section below.
         </p>
       </SurfaceCard>
 
       <SurfaceCard
         title="Boundaries and examples"
         description={
-          <p>Tell the secretary what to avoid, then anchor the voice with one good example and one answer to avoid.</p>
+          <p>
+            Tell the secretary what to avoid, then anchor the voice with one good example and one
+            answer to avoid.
+          </p>
         }
         className="stack-md"
       >
@@ -391,7 +414,9 @@ export function PersonaWritingSection({
           <button
             type="button"
             className="persona-file-pill"
-            onClick={() => draft && downloadText("secretary-examples.md", buildSecretaryExamplesMarkdown(draft))}
+            onClick={() =>
+              draft && downloadText("secretary-examples.md", buildSecretaryExamplesMarkdown(draft))
+            }
             disabled={!draft}
           >
             secretary-examples.md
@@ -418,7 +443,8 @@ export function PersonaWritingSection({
             }}
           />
           <FieldNote>
-            List habits, tones, or behaviors the secretary should actively avoid, one line at a time.
+            List habits, tones, or behaviors the secretary should actively avoid, one line at a
+            time.
           </FieldNote>
         </label>
         <div
@@ -449,7 +475,8 @@ export function PersonaWritingSection({
               }}
             />
             <FieldNote>
-              Give one reply that feels exactly right so the secretary has a concrete target to imitate.
+              Give one reply that feels exactly right so the secretary has a concrete target to
+              imitate.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -478,14 +505,18 @@ export function PersonaWritingSection({
           </label>
         </div>
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.55 }}>
-          This companion export mirrors the current boundaries and examples block into one markdown file for documentation and tuning.
+          This companion export mirrors the current boundaries and examples block into one markdown
+          file for documentation and tuning.
         </p>
       </SurfaceCard>
 
       <SurfaceCard
         title="Soul and behavior"
         description={
-          <p>The markdown-backed soul, persona profile, and guardrails that shape the secretary&apos;s deeper voice.</p>
+          <p>
+            The markdown-backed soul, persona profile, and guardrails that shape the
+            secretary&apos;s deeper voice.
+          </p>
         }
         className="stack-md"
       >
@@ -527,7 +558,8 @@ export function PersonaWritingSection({
               }}
             />
             <FieldNote>
-              This is the deepest framing file for the secretary: the enduring voice, posture, and private internal instructions she should carry.
+              This is the deepest framing file for the secretary: the enduring voice, posture, and
+              private internal instructions she should carry.
             </FieldNote>
           </label>
           <label style={{ display: "grid", gap: 6 }}>
@@ -561,12 +593,14 @@ export function PersonaWritingSection({
               }}
             />
             <FieldNote>
-              This file is the lived texture of the secretary: identity, voice, posture, and the kind of person she should feel like in use.
+              This file is the lived texture of the secretary: identity, voice, posture, and the
+              kind of person she should feel like in use.
             </FieldNote>
           </label>
         </div>
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.55 }}>
-          The soul holds the deeper framing. The persona profile carries the lived texture. Saving writes both the live markdown-backed files and the stored settings together.
+          The soul holds the deeper framing. The persona profile carries the lived texture. Saving
+          writes both the live markdown-backed files and the stored settings together.
         </p>
         <label style={{ display: "grid", gap: 6 }}>
           <span style={{ color: "var(--muted)", fontSize: 13 }}>Behavior rules (one per line)</span>
@@ -589,7 +623,8 @@ export function PersonaWritingSection({
             }}
           />
           <FieldNote>
-            Keep these short, durable, and operational. They work best as a clean list of high-value guardrails rather than a second persona essay.
+            Keep these short, durable, and operational. They work best as a clean list of high-value
+            guardrails rather than a second persona essay.
           </FieldNote>
         </label>
         <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>

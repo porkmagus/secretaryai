@@ -68,12 +68,12 @@ test("validateMessageInsert trims text and channel message id", () => {
 });
 
 test("validateMessageInsert rejects empty text and invalid roles", () => {
-  assert.deepEqual(
-    validateMessageInsert({ contentText: " ", role: "user" }),
-    { ok: false, reason: "empty_content" },
-  );
-  assert.deepEqual(
-    validateMessageInsert({ contentText: "hello", role: "owner" }),
-    { ok: false, reason: "invalid_role" },
-  );
+  assert.deepEqual(validateMessageInsert({ contentText: " ", role: "user" }), {
+    ok: false,
+    reason: "empty_content",
+  });
+  assert.deepEqual(validateMessageInsert({ contentText: "hello", role: "owner" }), {
+    ok: false,
+    reason: "invalid_role",
+  });
 });

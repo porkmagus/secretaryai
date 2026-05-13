@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -35,39 +35,20 @@ function run(command, args) {
 }
 
 async function main() {
-  const pythonCommand =
-    process.env.PYTHON ??
-    (process.platform === "win32" ? "py" : "python");
+  const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "py" : "python");
   // Use -3.13 on Windows, or let PYTHON env var override
-  const pythonArgs =
-    process.platform === "win32" && !process.env.PYTHON ? ["-3.13"] : [];
+  const pythonArgs = process.platform === "win32" && !process.env.PYTHON ? ["-3.13"] : [];
 
   if (!existsSync(resolveVenvPython())) {
-    console.log(`Creating TTS virtual environment at ${venvDir}`);
     await run(pythonCommand, [...pythonArgs, "-m", "venv", venvDir]);
   } else {
-    console.log(`Using existing TTS virtual environment at ${venvDir}`);
   }
 
   const venvPython = resolveVenvPython();
-  
-  // Upgrade pip first
-  console.log("Upgrading pip...");
   await run(venvPython, ["-m", "pip", "install", "--upgrade", "pip"]);
-  
-  // Install requirements
-  console.log("Installing TTS requirements...");
   await run(venvPython, ["-m", "pip", "install", "-r", requirementsPath]);
-
-  console.log("");
-  console.log("✅ TTS service dependencies are ready!");
-  console.log("   Run the local service with: npm run dev:tts");
-  console.log("");
-  console.log("Note: First run will download the Orpheus model (~3GB)");
-  console.log("      Models are cached in: runtime/speech/models/tts/");
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
+void main().catch((_error) => {
   process.exit(1);
 });
