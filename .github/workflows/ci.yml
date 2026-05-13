@@ -32,11 +32,13 @@ jobs:
         run: npm run test
         env:
           NODE_OPTIONS: "--no-warnings"
+          TZ: "UTC"
 
       - name: Run coverage (worker)
         run: npx c8 npm run test -w apps/worker
         env:
           NODE_OPTIONS: "--no-warnings"
+          TZ: "UTC"
 
       - name: Lint
         run: npm run lint
