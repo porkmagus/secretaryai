@@ -28,6 +28,11 @@ runtime/speech/transcripts/*
 runtime/speech/tts/*
 runtime/speech/models/*
 runtime/speech/profiles/*
+!runtime/speech/inbound/.gitkeep
+!runtime/speech/transcripts/.gitkeep
+!runtime/speech/tts/.gitkeep
+!runtime/speech/models/.gitkeep
+!runtime/speech/profiles/.gitkeep
 runtime/caddy/data/*
 runtime/caddy/config/*
 runtime/backups/*
