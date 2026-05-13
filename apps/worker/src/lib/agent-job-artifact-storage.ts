@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { repoRoot, sanitizeSegment } from "./utils/index.js";
+import { repoRoot, sanitizeSegment } from "./utils.js";
 
 // Lazy initialization to avoid circular dependency issues
 function getArtifactRoot() {

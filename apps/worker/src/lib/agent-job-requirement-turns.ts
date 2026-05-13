@@ -6,7 +6,7 @@ import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { decideAgentJobRequirement } from "./agent-job-runtime.js";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision } from "./conversation-decisions.js";
-import { resolveConversationId } from "./utils/index.js";
+import { resolveConversationId } from "./utils.js";
 
 type MaybeHandleAgentJobRequirementTurnParams = {
   config: AppConfig;

@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
-import { repoRoot } from "./utils/index.js";
+import { repoRoot } from "./utils.js";
 
 // Lazy initialization to avoid circular dependency issues
 let _personaDirectoryPath: string | undefined;

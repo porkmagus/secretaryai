@@ -12,7 +12,7 @@ import { createAgentJob } from "./agent-job-runtime.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision, extractWorkspacePathHint } from "./conversation-decisions.js";
-import { repoRoot, resolveConversationId } from "./utils/index.js";
+import { repoRoot, resolveConversationId } from "./utils.js";
 
 type MaybeHandleAgentJobLaunchTurnParams = {
   config: AppConfig;

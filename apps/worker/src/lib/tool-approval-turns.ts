@@ -5,7 +5,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision } from "./conversation-decisions.js";
 import { decideToolExecution } from "./tools-runtime.js";
-import { resolveConversationId } from "./utils/index.js";
+import { resolveConversationId } from "./utils.js";
 
 type MaybeHandleToolApprovalTurnParams = {
   config: AppConfig;

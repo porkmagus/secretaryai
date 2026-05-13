@@ -12,7 +12,7 @@ import {
   type InferenceRuntimeConfig,
   resolveInferenceLanguageModel,
 } from "./ai-sdk-registry.js";
-import { logFallbackTriggered } from "./utils/index.js";
+import { logFallbackTriggered } from "./utils.js";
 
 const TASK_INTENT_REGEX =
   /\b(task|tasks|todo|to-do|remind|reminder|schedule|scheduled|due|deadline|checklist|meeting|time|when|what do i have)\b/i;

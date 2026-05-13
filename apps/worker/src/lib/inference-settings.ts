@@ -14,7 +14,7 @@ import {
   isLocalRuntimeProvider,
   providerSupportsStoredApiKey,
 } from "./inference-provider-definitions.js";
-import { repoRoot } from "./utils/index.js";
+import { repoRoot } from "./utils.js";
 
 // Lazy initialization to avoid circular dependency issues
 function getSettingsFilePath() {

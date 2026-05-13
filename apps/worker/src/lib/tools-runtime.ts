@@ -41,7 +41,7 @@ import {
   parseReminderTime,
   summarizeTaskSchedule,
 } from "./task-runtime.js";
-import { cleanText as cleanTaskText, logToolExecution } from "./utils/index.js";
+import { cleanText as cleanTaskText, logToolExecution } from "./utils.js";
 
 const FILE_PREVIEW_LIMIT = 1500;
 const MAX_FILE_READ_BYTES = 256 * 1024;
@@ -53,7 +53,7 @@ const CALENDAR_EXPORTS_DIR = "runtime/generated/calendar-events";
 const BROWSER_TARGETS_DIR = "runtime/generated/browser-targets";
 const DOWNLOADS_DIR = "runtime/downloads";
 
-import { repoRoot } from "./utils/index.js";
+import { repoRoot } from "./utils.js";
 
 type BuiltInTool = {
   key: string;

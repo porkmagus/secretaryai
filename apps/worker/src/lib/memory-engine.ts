@@ -24,7 +24,7 @@ import { generateText } from "ai";
 import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import { type InferenceRuntimeConfig, resolveInferenceLanguageModel } from "./ai-sdk-registry.js";
 import { buildTaskDraft, normalizeTaskTitle, titleCase } from "./task-runtime.js";
-import { cleanText, logMemoryRetrieval } from "./utils/index.js";
+import { cleanText, logMemoryRetrieval } from "./utils.js";
 
 type MemoryCandidate = {
   memoryType: MemoryType;

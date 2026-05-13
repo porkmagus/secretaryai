@@ -5,8 +5,7 @@ import type {
   AgentJobSettingsResponse,
   UpdateAgentJobSettingsRequest,
 } from "@secretary/core-runtime";
-import { repoRoot } from "./utils/index.js";
-import { normalizeApprovalMode, normalizeExecutionBackend } from "./utils.js";
+import { normalizeApprovalMode, normalizeExecutionBackend, repoRoot } from "./utils.js";
 
 // Lazy initialization to avoid circular dependency issues
 function getSettingsFilePath() {

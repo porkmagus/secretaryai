@@ -1,5 +1,5 @@
 import type { RuntimeChatRequest } from "@secretary/core-runtime";
-import { cleanText } from "./utils/index.js";
+import { cleanText } from "./utils.js";
 
 export type TaskDraft = {
   title: string;

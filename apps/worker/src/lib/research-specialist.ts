@@ -1,5 +1,5 @@
 import type { ResearchSpecialistResult } from "@secretary/core-runtime";
-import { cleanText } from "./utils/index.js";
+import { cleanText } from "./utils.js";
 
 export function shouldUseResearchSpecialist(text: string) {
   return /\b(research|compare|comparison|look up|investigate|options|tradeoffs|pros and cons)\b/i.test(
