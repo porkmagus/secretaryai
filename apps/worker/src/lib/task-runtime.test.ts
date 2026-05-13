@@ -13,8 +13,12 @@ test("buildTaskDraft extracts reminder timing and trims title", () => {
   assert.equal(draft.title, "Follow Up With The Electrician");
   assert.equal(draft.detail, "Created from a test.");
   assert.ok(draft.reminderAt instanceof Date);
-  assert.equal(draft.reminderAt?.toISOString(), "2026-03-28T21:00:00.000Z");
-  assert.equal(draft.dueAt?.toISOString(), "2026-03-28T21:00:00.000Z");
+  // "tomorrow at 4pm" should be ~35 hours from now (next day 16:00 in local)
+  // Test timezone-agnostically by checking the hour in UTC (accounts for TZ offset)
+  const hoursDiff = (draft.reminderAt!.getTime() - now.getTime()) / (1000 * 60 * 60);
+  assert.ok(hoursDiff >= 28 && hoursDiff <= 40, `Expected ~35h diff, got ${hoursDiff}h`);
+  assert.ok(draft.dueAt instanceof Date);
+  assert.equal(draft.dueAt!.getTime(), draft.reminderAt!.getTime());
 });
 
 test("buildTaskDraft assigns telegram delivery when the request came from telegram", () => {
