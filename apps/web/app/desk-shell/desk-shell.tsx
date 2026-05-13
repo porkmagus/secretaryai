@@ -1,9 +1,6 @@
 "use client";
 
-import { DefaultChatTransport } from "ai";
 import { useChat } from "@ai-sdk/react";
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState, useCallback, useMemo } from "react";
-import type { UIMessage } from "ai";
 import type {
   ConversationHistoryResponse,
   ConversationListItem,
@@ -14,10 +11,20 @@ import type {
   ToolExecutionListResponse,
   ToolExecutionRecord,
 } from "@secretary/core-runtime";
-import { AppPage, EmptyState, StatCard, StatGrid, ToggleField } from "../lib/ui";
+import type { UIMessage } from "ai";
+import { DefaultChatTransport } from "ai";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { fetchJson } from "../lib/fetch-json";
 import { snippet } from "../lib/presenters";
 import { SecretaryPortraitField } from "../lib/secretary-portrait-field";
+import { AppPage, EmptyState, StatCard, StatGrid, ToggleField } from "../lib/ui";
 
 type DeskChatMessage = UIMessage<DeskChatMessageMetadata>;
 
@@ -88,26 +95,14 @@ function followUpSuggestions(message: DeskChatMessage | undefined) {
   const text = extractText(message);
 
   if (!text) {
-    return [
-      "Give me the short version",
-      "What should we do next?",
-      "Turn that into a task",
-    ];
+    return ["Give me the short version", "What should we do next?", "Turn that into a task"];
   }
 
   if (/\b(task|reminder|schedule|deadline)\b/i.test(text)) {
-    return [
-      "Turn that into a task",
-      "What should happen next?",
-      "Give me the short version",
-    ];
+    return ["Turn that into a task", "What should happen next?", "Give me the short version"];
   }
 
-  return [
-    "Go one level deeper",
-    "Give me the short version",
-    "What should we do next?",
-  ];
+  return ["Go one level deeper", "Give me the short version", "What should we do next?"];
 }
 
 function isAgentJobLaunchPrompt(message: DeskChatMessage | undefined) {
@@ -141,12 +136,10 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationIdRef = useRef<string | undefined>(props.activeConversationId);
   const secretaryName = props.secretaryName.trim() || "Secretary";
-  const secretaryReference =
-    secretaryName === "SetAgentName" ? "the secretary" : secretaryName;
+  const secretaryReference = secretaryName === "SetAgentName" ? "the secretary" : secretaryName;
   const secretarySentenceReference =
     secretaryName === "SetAgentName" ? "The secretary" : secretaryName;
-  const composerTarget =
-    secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
+  const composerTarget = secretaryName === "SetAgentName" ? "your secretary" : secretaryName;
 
   const copyToClipboard = useCallback((message: DeskChatMessage) => {
     const text = extractText(message);
@@ -161,52 +154,51 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     conversationIdRef.current = props.activeConversationId;
   }, [props.activeConversationId]);
 
-  const { messages, sendMessage, status, stop, error, clearError } =
-    useChat<DeskChatMessage>({
-      messages: props.initialMessages,
-      transport: new DefaultChatTransport({
-        api: "/api/chat",
-        prepareSendMessagesRequest: ({ messages }) => {
-          const latestMessage = messages[messages.length - 1] as DeskChatMessage | undefined;
+  const { messages, sendMessage, status, stop, error, clearError } = useChat<DeskChatMessage>({
+    messages: props.initialMessages,
+    transport: new DefaultChatTransport({
+      api: "/api/chat",
+      prepareSendMessagesRequest: ({ messages }) => {
+        const latestMessage = messages[messages.length - 1] as DeskChatMessage | undefined;
 
-          return {
-            body: {
-              conversationId: conversationIdRef.current,
-              messageId: latestMessage?.id,
-              text: extractText(latestMessage),
-            },
-          };
-        },
-      }),
-      experimental_throttle: 50,
-      onData: (part) => {
-        if (part.type !== "data-runtime-context") {
-          return;
-        }
+        return {
+          body: {
+            conversationId: conversationIdRef.current,
+            messageId: latestMessage?.id,
+            text: extractText(latestMessage),
+          },
+        };
+      },
+    }),
+    experimental_throttle: 50,
+    onData: (part) => {
+      if (part.type !== "data-runtime-context") {
+        return;
+      }
 
-        const metadata = part.data as DeskChatMessageMetadata;
+      const metadata = part.data as DeskChatMessageMetadata;
+      props.onReplyMetadata(metadata);
+      props.onConversationLinked(metadata.conversationId);
+    },
+    onFinish: ({ message }) => {
+      const metadata = extractMetadata(message);
+
+      if (metadata) {
         props.onReplyMetadata(metadata);
         props.onConversationLinked(metadata.conversationId);
-      },
-      onFinish: ({ message }) => {
-        const metadata = extractMetadata(message);
+      }
 
-        if (metadata) {
-          props.onReplyMetadata(metadata);
-          props.onConversationLinked(metadata.conversationId);
-        }
-
-        props.onReplyReady(message);
-      },
-      onError: () => {
-        // Render a generic message in the composer footer.
-      },
-    });
+      props.onReplyReady(message);
+    },
+    onError: () => {
+      // Render a generic message in the composer footer.
+    },
+  });
 
   const latestAssistantMessage = [...messages]
     .reverse()
     .find((message) => message.role === "assistant");
-  const latestMetadata = extractMetadata(latestAssistantMessage);
+  const _latestMetadata = extractMetadata(latestAssistantMessage);
   const suggestionOptions = followUpSuggestions(latestAssistantMessage);
   const composerStatus =
     props.deskVoiceError ??
@@ -215,11 +207,11 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
       ? `Sending to ${secretaryReference}...`
       : status === "streaming"
         ? `${secretaryReference} is replying...`
-          : props.isRefreshing
-            ? "Refreshing saved correspondence..."
-            : props.activeConversationId
-              ? "This correspondence is saved and ready."
-              : `${secretarySentenceReference} is ready when you are.`);
+        : props.isRefreshing
+          ? "Refreshing saved correspondence..."
+          : props.activeConversationId
+            ? "This correspondence is saved and ready."
+            : `${secretarySentenceReference} is ready when you are.`);
 
   useEffect(() => {
     const nextFrame = window.requestAnimationFrame(() => {
@@ -240,7 +232,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     });
 
     return () => window.cancelAnimationFrame(nextFrame);
-  }, [messages, status]);
+  }, [status]);
 
   useEffect(() => {
     const node = streamRef.current;
@@ -313,27 +305,26 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
   const stageDescription =
     status === "streaming"
       ? `${secretaryReference} is working through the reply now.`
-        : props.activeConversationId
-          ? "This conversation stays linked to its history, approvals, and follow-through as you work."
-          : `Start anywhere. ${secretarySentenceReference} will turn this into a working thread as context builds.`;
+      : props.activeConversationId
+        ? "This conversation stays linked to its history, approvals, and follow-through as you work."
+        : `Start anywhere. ${secretarySentenceReference} will turn this into a working thread as context builds.`;
 
-  const activeNotice =
-    props.pendingApproval
+  const activeNotice = props.pendingApproval
+    ? {
+        title: `${props.pendingApproval.toolName} needs approval`,
+        copy: props.pendingApproval.summary,
+      }
+    : props.deskVoiceError
       ? {
-          title: `${props.pendingApproval.toolName} needs approval`,
-          copy: props.pendingApproval.summary,
+          title: "Voice playback needs attention",
+          copy: props.deskVoiceError,
         }
-      : props.deskVoiceError
+      : props.deskPortraitError
         ? {
-            title: "Voice playback needs attention",
-            copy: props.deskVoiceError,
+            title: "Portrait update needs attention",
+            copy: props.deskPortraitError,
           }
-        : props.deskPortraitError
-          ? {
-              title: "Portrait update needs attention",
-              copy: props.deskPortraitError,
-            }
-          : null;
+        : null;
 
   return (
     <div className="desk-chat-shell">
@@ -356,167 +347,170 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
       <div style={{ position: "relative", minHeight: 0, display: "grid" }}>
         <div className="desk-message-stream" ref={streamRef}>
           {messages.map((message) => {
-          const text = extractText(message);
-          const metadata = extractMetadata(message);
-          const isUser = message.role === "user";
-          const reasoningParts = message.parts.filter((part) => part.type === "reasoning");
-          const sourceParts = message.parts.filter(
-            (part) => part.type === "source-url" || part.type === "source-document",
-          );
-          const textParts = message.parts.filter((part) => part.type === "text");
-          const showLaunchPromptActions =
-            !isUser &&
-            isAgentJobLaunchPrompt(message) &&
-            status !== "submitted" &&
-            status !== "streaming";
-          const isStreamingAssistant =
-            !isUser &&
-            (message.parts.some(
-              (part) =>
-                (part.type === "text" || part.type === "reasoning") &&
-                part.state === "streaming",
-            ) ||
-              (status === "streaming" && latestAssistantMessage?.id === message.id));
+            const _text = extractText(message);
+            const metadata = extractMetadata(message);
+            const isUser = message.role === "user";
+            const reasoningParts = message.parts.filter((part) => part.type === "reasoning");
+            const sourceParts = message.parts.filter(
+              (part) => part.type === "source-url" || part.type === "source-document",
+            );
+            const textParts = message.parts.filter((part) => part.type === "text");
+            const showLaunchPromptActions =
+              !isUser &&
+              isAgentJobLaunchPrompt(message) &&
+              status !== "submitted" &&
+              status !== "streaming";
+            const isStreamingAssistant =
+              !isUser &&
+              (message.parts.some(
+                (part) =>
+                  (part.type === "text" || part.type === "reasoning") && part.state === "streaming",
+              ) ||
+                (status === "streaming" && latestAssistantMessage?.id === message.id));
 
-          return (
-            <article
-              key={message.id}
-              className={`desk-message ${isUser ? "desk-message--user" : "desk-message--assistant"}`}
-            >
-              <div className="desk-message-head">
-                <p className={`desk-message-speaker ${isUser ? "desk-message-speaker--user" : ""}`}>
-                  {isUser ? "you" : secretaryName}
-                </p>
-                {!isUser && metadata ? (
-                  <div className="desk-message-meta">
-                    <span className="desk-model-chip">{formatModelBadge(metadata)}</span>
-                    {metadata.totalTokens ? (
-                      <span className="desk-token-chip">{metadata.totalTokens} tokens</span>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-              <div className="desk-message-body">
-                {textParts.map((part, index) => (
+            return (
+              <article
+                key={message.id}
+                className={`desk-message ${isUser ? "desk-message--user" : "desk-message--assistant"}`}
+              >
+                <div className="desk-message-head">
                   <p
-                    key={`${message.id}-text-${index}`}
-                    className={`desk-message-text ${
-                      part.state === "streaming" ? "desk-message-text--streaming" : ""
-                    }`}
+                    className={`desk-message-speaker ${isUser ? "desk-message-speaker--user" : ""}`}
                   >
-                    {part.text}
+                    {isUser ? "you" : secretaryName}
                   </p>
-                ))}
-                {reasoningParts.length > 0 ? (
-                  <details className="desk-reasoning">
-                    <summary
-                      title="View thinking process"
-                      aria-label={
-                        reasoningParts.some((part) => part.state === "streaming")
-                          ? "Secretary is thinking"
-                          : "View secretary's reasoning"
-                      }
-                    >
-                      Thinking
-                      {reasoningParts.some((part) => part.state === "streaming") ? "..." : ""}
-                    </summary>
-                    <div className="desk-reasoning-copy">
-                      {reasoningParts.map((part, index) => (
-                        <p key={`${message.id}-reasoning-${index}`}>{part.text}</p>
-                      ))}
+                  {!isUser && metadata ? (
+                    <div className="desk-message-meta">
+                      <span className="desk-model-chip">{formatModelBadge(metadata)}</span>
+                      {metadata.totalTokens ? (
+                        <span className="desk-token-chip">{metadata.totalTokens} tokens</span>
+                      ) : null}
                     </div>
-                  </details>
-                ) : null}
-                {sourceParts.length > 0 ? (
-                  <div className="desk-sources">
-                    {sourceParts.map((part, index) =>
-                      part.type === "source-url" ? (
-                        <a
-                          key={`${message.id}-source-${index}`}
-                          href={part.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="desk-source-chip"
-                        >
-                          {part.title ?? new URL(part.url).hostname}
-                        </a>
-                      ) : (
-                        <span key={`${message.id}-source-${index}`} className="desk-source-chip">
-                          {part.title ?? part.filename ?? "Document"}
-                        </span>
-                      ),
-                    )}
+                  ) : null}
+                </div>
+                <div className="desk-message-body">
+                  {textParts.map((part, index) => (
+                    <p
+                      key={`${message.id}-text-${index}`}
+                      className={`desk-message-text ${
+                        part.state === "streaming" ? "desk-message-text--streaming" : ""
+                      }`}
+                    >
+                      {part.text}
+                    </p>
+                  ))}
+                  {reasoningParts.length > 0 ? (
+                    <details className="desk-reasoning">
+                      <summary
+                        title="View thinking process"
+                        aria-label={
+                          reasoningParts.some((part) => part.state === "streaming")
+                            ? "Secretary is thinking"
+                            : "View secretary's reasoning"
+                        }
+                      >
+                        Thinking
+                        {reasoningParts.some((part) => part.state === "streaming") ? "..." : ""}
+                      </summary>
+                      <div className="desk-reasoning-copy">
+                        {reasoningParts.map((part, index) => (
+                          <p key={`${message.id}-reasoning-${index}`}>{part.text}</p>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+                  {sourceParts.length > 0 ? (
+                    <div className="desk-sources">
+                      {sourceParts.map((part, index) =>
+                        part.type === "source-url" ? (
+                          <a
+                            key={`${message.id}-source-${index}`}
+                            href={part.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="desk-source-chip"
+                          >
+                            {part.title ?? new URL(part.url).hostname}
+                          </a>
+                        ) : (
+                          <span key={`${message.id}-source-${index}`} className="desk-source-chip">
+                            {part.title ?? part.filename ?? "Document"}
+                          </span>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                {isStreamingAssistant ? (
+                  <div
+                    className="desk-streaming-indicator"
+                    role="status"
+                    aria-label={`${secretaryName} is typing...`}
+                  >
+                    <span />
+                    <span />
+                    <span />
                   </div>
                 ) : null}
-              </div>
-              {isStreamingAssistant ? (
-                <div
-                  className="desk-streaming-indicator"
-                  role="status"
-                  aria-label={`${secretaryName} is typing...`}
-                >
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              ) : null}
-              <div className="desk-message-actions">
-                {showLaunchPromptActions ? (
-                  <>
+                <div className="desk-message-actions">
+                  {showLaunchPromptActions ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void respondToAgentJobPrompt("yes")}
+                        className="button-primary"
+                        aria-label="Start as an automated agent job"
+                        title="Start as an automated agent job"
+                        style={{ padding: "6px 10px", fontSize: 11 }}
+                      >
+                        Start job
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void respondToAgentJobPrompt("no")}
+                        className="button-secondary"
+                        aria-label="Keep this conversation in the chat interface"
+                        title="Keep this conversation in the chat interface"
+                        style={{ padding: "6px 10px", fontSize: 11 }}
+                      >
+                        Keep in chat
+                      </button>
+                    </>
+                  ) : null}
+                  {!isUser ? (
                     <button
                       type="button"
-                      onClick={() => void respondToAgentJobPrompt("yes")}
-                      className="button-primary"
-                      aria-label="Start as an automated agent job"
-                      title="Start as an automated agent job"
-                      style={{ padding: "6px 10px", fontSize: 11 }}
-                    >
-                      Start job
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void respondToAgentJobPrompt("no")}
+                      onClick={() => props.onSpeakMessage(message)}
+                      aria-label={
+                        props.speakingMessageId === message.id
+                          ? "Stop reading message aloud"
+                          : "Read message aloud"
+                      }
+                      title={
+                        props.speakingMessageId === message.id
+                          ? "Stop reading message aloud"
+                          : "Read message aloud"
+                      }
                       className="button-secondary"
-                      aria-label="Keep this conversation in the chat interface"
-                      title="Keep this conversation in the chat interface"
                       style={{ padding: "6px 10px", fontSize: 11 }}
                     >
-                      Keep in chat
+                      {props.speakingMessageId === message.id ? "Stop" : "Speak"}
                     </button>
-                  </>
-                ) : null}
-                {!isUser ? (
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => props.onSpeakMessage(message)}
+                    onClick={() => copyToClipboard(message)}
                     aria-label={
-                      props.speakingMessageId === message.id
-                        ? "Stop reading message aloud"
-                        : "Read message aloud"
+                      copiedMessageId === message.id ? "Message copied" : "Copy message text"
                     }
-                    title={
-                      props.speakingMessageId === message.id
-                        ? "Stop reading message aloud"
-                        : "Read message aloud"
-                    }
+                    title={copiedMessageId === message.id ? "Message copied" : "Copy message text"}
                     className="button-secondary"
                     style={{ padding: "6px 10px", fontSize: 11 }}
                   >
-                    {props.speakingMessageId === message.id ? "Stop" : "Speak"}
+                    {copiedMessageId === message.id ? "Copied!" : "Copy"}
                   </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(message)}
-                  aria-label={copiedMessageId === message.id ? "Message copied" : "Copy message text"}
-                  title={copiedMessageId === message.id ? "Message copied" : "Copy message text"}
-                  className="button-secondary"
-                  style={{ padding: "6px 10px", fontSize: 11 }}
-                >
-                  {copiedMessageId === message.id ? "Copied!" : "Copy"}
-                </button>
-              </div>
-            </article>
+                </div>
+              </article>
             );
           })}
         </div>
@@ -559,7 +553,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
         <textarea
           id="composer-input"
           ref={textareaRef}
-          autoFocus
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -619,7 +612,9 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
             ) : null}
             <button
               type="submit"
-              disabled={status === "submitted" || status === "streaming" || input.trim().length === 0}
+              disabled={
+                status === "submitted" || status === "streaming" || input.trim().length === 0
+              }
               className="button-primary"
               aria-label="Send message"
               title="Send message (Ctrl+Enter)"
@@ -695,65 +690,66 @@ export function DeskShell() {
     setSpeakingMessageId(null);
   }, []);
 
-  const playAssistantMessage = useCallback(async (message: DeskChatMessage) => {
-    const text = extractText(message);
+  const playAssistantMessage = useCallback(
+    async (message: DeskChatMessage) => {
+      const text = extractText(message);
 
-    if (!text) {
-      return;
-    }
-
-    if (speakingMessageId === message.id) {
-      stopMessagePlayback();
-      return;
-    }
-
-    stopMessagePlayback();
-    setDeskVoiceError(null);
-    setSpeakingMessageId(message.id);
-
-    try {
-      const response = await fetch("/api/voice/preview", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text,
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(payload?.error ?? "Desk voice preview failed.");
+      if (!text) {
+        return;
       }
 
-      const audioBlob = await response.blob();
-      const objectUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(objectUrl);
-
-      audioRef.current = audio;
-      audioObjectUrlRef.current = objectUrl;
-
-      audio.onended = () => {
+      if (speakingMessageId === message.id) {
         stopMessagePlayback();
-      };
-      audio.onerror = () => {
-        stopMessagePlayback();
-        setDeskVoiceError("Desk voice playback ran into an audio error.");
-      };
+        return;
+      }
 
-      await audio.play();
-    } catch (playbackError) {
       stopMessagePlayback();
-      setDeskVoiceError(
-        playbackError instanceof Error
-          ? playbackError.message
-          : "Desk voice playback is unavailable right now.",
-      );
-    }
-  }, [speakingMessageId, stopMessagePlayback]);
+      setDeskVoiceError(null);
+      setSpeakingMessageId(message.id);
+
+      try {
+        const response = await fetch("/api/voice/preview", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            text,
+          }),
+        });
+
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error ?? "Desk voice preview failed.");
+        }
+
+        const audioBlob = await response.blob();
+        const objectUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(objectUrl);
+
+        audioRef.current = audio;
+        audioObjectUrlRef.current = objectUrl;
+
+        audio.onended = () => {
+          stopMessagePlayback();
+        };
+        audio.onerror = () => {
+          stopMessagePlayback();
+          setDeskVoiceError("Desk voice playback ran into an audio error.");
+        };
+
+        await audio.play();
+      } catch (playbackError) {
+        stopMessagePlayback();
+        setDeskVoiceError(
+          playbackError instanceof Error
+            ? playbackError.message
+            : "Desk voice playback is unavailable right now.",
+        );
+      }
+    },
+    [speakingMessageId, stopMessagePlayback],
+  );
 
   const loadConversations = useCallback(async () => {
     try {
@@ -814,7 +810,7 @@ export function DeskShell() {
         `/api/tool-executions?conversationId=${encodeURIComponent(nextConversationId)}&approvalState=pending`,
         {
           cache: "no-store",
-        }
+        },
       );
       setPendingApprovals(data.executions);
     } catch {
@@ -825,7 +821,7 @@ export function DeskShell() {
   useEffect(() => {
     void loadConversations();
     void loadSecretaryProfile();
-  }, []);
+  }, [loadConversations, loadSecretaryProfile]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -848,7 +844,7 @@ export function DeskShell() {
     return () => {
       stopMessagePlayback();
     };
-  }, []);
+  }, [stopMessagePlayback]);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") {
@@ -884,7 +880,7 @@ export function DeskShell() {
       window.removeEventListener("pointerdown", handlePointer);
       window.removeEventListener("keydown", handlePointer);
     };
-  }, []);
+  }, [reportDeskPresence]);
 
   useEffect(() => {
     if (!conversationId || hasLoadedHistory.current === conversationId) {
@@ -897,18 +893,19 @@ export function DeskShell() {
       setIsRefreshing(true);
 
       try {
-        const data = await fetchJson<ConversationHistoryResponse>(`/api/conversations/${conversationId}`, {
-          cache: "no-store",
-        });
+        const data = await fetchJson<ConversationHistoryResponse>(
+          `/api/conversations/${conversationId}`,
+          {
+            cache: "no-store",
+          },
+        );
 
         if (cancelled) {
           return;
         }
 
         setConversationSeedMessages(
-          data.messages.length > 0
-            ? data.messages.map(toDeskChatMessage)
-            : starterMessages,
+          data.messages.length > 0 ? data.messages.map(toDeskChatMessage) : starterMessages,
         );
         setConversationSeedKey((current) => current + 1);
         hasLoadedHistory.current = data.conversationId;
@@ -930,7 +927,7 @@ export function DeskShell() {
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, loadPendingApprovals]);
 
   function resetConversationContext() {
     setDeskPortraitError(null);
@@ -947,70 +944,79 @@ export function DeskShell() {
     resetConversationContext();
   }
 
-  const openConversation = useCallback(async (nextConversationId: string) => {
-    stopMessagePlayback();
-    setConversationId(nextConversationId);
-    setPendingApprovals([]);
-    hasLoadedHistory.current = null;
-    resetConversationContext();
-  }, [stopMessagePlayback, resetConversationContext]);
+  const openConversation = useCallback(
+    async (nextConversationId: string) => {
+      stopMessagePlayback();
+      setConversationId(nextConversationId);
+      setPendingApprovals([]);
+      hasLoadedHistory.current = null;
+      resetConversationContext();
+    },
+    [stopMessagePlayback, resetConversationContext],
+  );
 
-  const decideApproval = useCallback(async (executionId: string, approve: boolean) => {
-    setApprovalBusyId(executionId);
+  const decideApproval = useCallback(
+    async (executionId: string, approve: boolean) => {
+      setApprovalBusyId(executionId);
 
-    try {
-      const data = await fetchJson<ToolApprovalDecisionResponse>(
-        `/api/tool-executions/${executionId}/${approve ? "approve" : "deny"}`,
-        {
-          method: "POST",
-        }
-      );
-
-      if (data.assistantMessage && autoSpeakReplies) {
-        void playAssistantMessage({
-          id: data.assistantMessage.id,
-          role: "assistant",
-          parts: [
-            {
-              type: "text",
-              text: data.assistantMessage.text,
-            },
-          ],
-        });
-      }
-
-      if (data.conversationId) {
-        await loadPendingApprovals(data.conversationId);
-        setConversationId(data.conversationId);
-      } else {
-        setPendingApprovals((current) =>
-          current.filter((execution) => execution.id !== executionId),
+      try {
+        const data = await fetchJson<ToolApprovalDecisionResponse>(
+          `/api/tool-executions/${executionId}/${approve ? "approve" : "deny"}`,
+          {
+            method: "POST",
+          },
         );
-      }
 
-      void loadConversations();
-    } finally {
-      setApprovalBusyId(null);
-    }
-  }, [autoSpeakReplies, loadPendingApprovals, loadConversations, playAssistantMessage]);
+        if (data.assistantMessage && autoSpeakReplies) {
+          void playAssistantMessage({
+            id: data.assistantMessage.id,
+            role: "assistant",
+            parts: [
+              {
+                type: "text",
+                text: data.assistantMessage.text,
+              },
+            ],
+          });
+        }
+
+        if (data.conversationId) {
+          await loadPendingApprovals(data.conversationId);
+          setConversationId(data.conversationId);
+        } else {
+          setPendingApprovals((current) =>
+            current.filter((execution) => execution.id !== executionId),
+          );
+        }
+
+        void loadConversations();
+      } finally {
+        setApprovalBusyId(null);
+      }
+    },
+    [autoSpeakReplies, loadPendingApprovals, loadConversations, playAssistantMessage],
+  );
 
   const handleReplyMetadata = useCallback((metadata: DeskChatMessageMetadata) => {
     setConversationId(metadata.conversationId);
   }, []);
 
-  const handleReplyReady = useCallback((message: DeskChatMessage) => {
-    const metadata = extractMetadata(message);
+  const handleReplyReady = useCallback(
+    (message: DeskChatMessage) => {
+      const metadata = extractMetadata(message);
 
-    if (metadata?.conversationId) {
-      void loadPendingApprovals(metadata.conversationId);
-    }
+      if (metadata?.conversationId) {
+        void loadPendingApprovals(metadata.conversationId);
+      }
 
-    if (autoSpeakReplies) {
-      void playAssistantMessage(message);
-    }
+      if (autoSpeakReplies) {
+        void playAssistantMessage(message);
+      }
 
-    void loadConversations();
-  }, [autoSpeakReplies, loadPendingApprovals, loadConversations, playAssistantMessage]);
+      void loadConversations();
+    },
+    [autoSpeakReplies, loadPendingApprovals, loadConversations, playAssistantMessage],
+  );
 
   return (
     <AppPage width="100%" className="app-page--desk">
@@ -1108,7 +1114,11 @@ export function DeskShell() {
               <StatCard
                 label="Current focus"
                 value={selectedConversation ? "open thread" : "new desk"}
-                detail={selectedConversation ? (selectedConversation.title ?? "Untitled conversation") : "Nothing selected from history yet"}
+                detail={
+                  selectedConversation
+                    ? (selectedConversation.title ?? "Untitled conversation")
+                    : "Nothing selected from history yet"
+                }
                 tone="soft"
               />
             </StatGrid>
@@ -1119,11 +1129,16 @@ export function DeskShell() {
                   title="No recent correspondence yet"
                   description={
                     <p>
-                      Your first working thread will appear here once you begin talking with the secretary.
+                      Your first working thread will appear here once you begin talking with the
+                      secretary.
                     </p>
                   }
                   actions={
-                    <button type="button" onClick={startFreshConversation} className="button-primary">
+                    <button
+                      type="button"
+                      onClick={startFreshConversation}
+                      className="button-primary"
+                    >
                       Begin a conversation
                     </button>
                   }

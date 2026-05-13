@@ -11,11 +11,19 @@ function write(level: LogLevel, service: string, event: string, payload?: LogPay
     ...payload,
   };
 
-  const _line = JSON.stringify(record);
+  const line = JSON.stringify(record);
 
   if (level === "error") {
+    console.error(line);
     return;
   }
+
+  if (level === "warn") {
+    console.warn(line);
+    return;
+  }
+
+  console.log(line);
 }
 
 export function createLogger(service: string) {

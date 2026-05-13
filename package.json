@@ -19,7 +19,7 @@
     "deploy:logs": "node scripts/setup/deploy-compose-runner.mjs logs -f",
     "deploy:migrate": "node scripts/setup/deploy-compose-runner.mjs run --rm migrate",
     "deploy:up": "npm run storage:prepare && node scripts/setup/deploy-compose-runner.mjs up -d postgres redis searxng stt tts worker web proxy",
-    "lint": "biome check .",
+    "lint": "biome check apps/ packages/ scripts/ services/",
     "lint:fix": "biome check . --write",
     "format": "biome format . --write",
     "export:settings": "node scripts/admin/export-settings.mjs",
@@ -43,7 +43,10 @@
     "stack:down": "node scripts/setup/compose-runner.mjs down",
     "stack:up": "npm run storage:prepare && node scripts/setup/compose-runner.mjs up -d",
     "storage:prepare": "node scripts/setup/prepare-storage.mjs",
-    "typecheck": "npm run typecheck --workspace @secretary/config && npm run typecheck --workspace @secretary/core-runtime && npm run typecheck --workspace @secretary/integrations && npm run typecheck --workspace @secretary/db && npm run typecheck --workspace @secretary/observability && npm run build:packages && npm run typecheck --workspace @secretary/web && npm run typecheck --workspace @secretary/worker"
+    "typecheck": "npm run typecheck --workspace @secretary/config && npm run typecheck --workspace @secretary/core-runtime && npm run typecheck --workspace @secretary/integrations && npm run typecheck --workspace @secretary/db && npm run typecheck --workspace @secretary/observability && npm run build:packages && npm run typecheck --workspace @secretary/web && npm run typecheck --workspace @secretary/worker",
+    "test": "npm run test --workspaces --if-present",
+    "test:coverage": "c8 npm run test --workspaces --if-present",
+    "lint:ci": "biome ci ."
   },
   "engines": {
     "node": ">=24.0.0"
@@ -56,6 +59,14 @@
     "@esbuild/linux-x64": "^0.27.4"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15"
+    "@biomejs/biome": "^2.4.15",
+    "c8": "^11.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.4"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "biome check --write --no-errors-on-unmatched",
+    "*.{js,mjs}": "biome check --write --no-errors-on-unmatched",
+    "*.json": "biome check --write --no-errors-on-unmatched"
   }
 }

@@ -207,7 +207,11 @@ export function InferenceSettingsSection({
                       current
                         ? {
                             ...current,
-                            reasoningEffort: event.target.value as any,
+                            reasoningEffort: event.target.value as
+                              | "minimal"
+                              | "low"
+                              | "medium"
+                              | "high",
                           }
                         : current,
                     )

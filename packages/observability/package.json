@@ -7,7 +7,8 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --project tsconfig.json --noEmit"
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "NODE_OPTIONS='--no-warnings' node --import tsx --test src/**/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.12.0",

@@ -1,33 +1,46 @@
-node_modules
-**/node_modules
-.git
-.next
-dist
-coverage
-*.pyc
-*.tsbuildinfo
-**/__pycache__
-.idea
-apps/worker/runtime
-runtime/generated/documents
-runtime/postgres-mounttest
-runtime/chmod-test
-runtime/perm-repro
-runtime/wsl-chmod-test
-runtime/postgres/data
-runtime/redis/data
-runtime/secrets
-runtime/speech/inbound
-runtime/speech/models
-runtime/speech/transcripts
-runtime/speech/tts
-runtime/speech/profiles
-runtime/backups
-runtime/exports
-runtime/agent-jobs/artifacts
-runtime/persona/avatars
-runtime/venvs
-runtime/config/dev-orchestrator.json
-*.log
+# Ignore dependencies
+node_modules/
+**/node_modules/
+
+# Ignore runtime data
+runtime/
+
+# Ignore build output
+.next/
+dist/
+
+# Ignore IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore env files (they go in containers via env_file)
 .env
 .env.deploy
+.env.local
+.env.*.local
+
+# Ignore docs
+docs/
+*.md
+!README.md
+
+# Ignore scripts (not needed in production image)
+scripts/
+
+# Ignore test files
+**/*.test.ts
+**/*.spec.ts
+coverage/
+
+# Ignore docker configs
+docker/

@@ -9,16 +9,46 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: "npm"
-      - run: npm ci
-      - run: npm run build:packages
-      - run: npm run typecheck
-      - run: npm run test --workspace @secretary/worker
-      - run: npm run lint -- --max-diagnostics=50
-        continue-on-error: true
-      - run: node scripts/phase4/verify.mjs --dry
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build packages
+        run: npm run build:packages
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run tests (all workspaces)
+        run: npm run test
+        env:
+          NODE_OPTIONS: "--no-warnings"
+
+      - name: Run coverage (worker)
+        run: npx c8 npm run test -w apps/worker
+        env:
+          NODE_OPTIONS: "--no-warnings"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Phase 4 verify (dry)
+        run: node scripts/phase4/verify.mjs --dry
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-failure-logs
+          path: |
+            *.log
+            coverage/

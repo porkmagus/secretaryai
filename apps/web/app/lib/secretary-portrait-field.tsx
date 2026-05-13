@@ -189,6 +189,7 @@ export function SecretaryPortraitField({
 
       {isOpen ? (
         <>
+          {/* biome-ignore lint/a11y/useSemanticElements: backdrop overlay is not interactive content */}
           <div
             style={{
               position: "fixed",
@@ -198,6 +199,9 @@ export function SecretaryPortraitField({
               backdropFilter: "blur(4px)",
             }}
             onClick={() => setIsOpen(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" || e.key === "Enter" || e.key === " ") setIsOpen(false);
+            }}
           />
           <div
             className="secretary-portrait-popover"

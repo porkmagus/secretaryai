@@ -63,6 +63,7 @@ export function AgentSettingsConsole() {
 
   useEffect(() => {
     void loadSettings();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: loadSettings is stable via setState only
   }, [loadSettings]);
 
   function updateField<K extends keyof AgentSettingsDraft>(key: K, value: AgentSettingsDraft[K]) {

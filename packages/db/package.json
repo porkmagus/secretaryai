@@ -9,6 +9,7 @@
     "build": "tsc --project tsconfig.json",
     "db:generate": "drizzle-kit generate",
     "migrate": "npm run build && node dist/migrate.js",
+    "test": "NODE_OPTIONS='--no-warnings' node --import tsx --test src/**/*.test.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {

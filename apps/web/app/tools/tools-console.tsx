@@ -243,6 +243,7 @@ export function ToolsConsole() {
 
   useEffect(() => {
     void load();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable via setState only
   }, [load]);
 
   async function saveTool(tool: ToolRecord) {

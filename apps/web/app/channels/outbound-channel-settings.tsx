@@ -87,6 +87,7 @@ export function OutboundChannelSettings({ descriptor }: { descriptor: OutboundCh
 
   useEffect(() => {
     void refresh();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: refresh is stable via setState only
   }, [refresh]);
 
   async function refresh() {

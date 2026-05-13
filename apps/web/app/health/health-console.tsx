@@ -51,6 +51,7 @@ export function HealthConsole() {
 
   useEffect(() => {
     void load();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable via setState only
   }, [load]);
 
   if (!data) {

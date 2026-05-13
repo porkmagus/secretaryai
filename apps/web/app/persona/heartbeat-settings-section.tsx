@@ -45,6 +45,7 @@ export function HeartbeatSettingsSection() {
 
   useEffect(() => {
     void loadHeartbeat();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: loadHeartbeat is stable via setState only
   }, [loadHeartbeat]);
 
   async function saveHeartbeat() {

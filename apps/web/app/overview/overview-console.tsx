@@ -87,6 +87,7 @@ export function OverviewConsole() {
 
   useEffect(() => {
     void load();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable via setState only
   }, [load]);
 
   const readiness = useMemo(() => {

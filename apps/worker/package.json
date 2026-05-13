@@ -9,7 +9,8 @@
     "dev": "node --env-file=../../.env --import tsx --watch src/index.ts",
     "build": "tsc --project tsconfig.json",
     "start": "node dist/index.js",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "NODE_OPTIONS='--no-warnings' node --import tsx --test src/**/*.test.ts",
+    "test:cov": "NODE_OPTIONS='--no-warnings' c8 node --import tsx --test src/**/*.test.ts",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {

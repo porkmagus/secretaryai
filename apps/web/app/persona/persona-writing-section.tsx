@@ -13,6 +13,7 @@ import type {
 } from "@secretary/core-runtime";
 import type { Dispatch, SetStateAction } from "react";
 import { FieldHint as FieldNote, SurfaceCard } from "../lib/ui";
+import type { PersonaDraft } from "./persona-console";
 import {
   clarifyingStyles,
   closingStyles,
@@ -26,32 +27,6 @@ import {
   responseLengths,
   secretaryModes,
 } from "./persona-constants";
-
-type PersonaDraft = {
-  addressPreference: string;
-  antiExampleReply: string;
-  avoidancesText: string;
-  behaviorRulesText: string;
-  clarifyingStyle: SecretaryClarifyingStyle;
-  closingStyle: SecretaryClosingStyle;
-  directness: SecretaryDirectness;
-  gender: any;
-  greetingStyle: SecretaryGreetingStyle;
-  initiative: SecretaryInitiative;
-  mode: SecretaryMode;
-  name: string;
-  personaProfile: string;
-  presenceStyle: SecretaryPresenceStyle;
-  relationshipRole: SecretaryRelationshipRole;
-  reminderStyle: SecretaryReminderStyle;
-  responseLength: SecretaryResponseLength;
-  title: string;
-  promptTemplate: string;
-  toneMode: string;
-  voiceProfileId: string;
-  exampleReply: string;
-  planningStyle: SecretaryPlanningStyle;
-};
 
 interface PersonaWritingSectionProps {
   draft: PersonaDraft | null;

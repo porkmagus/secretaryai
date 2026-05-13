@@ -128,6 +128,7 @@ export function TelegramSettings({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     void refresh();
+    // biome-ignore lint/correctness/useExhaustiveDependencies: refresh is stable via setState only
   }, [refresh]);
 
   const telegramConversations = useMemo(

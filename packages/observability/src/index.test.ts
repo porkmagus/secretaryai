@@ -16,8 +16,9 @@ test("logger methods call console.log or console.error with JSON string", (t) =>
   const event = "test-event";
   const payload = { foo: "bar" };
 
-  // Mock console.log and console.error
+  // Mock console methods
   const logMock = t.mock.method(console, "log", () => {});
+  const warnMock = t.mock.method(console, "warn", () => {});
   const errorMock = t.mock.method(console, "error", () => {});
 
   const levels = ["debug", "info", "warn", "error"] as const;
@@ -26,7 +27,7 @@ test("logger methods call console.log or console.error with JSON string", (t) =>
     const method = logger[level];
     method(event, payload);
 
-    const mock = level === "error" ? errorMock : logMock;
+    const mock = level === "error" ? errorMock : level === "warn" ? warnMock : logMock;
     const call = mock.mock.calls[mock.mock.calls.length - 1];
 
     assert.ok(

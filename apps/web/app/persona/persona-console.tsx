@@ -39,7 +39,7 @@ import { InferenceSettingsSection } from "./inference-settings-section";
 import { PersonaIdentitySection } from "./persona-identity-section";
 import { PersonaWritingSection } from "./persona-writing-section";
 
-type PersonaDraft = {
+export type PersonaDraft = {
   addressPreference: string;
   antiExampleReply: string;
   avoidancesText: string;

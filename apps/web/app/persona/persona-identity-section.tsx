@@ -2,32 +2,7 @@ import type { PersonaGender, PersonaSettingsResponse } from "@secretary/core-run
 import type { Dispatch, SetStateAction } from "react";
 import { SecretaryPortraitField } from "../lib/secretary-portrait-field";
 import { FieldHint as FieldNote, SurfaceCard } from "../lib/ui";
-
-type PersonaDraft = {
-  addressPreference: string;
-  antiExampleReply: string;
-  avoidancesText: string;
-  behaviorRulesText: string;
-  clarifyingStyle: any;
-  closingStyle: any;
-  directness: any;
-  gender: PersonaGender;
-  greetingStyle: any;
-  initiative: any;
-  mode: any;
-  name: string;
-  personaProfile: string;
-  presenceStyle: any;
-  relationshipRole: any;
-  reminderStyle: any;
-  responseLength: any;
-  title: string;
-  promptTemplate: string;
-  toneMode: string;
-  voiceProfileId: string;
-  exampleReply: string;
-  planningStyle: any;
-};
+import type { PersonaDraft } from "./persona-console";
 
 interface PersonaIdentitySectionProps {
   data: PersonaSettingsResponse | null;
