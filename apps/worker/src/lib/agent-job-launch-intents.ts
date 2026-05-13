@@ -8,8 +8,8 @@ import { activityTraces, agentJobLaunchIntents, type DbClient } from "@secretary
 import { and, desc, eq } from "drizzle-orm";
 import { normalizeWorkspacePath } from "./agent-job-executor.js";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
+import { createAgentJob } from "./agent-job-runtime.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";
-import { createAgentJob } from "./agent-jobs.js";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision, extractWorkspacePathHint } from "./conversation-decisions.js";
 import { repoRoot, resolveConversationId } from "./utils/index.js";

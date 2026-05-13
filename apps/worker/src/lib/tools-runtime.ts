@@ -30,7 +30,7 @@ import {
 } from "@secretary/db";
 import { createTelegramClient } from "@secretary/integrations";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { parseSecretaryCustomization } from "./admin-runtime.js";
+import { parseSecretaryCustomization } from "./admin-runtime-core.js";
 import { findConversationIdByChannelRef, getConversationMessages } from "./chat-persistence.js";
 import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
 import { sendConfiguredEmail } from "./outbound-channel-integrations.js";

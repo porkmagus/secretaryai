@@ -84,7 +84,7 @@ import {
   runAdminMaintenanceAction,
   updatePersonaAvatar,
   updatePersonaSettings,
-} from "./lib/admin-runtime.js";
+} from "./lib/admin-runtime-core.js";
 import { resolveManagedAgentJobArtifactPath } from "./lib/agent-job-artifact-storage.js";
 import {
   cancelAgentJob,
@@ -95,7 +95,7 @@ import {
   listAgentJobs,
   resumeAgentJob,
   updateAgentJobSettings,
-} from "./lib/agent-jobs.js";
+} from "./lib/agent-job-runtime.js";
 import { dispatchDueTaskReminders } from "./lib/channel-delivery.js";
 import {
   finalizeChatTurn,

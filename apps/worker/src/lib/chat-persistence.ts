@@ -20,7 +20,7 @@ import {
 } from "@secretary/db";
 import type { UIMessage } from "ai";
 import { and, asc, desc, eq } from "drizzle-orm";
-import { parseSecretaryCustomization } from "./admin-runtime.js";
+import { parseSecretaryCustomization } from "./admin-runtime-core.js";
 import type { InferenceRuntimeConfig } from "./ai-sdk-registry.js";
 import { generateConversationReply } from "./conversation-model.js";
 import { getInferenceRuntimeConfig } from "./inference-settings.js";

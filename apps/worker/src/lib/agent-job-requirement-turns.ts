@@ -3,7 +3,7 @@ import { createMessageId, type RuntimeChatRequest } from "@secretary/core-runtim
 import { agentJobRequirements, agentJobs, type DbClient, jobs } from "@secretary/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
-import { decideAgentJobRequirement } from "./agent-jobs.js";
+import { decideAgentJobRequirement } from "./agent-job-runtime.js";
 import { finalizeChatTurn, prepareChatTurn } from "./chat-persistence.js";
 import { detectConversationDecision } from "./conversation-decisions.js";
 import { resolveConversationId } from "./utils/index.js";

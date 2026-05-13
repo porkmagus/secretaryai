@@ -1,7 +1,7 @@
 import type { AppConfig } from "@secretary/config";
 import { createDbClient } from "@secretary/db";
 import { createAgentJobQueue } from "./agent-job-queue.js";
-import { markAgentJobFailed, processAgentJob } from "./agent-jobs.js";
+import { markAgentJobFailed, processAgentJob } from "./agent-job-runtime.js";
 import { markMemoryCandidateJobFailed, processMemoryCandidateJob } from "./memory-engine.js";
 import { createMemoryQueue } from "./memory-queue.js";
 import { ensureDefaultVoiceProfile } from "./speech-runtime.js";

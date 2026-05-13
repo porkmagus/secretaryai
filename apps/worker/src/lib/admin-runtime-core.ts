@@ -34,8 +34,8 @@ import {
 } from "@secretary/db";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { resolveManagedAgentJobArtifactPath } from "./agent-job-artifact-storage.js";
+import { cancelAgentJob } from "./agent-job-runtime.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";
-import { cancelAgentJob } from "./agent-jobs.js";
 import { getHeartbeatIntegrationStatus } from "./heartbeat-runtime.js";
 import { loadInferenceSettings } from "./inference-settings.js";
 import type { Infrastructure } from "./infrastructure.js";
