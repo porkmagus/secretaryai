@@ -1,14 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { access, readFile } from "node:fs/promises";
 import net from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "pg";
 
+/*
+ * Prerequisites:
+ * - Live mode expects Postgres and Redis reachable on localhost defaults.
+ * - Live mode builds the project, migrates a disposable verification database,
+ *   and starts worker/web processes.
+ * - Dry mode (`--dry`) performs local configuration and runtime/speech layout
+ *   checks only; it does not contact Postgres, Redis, web, worker, STT, or TTS.
+ */
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const root = resolve(__dirname, "../..");
+const dryRun = process.argv.includes("--dry");
 const useShell = process.platform === "win32";
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const nodeCommand = process.execPath;
@@ -16,6 +27,81 @@ const verifyDatabaseName = "secretary_phase4_verify";
 const postgresAdminUrl = "postgres://postgres:postgres@127.0.0.1:5432/postgres";
 const databaseUrl = `postgres://postgres:postgres@127.0.0.1:5432/${verifyDatabaseName}`;
 const redisUrl = "redis://127.0.0.1:6379";
+
+async function pathExists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function runDryVerification() {
+  const envExample = await readFile(resolve(root, ".env.example"), "utf8");
+  const requiredEnvVars = [
+    "DATABASE_URL",
+    "REDIS_URL",
+    "DEFAULT_USER_ID",
+    "DEFAULT_PERSONA_ID",
+    "STT_BASE_URL",
+    "TTS_BASE_URL",
+  ];
+  const missingEnvVars = requiredEnvVars.filter(
+    (name) =>
+      process.env[name] === undefined &&
+      !new RegExp(`^${name}=`, "m").test(envExample),
+  );
+  const speechDirectories = [
+    "runtime/speech",
+    "runtime/speech/inbound",
+    "runtime/speech/models",
+    "runtime/speech/profiles",
+    "runtime/speech/transcripts",
+    "runtime/speech/tts",
+  ];
+  const missingSpeechDirectories = [];
+
+  for (const directory of speechDirectories) {
+    if (!(await pathExists(resolve(root, directory)))) {
+      missingSpeechDirectories.push(directory);
+    }
+  }
+
+  if (missingEnvVars.length > 0 || missingSpeechDirectories.length > 0) {
+    console.log(
+      JSON.stringify(
+        {
+          dryRun: true,
+          missingEnvVars,
+          missingSpeechDirectories,
+          ttsModelCheck: "would check TTS model availability",
+        },
+        null,
+        2,
+      ),
+    );
+    throw new Error("Phase 4 dry verification failed.");
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        dryRun: true,
+        envVars: requiredEnvVars,
+        speechDirectories,
+        ttsModelCheck: "would check TTS model availability",
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+if (dryRun) {
+  await runDryVerification();
+  process.exit(0);
+}
 
 function startProcess(command, args, env) {
   const child = spawn(command, args, {

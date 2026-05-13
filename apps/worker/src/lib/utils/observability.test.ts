@@ -5,7 +5,7 @@ import {
   logFallbackTriggered,
   logToolExecution,
   logMemoryRetrieval,
-} from "./observability.ts";
+} from "./observability";
 
 test("logAgentEvent logs structured JSON with required fields", () => {
   const consoleMock = mock.method(console, "log", () => {});

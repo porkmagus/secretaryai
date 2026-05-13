@@ -110,6 +110,68 @@ function resolveDesiredWebhookUrl(candidate: string | null) {
   return createTelegramWebhookUrl(candidate);
 }
 
+export function sanitizeTelegramMessageText(text: string | null | undefined) {
+  return text?.trim().replace(/\s+/g, " ") || null;
+}
+
+export function stripTelegramBotMention(text: string, botUsername: string | null | undefined) {
+  const username = botUsername?.trim().replace(/^@/, "");
+
+  if (!username) {
+    return text.trim();
+  }
+
+  return text.replace(new RegExp(`@${username}\\b`, "i"), "").trim();
+}
+
+export function extractTelegramCommand(
+  text: string | null | undefined,
+  botUsername?: string | null,
+) {
+  const sanitized = sanitizeTelegramMessageText(text);
+
+  if (!sanitized?.startsWith("/")) {
+    return null;
+  }
+
+  const [rawCommand = "", ...argumentParts] = sanitized.split(" ");
+  const [commandName = "", mention] = rawCommand.slice(1).split("@");
+
+  if (!commandName) {
+    return null;
+  }
+
+  const configuredBot = botUsername?.trim().replace(/^@/, "").toLowerCase();
+  if (mention && configuredBot && mention.toLowerCase() !== configuredBot) {
+    return null;
+  }
+
+  return {
+    command: commandName.toLowerCase(),
+    mention: mention ?? null,
+    text: argumentParts.join(" ").trim(),
+  };
+}
+
+export function parseTelegramMessageText(
+  text: string | null | undefined,
+  botUsername?: string | null,
+) {
+  const sanitized = sanitizeTelegramMessageText(text);
+
+  if (!sanitized) {
+    return {
+      command: null,
+      text: null,
+    };
+  }
+
+  return {
+    command: extractTelegramCommand(sanitized, botUsername),
+    text: stripTelegramBotMention(sanitized, botUsername),
+  };
+}
+
 async function ensureTelegramIntegrationRecord(
   dbClient: DbClient,
   config: AppConfig,

@@ -29,6 +29,35 @@ type ImmediateTurnParams = TurnRoutingParams & {
   queue: AgentJobQueueAdapter;
 };
 
+export type RuntimeTurnBranch =
+  | "agent_job_launch"
+  | "agent_job_requirement"
+  | "chat"
+  | "tool_approval"
+  | "tool_runtime";
+
+export function selectRuntimeTurnBranch(
+  handled: Partial<Record<Exclude<RuntimeTurnBranch, "chat">, boolean>>,
+): RuntimeTurnBranch {
+  if (handled.tool_runtime) {
+    return "tool_runtime";
+  }
+
+  if (handled.tool_approval) {
+    return "tool_approval";
+  }
+
+  if (handled.agent_job_requirement) {
+    return "agent_job_requirement";
+  }
+
+  if (handled.agent_job_launch) {
+    return "agent_job_launch";
+  }
+
+  return "chat";
+}
+
 export async function resolveImmediateRuntimeTurn(
   params: ImmediateTurnParams,
 ): Promise<RuntimeTurnPersistence | null> {
@@ -42,6 +71,7 @@ export async function resolveImmediateRuntimeTurn(
   });
 
   if (toolHandledTurn) {
+    void selectRuntimeTurnBranch({ tool_runtime: true });
     return toolHandledTurn;
   }
 
@@ -55,6 +85,7 @@ export async function resolveImmediateRuntimeTurn(
   });
 
   if (toolApprovalHandledTurn) {
+    void selectRuntimeTurnBranch({ tool_approval: true });
     return toolApprovalHandledTurn;
   }
 
@@ -69,6 +100,7 @@ export async function resolveImmediateRuntimeTurn(
   });
 
   if (requirementHandledTurn) {
+    void selectRuntimeTurnBranch({ agent_job_requirement: true });
     return requirementHandledTurn;
   }
 

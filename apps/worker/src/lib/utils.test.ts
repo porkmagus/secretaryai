@@ -4,7 +4,7 @@ import {
   normalizeApprovalMode,
   normalizeExecutionBackend,
   pathExists,
-} from "./utils.ts";
+} from "./utils";
 
 test("normalizeApprovalMode validates and normalizes values", () => {
   // Valid values

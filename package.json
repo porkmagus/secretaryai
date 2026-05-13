@@ -19,7 +19,9 @@
     "deploy:logs": "node scripts/setup/deploy-compose-runner.mjs logs -f",
     "deploy:migrate": "node scripts/setup/deploy-compose-runner.mjs run --rm migrate",
     "deploy:up": "npm run storage:prepare && node scripts/setup/deploy-compose-runner.mjs up -d postgres redis searxng stt tts worker web proxy",
-    "lint": "npm run lint --workspaces --if-present",
+    "lint": "biome check .",
+    "lint:fix": "biome check . --write",
+    "format": "biome format . --write",
     "export:settings": "node scripts/admin/export-settings.mjs",
     "import:settings": "node scripts/admin/import-settings.mjs",
     "phase1:verify": "node scripts/phase1/verify.mjs",
@@ -52,5 +54,8 @@
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.27.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.15"
   }
 }

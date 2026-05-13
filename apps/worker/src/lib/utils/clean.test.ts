@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanText, cleanTextPreserveCase } from "./clean.ts";
+import { cleanText, cleanTextPreserveCase } from "./clean";
 
 test("cleanText: collapses multiple whitespaces", () => {
   assert.equal(cleanText("hello    world"), "hello world");

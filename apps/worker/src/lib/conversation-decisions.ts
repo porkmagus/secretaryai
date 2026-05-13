@@ -37,9 +37,9 @@ export function detectConversationDecision(
 
 export function extractWorkspacePathHint(text: string) {
   const candidates = [
-    ...text.matchAll(/`([^`]+)`/g),
-    ...text.matchAll(/"([^"]+)"/g),
-    ...text.matchAll(/'([^']+)'/g),
+    ...Array.from(text.matchAll(/`([^`]+)`/g)),
+    ...Array.from(text.matchAll(/"([^"]+)"/g)),
+    ...Array.from(text.matchAll(/'([^']+)'/g)),
   ]
     .map((match) => match[1]?.trim())
     .filter((value): value is string => Boolean(value));

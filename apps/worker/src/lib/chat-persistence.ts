@@ -63,7 +63,7 @@ export type PreparedChatTurn = {
   userMessageId: string;
 };
 
-function toRuntimeContextMessage(
+export function toRuntimeContextMessage(
   message: PersistedConversationMessage,
 ): RuntimeContextMessage {
   return {
@@ -77,11 +77,11 @@ function toRuntimeContextMessage(
   };
 }
 
-function toDeskChatRole(message: PersistedConversationMessage["role"]) {
+export function toDeskChatRole(message: PersistedConversationMessage["role"]) {
   return message === "user" ? "user" : "assistant";
 }
 
-function toDeskChatMessage(
+export function toDeskChatMessage(
   message: PersistedConversationMessage,
 ): UIMessage<DeskChatMessageMetadata> {
   return {
@@ -96,12 +96,49 @@ function toDeskChatMessage(
   };
 }
 
-function buildContextSummary(context: RuntimeTurnContext) {
+export function buildContextSummary(context: RuntimeTurnContext) {
   return {
     memories: context.relevantMemories,
     tasks: context.activeTasks,
     research: context.researchResult ?? undefined,
   };
+}
+
+export function validateMessageInsert(params: {
+  channelMessageId?: string | null;
+  contentText: string;
+  role: string;
+}) {
+  const contentText = params.contentText.trim();
+
+  if (!contentText) {
+    return {
+      ok: false,
+      reason: "empty_content",
+    } as const;
+  }
+
+  if (
+    params.role !== "assistant" &&
+    params.role !== "specialist" &&
+    params.role !== "system" &&
+    params.role !== "tool" &&
+    params.role !== "user"
+  ) {
+    return {
+      ok: false,
+      reason: "invalid_role",
+    } as const;
+  }
+
+  return {
+    ok: true,
+    value: {
+      channelMessageId: params.channelMessageId?.trim() || null,
+      contentText,
+      role: params.role,
+    },
+  } as const;
 }
 
 function createMemoryPayload(params: {

@@ -1,6 +1,6 @@
-import test from "node:test";
-import assert from "node:assert";
-import { createLogger } from "./index.ts";
+import { test } from "node:test";
+import { strict as assert } from "node:assert";
+import { createLogger } from "./index";
 
 test("createLogger returns an object with expected methods", () => {
   const logger = createLogger("test-service");
