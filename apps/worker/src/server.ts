@@ -1,6 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import { loadAppConfig } from "@secretary/config";
 import {
   type ActivityTraceResponse,
@@ -310,6 +313,49 @@ export async function buildServer() {
     origin: true,
   });
   await app.register(multipart);
+
+  // OpenAPI/Swagger documentation
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: "SecretaryAI Worker API",
+        description:
+          "AI Secretary backend — chat, jobs, persona, channels, tools, memory, and more.",
+        version: "0.1.0",
+      },
+      servers: [{ url: "http://localhost:4000", description: "Local development" }],
+      tags: [
+        { name: "Health", description: "Service health checks" },
+        { name: "Persona", description: "Secretary persona configuration" },
+        { name: "Inference", description: "AI inference provider settings" },
+        { name: "Conversations", description: "Chat conversation management" },
+        { name: "Chat", description: "Real-time chat turns and streaming" },
+        { name: "Agent Jobs", description: "Background agent job management" },
+        { name: "Tools", description: "Tool execution and approvals" },
+        { name: "Memory", description: "Long-term memory management" },
+        { name: "Tasks", description: "User task management" },
+        { name: "Channels", description: "Outbound channel integrations" },
+        { name: "Telegram", description: "Telegram bot integration" },
+        { name: "Speech & Voice", description: "STT, TTS, and voice profiles" },
+        { name: "Admin", description: "Administration and maintenance" },
+        { name: "Heartbeat", description: "Proactive heartbeat system" },
+      ],
+    },
+  });
+  await app.register(swaggerUi, { routePrefix: "/docs" });
+
+  // Rate limiting: 100 requests per 15 minutes per IP, health endpoints excluded
+  // @ts-expect-error -- rate-limit types diverge from this Fastify version; works at runtime
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "15 minutes",
+    allowList: (req) => {
+      if (!req || typeof req !== "object") return false;
+      const url = (req as { url?: string }).url;
+      return typeof url === "string" && url.startsWith("/health");
+    },
+    addHeadersOnExceeding: true,
+  });
 
   app.get("/health/live", async () => ({
     ok: true,
