@@ -1,8 +1,9 @@
 "use client";
 
 import type { SystemHealthResponse } from "@secretary/core-runtime";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AppPage, LoadingSurface, PageHero, SurfaceCard } from "../lib/ui";
+import { useAsyncData } from "../lib/use-async-data";
 import { HeartbeatSettingsSection } from "../persona/heartbeat-settings-section";
 
 function statusTone(status: string) {
@@ -28,33 +29,23 @@ function statusTone(status: string) {
   }
 }
 
-export function HealthConsole() {
-  const [data, setData] = useState<SystemHealthResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [status, _setStatus] = useState<string | null>(null);
-
-  async function load() {
-    try {
-      const healthResponse = await fetch("/api/system/health", { cache: "no-store" });
-      const healthPayload = await healthResponse.json();
-
-      if (!healthResponse.ok) {
-        throw new Error(healthPayload.error ?? "Unable to load system health.");
-      }
-
-      setData(healthPayload as SystemHealthResponse);
-      setError(null);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load system health.");
-    }
+async function fetchHealth(): Promise<SystemHealthResponse> {
+  const response = await fetch("/api/system/health", { cache: "no-store" });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Unable to load system health.");
   }
+  return payload as SystemHealthResponse;
+}
+
+export function HealthConsole() {
+  const { data, error, isLoading, load } = useAsyncData(fetchHealth);
 
   useEffect(() => {
     void load();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable via setState only
   }, [load]);
 
-  if (!data) {
+  if (isLoading || !data) {
     return (
       <AppPage>
         <LoadingSurface
@@ -82,15 +73,7 @@ export function HealthConsole() {
             you actually need when something feels off.
           </p>
         }
-        meta={
-          <p>
-            {error ??
-              status ??
-              (data
-                ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
-                : "Loading system health...")}
-          </p>
-        }
+        meta={<p>{error ?? `Updated ${new Date(data.generatedAt).toLocaleString()}`}</p>}
         actions={
           <button type="button" className="button-secondary" onClick={() => void load()}>
             Refresh
@@ -99,16 +82,14 @@ export function HealthConsole() {
         tone="dark"
       />
 
-      {data ? (
-        <div className="summary-strip">
-          {Object.entries(data.stats).map(([key, value]) => (
-            <div key={key} className="summary-chip">
-              <p className="summary-chip-label">{key}</p>
-              <p className="summary-chip-value">{value}</p>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <div className="summary-strip">
+        {Object.entries(data.stats).map(([key, value]) => (
+          <div key={key} className="summary-chip">
+            <p className="summary-chip-label">{key}</p>
+            <p className="summary-chip-value">{value}</p>
+          </div>
+        ))}
+      </div>
 
       <SurfaceCard
         tone="dark"
@@ -116,55 +97,51 @@ export function HealthConsole() {
         description={<p>One compact line per system instead of a full grid of cards.</p>}
       >
         <div className="compact-list">
-          {data ? (
-            Object.entries(data.services).map(([key, service]) => {
-              const tone = statusTone(service.status);
+          {Object.entries(data.services).map(([key, service]) => {
+            const tone = statusTone(service.status);
 
-              return (
+            return (
+              <div
+                key={key}
+                style={{
+                  display: "grid",
+                  gap: 8,
+                  padding: "12px 0",
+                  gridTemplateColumns: "minmax(110px, 140px) auto",
+                  alignItems: "start",
+                }}
+              >
                 <div
-                  key={key}
                   style={{
-                    display: "grid",
-                    gap: 8,
-                    padding: "12px 0",
-                    gridTemplateColumns: "minmax(110px, 140px) auto",
-                    alignItems: "start",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
                   }}
                 >
-                  <div
+                  <span
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      flexWrap: "wrap",
+                      padding: "4px 9px",
+                      borderRadius: 999,
+                      background: tone.background,
+                      border: `1px solid ${tone.border}`,
+                      color: tone.badge,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
                     }}
                   >
-                    <span
-                      style={{
-                        padding: "4px 9px",
-                        borderRadius: 999,
-                        background: tone.background,
-                        border: `1px solid ${tone.border}`,
-                        color: tone.badge,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.06em",
-                      }}
-                    >
-                      {service.status}
-                    </span>
-                    <strong style={{ fontSize: 14, textTransform: "capitalize" }}>{key}</strong>
-                  </div>
-                  <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.45, fontSize: 13 }}>
-                    {service.summary}
-                  </p>
+                    {service.status}
+                  </span>
+                  <strong style={{ fontSize: 14, textTransform: "capitalize" }}>{key}</strong>
                 </div>
-              );
-            })
-          ) : (
-            <p style={{ margin: 0, color: "var(--muted)" }}>Loading services...</p>
-          )}
+                <p style={{ margin: 0, color: "var(--muted)", lineHeight: 1.45, fontSize: 13 }}>
+                  {service.summary}
+                </p>
+              </div>
+            );
+          })}
         </div>
       </SurfaceCard>
 
@@ -179,7 +156,7 @@ export function HealthConsole() {
       >
         <SurfaceCard title="Visible storage paths">
           <div className="compact-list">
-            {(data?.storage ?? []).map((entry) => (
+            {(data.storage ?? []).map((entry) => (
               <div
                 key={entry.path}
                 style={{
@@ -223,12 +200,7 @@ export function HealthConsole() {
           title="Runbook shortcuts"
           description={<p>Keep these close; nothing here needs a giant block.</p>}
         >
-          <div
-            style={{
-              display: "grid",
-              gap: 10,
-            }}
-          >
+          <div style={{ display: "grid", gap: 10 }}>
             {[
               "`npm run stack:up`",
               "`npm run backup:create`",

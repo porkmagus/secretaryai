@@ -2,8 +2,9 @@
 
 import type { OnboardingStatusResponse } from "@secretary/core-runtime";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AppPage, PageHero, StatCard, StatGrid, SurfaceCard } from "../lib/ui";
+import { useAsyncData } from "../lib/use-async-data";
 
 function stepTone(status: OnboardingStatusResponse["steps"][number]["status"]) {
   switch (status) {
@@ -28,39 +29,21 @@ function stepTone(status: OnboardingStatusResponse["steps"][number]["status"]) {
   }
 }
 
+async function fetchOnboarding(): Promise<OnboardingStatusResponse> {
+  const response = await fetch("/api/onboarding", { cache: "no-store" });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Unable to load onboarding status.");
+  }
+  return payload as OnboardingStatusResponse;
+}
+
 export function OnboardingConsole() {
-  const [data, setData] = useState<OnboardingStatusResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data, error, load } = useAsyncData(fetchOnboarding);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const response = await fetch("/api/onboarding", { cache: "no-store" });
-        const payload = await response.json();
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Unable to load onboarding status.");
-        }
-
-        if (!cancelled) {
-          setData(payload as OnboardingStatusResponse);
-          setError(null);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : "Unable to load onboarding.");
-        }
-      }
-    }
-
     void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [load]);
 
   return (
     <AppPage width="1180px">
