@@ -12,7 +12,7 @@ import {
   buildAgentJobLocationHint,
   postAgentJobConversationUpdate,
 } from "../agent-job-conversation-updates.js";
-import { normalizeWorkspacePath } from "../agent-job-executor.js";
+import { normalizeWorkspacePath } from "../agent-job-executor/index.js";
 import type { AgentJobQueueAdapter } from "../agent-job-queue.js";
 import { loadAgentJobSettings } from "../agent-job-settings.js";
 import {

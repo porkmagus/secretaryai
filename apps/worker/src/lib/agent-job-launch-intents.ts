@@ -6,7 +6,7 @@ import {
 } from "@secretary/core-runtime";
 import { activityTraces, agentJobLaunchIntents, type DbClient } from "@secretary/db";
 import { and, desc, eq } from "drizzle-orm";
-import { normalizeWorkspacePath } from "./agent-job-executor.js";
+import { normalizeWorkspacePath } from "./agent-job-executor/index.js";
 import type { AgentJobQueueAdapter } from "./agent-job-queue.js";
 import { createAgentJob } from "./agent-job-runtime.js";
 import { loadAgentJobSettings } from "./agent-job-settings.js";

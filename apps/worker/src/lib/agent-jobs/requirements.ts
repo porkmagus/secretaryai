@@ -3,7 +3,7 @@ import type { AgentJobRequirementKind } from "@secretary/core-runtime";
 import { agentJobRequirements, type agentJobSteps, type DbClient } from "@secretary/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { postAgentJobConversationUpdate } from "../agent-job-conversation-updates.js";
-import type { detectExecutionRequirements } from "../agent-job-executor.js";
+import type { detectExecutionRequirements } from "../agent-job-executor/index.js";
 
 import { insertRequirements, insertTrace } from "./artifacts.js";
 import { updateJobState, updateStepState } from "./state.js";

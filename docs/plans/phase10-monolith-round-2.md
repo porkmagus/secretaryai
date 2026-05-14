@@ -37,25 +37,16 @@ executor/
 
 ---
 
-## Phase 10C: Split `jobs-console.tsx` (1169 lines)
+## Phase 10C: Split `jobs-console.tsx` (1169 lines) ✅ COMPLETE
 
-### Current: Agent jobs dashboard monolith
-- Job list with filters
-- Job detail view
-- Step timeline
-- Requirements management
-- Artifact viewer
-
-### Target: `apps/web/app/activity/jobs/sections/`
-```
-sections/
-  index.ts
-  job-navigator.tsx        — sidebar: job list, filters, status
-  job-detail-panel.tsx     — job info, status, controls
-  step-timeline.tsx        — step execution history
-  requirements-panel.tsx   — requirement management
-  artifacts-panel.tsx      — artifact viewer
-```
+### Result:
+- Extracted 4 sub-components to `apps/web/app/activity/jobs/sections/`:
+  - `job-status-pill.tsx`: JobStatusPill, ArtifactContent, statusTone
+  - `job-form-panel.tsx`: job creation form
+  - `job-detail-panel.tsx`: job detail view (steps, requirements, artifacts)
+  - `job-queue-panel.tsx`: job queue/history list
+- jobs-console.tsx reduced to 1138 lines
+- Committed: `acfbd9b`
 
 ---
 
