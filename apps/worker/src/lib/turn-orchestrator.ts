@@ -15,7 +15,7 @@ import {
 } from "./chat-persistence.js";
 import type { MemoryQueueAdapter } from "./memory-queue.js";
 import { maybeHandleToolApprovalTurn } from "./tool-approval-turns.js";
-import { handleToolAwareTurn } from "./tools-runtime.js";
+import { handleToolAwareTurn } from "./tools/index.js";
 
 export type RuntimeTurnPersistence = {
   memoryPayload: MemoryCandidateJobPayload;

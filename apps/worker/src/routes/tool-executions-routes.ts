@@ -6,7 +6,7 @@ import {
 } from "@secretary/core-runtime";
 import type { FastifyInstance } from "fastify";
 import type { Infrastructure } from "../lib/infrastructure.js";
-import { decideToolExecution, listToolExecutions } from "../lib/tools-runtime.js";
+import { decideToolExecution, listToolExecutions } from "../lib/tools/index.js";
 
 export async function registerToolExecutionsRoutes(
   app: FastifyInstance,

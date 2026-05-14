@@ -2,7 +2,7 @@ import type { AppConfig } from "@secretary/config";
 import type { ToolListResponse, UpdateToolRequest } from "@secretary/core-runtime";
 import type { FastifyInstance } from "fastify";
 import type { Infrastructure } from "../lib/infrastructure.js";
-import { listTools, updateTool } from "../lib/tools-runtime.js";
+import { listTools, updateTool } from "../lib/tools/index.js";
 
 export async function registerToolsRoutes(
   app: FastifyInstance,

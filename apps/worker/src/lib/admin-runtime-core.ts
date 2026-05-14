@@ -61,7 +61,7 @@ import {
 } from "./speech-runtime.js";
 import { resolveManagedSpeechStoragePath } from "./speech-storage.js";
 import { getTelegramIntegrationStatus } from "./telegram-integration.js";
-import { listTools } from "./tools-runtime.js";
+import { listTools } from "./tools/index.js";
 import { logError, pathExists, repoRoot } from "./utils.js";
 
 function normalizePersonaGender(value: unknown): PersonaGender {
