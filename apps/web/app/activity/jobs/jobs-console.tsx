@@ -24,8 +24,9 @@ import {
   SurfaceCard,
 } from "../../lib/ui";
 import { usePolling } from "../../lib/use-polling";
+import { JobStatusPill } from "./sections";
 
-type JobFormState = {
+export type JobFormState = {
   title: string;
   goal: string;
   workspacePath: string;
@@ -59,7 +60,7 @@ function parseLines(value: string) {
     .filter(Boolean);
 }
 
-function statusTone(status: string) {
+function _statusTone(status: string) {
   if (status === "completed") {
     return {
       background: "var(--success-soft-bg)",
@@ -94,28 +95,6 @@ function statusTone(status: string) {
     border: "var(--neutral-soft-border)",
     text: "var(--neutral-soft-text)",
   };
-}
-
-function JobStatusPill({ status }: { status: string }) {
-  const tone = statusTone(status);
-
-  return (
-    <span
-      style={{
-        padding: "4px 9px",
-        borderRadius: 999,
-        background: tone.background,
-        border: `1px solid ${tone.border}`,
-        color: tone.text,
-        fontSize: 11,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-      }}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
 }
 
 function ArtifactContent({ artifact }: { artifact: AgentJobArtifactRecord }) {
