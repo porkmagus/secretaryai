@@ -20,7 +20,7 @@ import {
 import { eq } from "drizzle-orm";
 import { parseSecretaryCustomization } from "../admin-runtime-core.js";
 import { findConversationIdByChannelRef, getConversationMessages } from "../chat-persistence.js";
-import { getActiveTaskContext, retrieveRelevantMemories } from "../memory-engine.js";
+import { getActiveTaskContext, retrieveRelevantMemories } from "../memory-engine/index.js";
 import { defaultSecretaryName, defaultSecretarySoul } from "../persona-soul.js";
 import { logToolExecution } from "../utils.js";
 import { executeToolRequest } from "./executors.js";

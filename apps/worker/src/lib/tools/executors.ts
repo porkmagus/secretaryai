@@ -7,7 +7,7 @@ import type { DbClient } from "@secretary/db";
 import { memoryEntries, tasks } from "@secretary/db";
 import { createTelegramClient } from "@secretary/integrations";
 import { asc, desc, eq } from "drizzle-orm";
-import { retrieveRelevantMemories } from "../memory-engine.js";
+import { retrieveRelevantMemories } from "../memory-engine/index.js";
 import { sendConfiguredEmail } from "../outbound-channel-integrations.js";
 import { defaultSecretaryName } from "../persona-soul.js";
 import { normalizeTaskTitle, summarizeTaskSchedule } from "../task-runtime.js";

@@ -24,7 +24,7 @@ import { parseSecretaryCustomization } from "./admin-runtime-core.js";
 import type { InferenceRuntimeConfig } from "./ai-sdk-registry.js";
 import { generateConversationReply } from "./conversation-model.js";
 import { getInferenceRuntimeConfig } from "./inference-settings.js";
-import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine.js";
+import { getActiveTaskContext, retrieveRelevantMemories } from "./memory-engine/index.js";
 import {
   defaultSecretaryName,
   defaultSecretarySoul,

@@ -2,7 +2,7 @@ import type { AppConfig } from "@secretary/config";
 import type { ActivityTraceResponse } from "@secretary/core-runtime";
 import type { FastifyInstance } from "fastify";
 import type { Infrastructure } from "../lib/infrastructure.js";
-import { getConversationActivity } from "../lib/memory-engine.js";
+import { getConversationActivity } from "../lib/memory-engine/index.js";
 
 export async function registerActivityRoutes(
   app: FastifyInstance,

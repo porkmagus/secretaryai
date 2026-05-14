@@ -2,7 +2,7 @@ import type { AppConfig } from "@secretary/config";
 import type { MemoryListResponse, UpdateMemoryRequest } from "@secretary/core-runtime";
 import type { FastifyInstance } from "fastify";
 import type { Infrastructure } from "../lib/infrastructure.js";
-import { listMemories, updateMemory } from "../lib/memory-engine.js";
+import { listMemories, updateMemory } from "../lib/memory-engine/index.js";
 
 export async function registerMemoriesRoutes(
   app: FastifyInstance,
