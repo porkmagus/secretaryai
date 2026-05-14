@@ -9,7 +9,7 @@ import {
   getPersonaSettings,
   updatePersonaAvatar,
   updatePersonaSettings,
-} from "../lib/admin-runtime-core.js";
+} from "../lib/admin-runtime-core/index.js";
 import type { Infrastructure } from "../lib/infrastructure.js";
 import {
   createPersonaAvatarStorageKey,

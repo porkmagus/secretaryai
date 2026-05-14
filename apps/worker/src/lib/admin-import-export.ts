@@ -5,7 +5,7 @@ export {
   exportSettingsSnapshot as exportSettings,
   importSettingsSnapshot,
   importSettingsSnapshot as importSettings,
-} from "./admin-runtime-core.js";
+} from "./admin-runtime-core/index.js";
 
 export function validateImportJson(value: unknown): value is SettingsImportRequest {
   return (

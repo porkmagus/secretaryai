@@ -18,7 +18,7 @@ import {
   users,
 } from "@secretary/db";
 import { eq } from "drizzle-orm";
-import { parseSecretaryCustomization } from "../admin-runtime-core.js";
+import { parseSecretaryCustomization } from "../admin-runtime-core/index.js";
 import { findConversationIdByChannelRef, getConversationMessages } from "../chat-persistence.js";
 import { getActiveTaskContext, retrieveRelevantMemories } from "../memory-engine/index.js";
 import { defaultSecretaryName, defaultSecretarySoul } from "../persona-soul.js";

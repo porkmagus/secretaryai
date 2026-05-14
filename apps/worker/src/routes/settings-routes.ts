@@ -5,7 +5,7 @@ import type {
   SettingsImportResponse,
 } from "@secretary/core-runtime";
 import type { FastifyInstance } from "fastify";
-import { exportSettingsSnapshot, importSettingsSnapshot } from "../lib/admin-runtime-core.js";
+import { exportSettingsSnapshot, importSettingsSnapshot } from "../lib/admin-runtime-core/index.js";
 import type { Infrastructure } from "../lib/infrastructure.js";
 
 export async function registerSettingsRoutes(

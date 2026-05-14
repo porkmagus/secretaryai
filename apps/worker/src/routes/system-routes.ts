@@ -1,7 +1,7 @@
 import type { AppConfig } from "@secretary/config";
 import type { OnboardingStatusResponse, SystemHealthResponse } from "@secretary/core-runtime";
 import type { FastifyInstance } from "fastify";
-import { getOnboardingStatus, getSystemHealth } from "../lib/admin-runtime-core.js";
+import { getOnboardingStatus, getSystemHealth } from "../lib/admin-runtime-core/index.js";
 import type { Infrastructure } from "../lib/infrastructure.js";
 
 export async function registerSystemRoutes(

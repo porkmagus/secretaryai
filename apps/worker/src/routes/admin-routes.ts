@@ -8,7 +8,7 @@ import type { FastifyInstance } from "fastify";
 import {
   getAdminMaintenanceSnapshot,
   runAdminMaintenanceAction,
-} from "../lib/admin-runtime-core.js";
+} from "../lib/admin-runtime-core/index.js";
 import type { Infrastructure } from "../lib/infrastructure.js";
 
 export async function registerAdminRoutes(
