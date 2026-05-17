@@ -59,7 +59,7 @@ function assertAllowedDownloadHost(hostname: string): void {
   assertDownloadHostAllowlistConfigured();
   const normalized = hostname.trim().toLowerCase();
   const allowed = ALLOWED_DOWNLOAD_HOSTS.some(
-    (entry) => entry && (normalized === entry || normalized.endsWith(`.${entry}`)),
+    (entry) => normalized === entry || normalized.endsWith(`.${entry}`),
   );
   if (!allowed) {
     throw new Error("Download URL host is not in the allowed list.");
