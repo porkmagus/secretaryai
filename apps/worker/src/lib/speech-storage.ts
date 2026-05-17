@@ -51,7 +51,7 @@ export function normalizeSpeechStorageKey(storageKey: string) {
   let previous: string;
   do {
     previous = normalized;
-    normalized = normalized.replace(/\.\.(?:\/|\\)/g, "");
+    normalized = normalized.replace(/\.\.(?:\/|$)/g, "");
   } while (normalized !== previous);
 
   return normalized;
