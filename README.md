@@ -6,7 +6,9 @@ A self-hosted, single-user Secretary-first assistant system with a Next.js Desk 
 python3 secretary.py
 ```
 
-That's it. One command installs everything, starts Docker infrastructure, runs database migrations, builds the project, and launches all services.
+That's it. One command installs the app dependencies, starts Docker infrastructure, runs database migrations, builds the project, and launches all services.
+
+> **Note:** The command above is how you *run the app*. Before your first run, install the system prerequisites (Node.js, Docker, ffmpeg) using the platform one-liner below.
 
 ---
 
@@ -19,38 +21,24 @@ That's it. One command installs everything, starts Docker infrastructure, runs d
 - **Docker Desktop** with `docker compose`
 - **ffmpeg** (optional, required for voice-note features)
 
-| Platform | One-liner install |
-|----------|-------------------|
+| Platform | Install system dependencies (one-liner) |
+|----------|-------------------------------------------|
 | macOS | `brew install node ffmpeg && brew install --cask docker` |
 | Ubuntu | `sudo apt install nodejs npm ffmpeg docker.io docker-compose-plugin` |
 | Windows | `winget install OpenJS.NodeJS Docker.DockerDesktop Gyan.FFmpeg` |
 
-### Run It
+These commands install **Node.js**, **Docker**, and **ffmpeg** on your machine. They do not install the Secretary app itself.
+
+### Run the App
+
+Once the system dependencies above are in place, run the app with any of these:
 
 ```bash
-# From the repo root
-cd secretaryai
-
-# Full install + start (first time or any time)
+# Standard Python entrypoint
 python3 secretary.py
 
-# Install and build only
-python3 secretary.py --install
-
-# Start services in background (skips install if already done)
-python3 secretary.py --start
-
-# Start services in foreground with live colored logs
-python3 secretary.py --foreground
-
-# Stop everything cleanly
-python3 secretary.py --stop
-
-# Check what is running and what is missing
-python3 secretary.py --status
-
-# Tail service-runner logs
-python3 secretary.py --logs
+# Or, if you use uv
+uv run secretary.py
 ```
 
 Running `python3 secretary.py` with no flags opens an **interactive menu**:
@@ -70,6 +58,28 @@ Running `python3 secretary.py` with no flags opens an **interactive menu**:
   ║  [7]  Full Reset  (stop + wipe runtime state)             ║
   ║  [0]  Exit                                                ║
   ╚══════════════════════════════════════════════════════════╝
+```
+
+Running `python3 secretary.py` with no flags opens the **interactive menu** shown above. You can also use flags directly:
+
+```bash
+# Install and build only (no start)
+python3 secretary.py --install
+
+# Start services in background (skips install if already done)
+python3 secretary.py --start
+
+# Start services in foreground with live colored logs
+python3 secretary.py --foreground
+
+# Stop everything cleanly
+python3 secretary.py --stop
+
+# Check what is running and what is missing
+python3 secretary.py --status
+
+# Tail service-runner logs
+python3 secretary.py --logs
 ```
 
 ### After Starting
