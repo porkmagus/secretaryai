@@ -33,6 +33,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -133,8 +134,13 @@ APP_SERVICES = [
 def load_state() -> dict:
     try:
         with open(STATE_FILE) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+            data = json.load(f)
+            if data is None:
+                return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
+            if not isinstance(data, dict):
+                return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
+            return data
+    except (FileNotFoundError, json.JSONDecodeError, IsADirectoryError):
         return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
 
 
@@ -146,6 +152,8 @@ def save_state(data: dict):
 
 
 def is_pid_alive(pid: int) -> bool:
+    if not isinstance(pid, int) or pid <= 0:
+        return False
     if sys.platform == "win32":
         try:
             result = subprocess.run(
@@ -158,6 +166,9 @@ def is_pid_alive(pid: int) -> bool:
     else:
         try:
             os.kill(pid, 0)
+            return True
+        except PermissionError:
+            # Process exists but we can't signal it
             return True
         except (OSError, ProcessLookupError):
             return False
@@ -337,6 +348,8 @@ def print_install_help():
 
 def ensure_env_file():
     if ENV_PATH.exists():
+        if ENV_PATH.is_dir():
+            raise RuntimeError(f".env exists but is a directory: {ENV_PATH}")
         log_step(".env", "present")
         return
     if not ENV_EXAMPLE_PATH.exists():
@@ -454,6 +467,9 @@ def wait_for_health(url: str, timeout_sec: int = 30, retries: int = 3) -> bool:
             with urllib.request.urlopen(req, timeout=2) as resp:
                 if resp.status in (200, 204, 404):
                     return True
+        except urllib.error.HTTPError as e:
+            if e.code in (200, 204, 404):
+                return True
         except Exception:
             pass
         attempt += 1
@@ -477,6 +493,8 @@ def wait_for_infrastructure():
 
 
 def run_db_migrations(retries: int = 5, delay: int = 5):
+    if retries <= 0:
+        raise RuntimeError("run_db_migrations called with retries <= 0")
     log_step("DB", "running migrations...")
     for attempt in range(1, retries + 1):
         try:
@@ -679,8 +697,6 @@ def show_status():
     else:
         log_step("Node.js", "missing")
     log_step("npm", "OK" if check_cmd("npm") else "missing")
-    docker_ok, _ = check_prerequisites() if False else (False, [])
-    # Quick docker check
     try:
         run(["docker", "info"], capture=True, timeout=3)
         log_step("Docker", "OK")

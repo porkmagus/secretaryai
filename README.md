@@ -1,441 +1,330 @@
 # HamCult - Secretary-First Personal Assistant
 
-This repository contains a polished Phase 1 through Phase 6 checkpoint for a self-hosted, single-user Secretary-first assistant system.
+A self-hosted, single-user Secretary-first assistant system with a Next.js Desk UI, Fastify worker runtime, local STT/TTS speech services, and integrated memory, tools, and channel support.
 
-## Workspace Layout
-
-- `apps/web`: Next.js Desk UI and thin web-facing APIs
-- `apps/worker`: Fastify runtime for chat orchestration and async processing
-- `packages/config`: shared environment parsing and runtime config helpers
-- `packages/core-runtime`: normalized runtime contracts and deterministic fallback reply logic
-- `packages/db`: database schema and migration home
-- `packages/observability`: logger and trace helpers
-- `services/stt-faster-whisper`: local CPU-first STT service for Phase 4 voice intake
-- `services/tts-chatterbox`: local Chatterbox TTS service for Phase 4 voice replies
-- `docker/compose`: local infrastructure definitions
-- `docs/adr`: architectural decision records
-
-## Getting Started
-
-### Quick Start (Any Platform)
-
-The fastest way to get running from a fresh clone:
-
-```bash
-python secretary.py
+```
+python3 secretary.py
 ```
 
-That's it. The script checks prerequisites, installs dependencies, builds the project, starts Docker infrastructure, runs database migrations, and launches all services.
+That's it. One command installs everything, starts Docker infrastructure, runs database migrations, builds the project, and launches all services.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- **Python 3.11+**
+- **Node.js 24+** (bundles npm)
+- **Docker Desktop** with `docker compose`
+- **ffmpeg** (optional, required for voice-note features)
+
+| Platform | One-liner install |
+|----------|-------------------|
+| macOS | `brew install node ffmpeg && brew install --cask docker` |
+| Ubuntu | `sudo apt install nodejs npm ffmpeg docker.io docker-compose-plugin` |
+| Windows | `winget install OpenJS.NodeJS Docker.DockerDesktop Gyan.FFmpeg` |
+
+### Run It
 
 ```bash
-python secretary.py                  # Full install + start in background
-python secretary.py --install   # Install and build only
-python secretary.py --start     # Start services in background (skip install)
-python secretary.py --foreground     # Start services in foreground (blocks terminal)
-python secretary.py --stop           # Stop all services and Docker stack
-python secretary.py --status         # Check what's running
+# From the repo root
+cd secretaryai
+
+# Full install + start (first time or any time)
+python3 secretary.py
+
+# Install and build only
+python3 secretary.py --install
+
+# Start services in background (skips install if already done)
+python3 secretary.py --start
+
+# Start services in foreground with live colored logs
+python3 secretary.py --foreground
+
+# Stop everything cleanly
+python3 secretary.py --stop
+
+# Check what is running and what is missing
+python3 secretary.py --status
+
+# Tail service-runner logs
+python3 secretary.py --logs
 ```
 
-### Fastest Windows Start
+Running `python3 secretary.py` with no flags opens an **interactive menu**:
 
-If you prefer the native Windows batch workflow:
+```
+  ╔══════════════════════════════════════════════════════════╗
+  ║        Secretary AI - Control Panel                       ║
+  ╠══════════════════════════════════════════════════════════╣
+  ║  Status: ● Running (PID 27266)                          ║
+  ╠══════════════════════════════════════════════════════════╣
+  ║  [1]  Install & Build (deps, venvs, compile)              ║
+  ║  [2]  Start All  (background)                           ║
+  ║  [3]  Start All  (foreground / live logs)               ║
+  ║  [4]  Stop All    (kill processes, docker down)          ║
+  ║  [5]  Status      (health check all ports)               ║
+  ║  [6]  Logs        (tail service-runner output)           ║
+  ║  [7]  Full Reset  (stop + wipe runtime state)             ║
+  ║  [0]  Exit                                                ║
+  ╚══════════════════════════════════════════════════════════╝
+```
 
-First time only:
+### After Starting
 
-1. Double-click [`first-run-setup.cmd`](./first-run-setup.cmd)
-2. Open [`.env`](./.env) and fill in what you care about:
-   - `TELEGRAM_BOT_TOKEN` if you want the live Telegram bot
-   - `APP_AUTH_PASSWORD` and `APP_SESSION_SECRET` if you want the sign-in gate
-  - any inference provider keys you want the secretary to use
-3. Double-click [`start-secretary-dev.cmd`](./start-secretary-dev.cmd)
+Open http://localhost:3000 in your browser.
 
-Daily use after that:
+| Service | Port | Purpose |
+|---------|------|---------|
+| Web (Next.js Desk) | 3000 | Chat UI, settings, tools, channels, voice |
+| Worker (Fastify) | 4000 | Chat orchestration, async jobs, webhooks |
+| STT (faster-whisper) | 5001 | Speech-to-text |
+| TTS (Chatterbox) | 5002 | Text-to-speech |
+| Postgres | 5432 | Database with pgvector |
+| Redis | 6379 | Job queue, caching |
+| SearXNG | 8080 | Local search engine |
+| Crawl4AI | 11235 | Web crawling |
 
-1. Double-click [`start-secretary-dev.cmd`](./start-secretary-dev.cmd)
-2. Open [http://localhost:3000](http://localhost:3000)
-3. When you are done, double-click [`stop-secretary-dev.cmd`](./stop-secretary-dev.cmd)
+---
 
-Command-line equivalents:
+## What `secretary.py` Does
 
-- `secretary.cmd install`
-- `secretary.cmd start`
-- `secretary.cmd status`
-- `secretary.cmd stop`
+The script is a cross-platform launcher and process manager. It delegates to the existing Node.js/npm infrastructure wherever possible and only implements what Python does better (cross-platform process detection, TUI menu, prerequisite checks).
 
-What those scripts do:
+**Install flow (`--install`):**
+1. Checks prerequisites (Python, Node, Docker, ffmpeg)
+2. Creates `.env` from `.env.example` if missing
+3. Creates runtime storage directories (`runtime/postgres`, `runtime/redis`, `runtime/speech`, ...)
+4. Runs `npm install` when `package-lock.json` changes
+5. Starts Docker infrastructure (Postgres, Redis, SearXNG, Crawl4AI)
+6. Runs database migrations with retry
+7. Builds shared packages and the worker (skips when source is unchanged)
+8. Sets up Python venvs for STT and TTS (skips when `requirements.txt` is unchanged)
 
-- `first-run-setup.cmd`
-  - delegates to `secretary.cmd install`
-  - creates `.env` from `.env.example` if needed
-  - checks dependencies and installs what it can
-  - installs npm dependencies when needed
-  - starts Postgres / Redis / SearXNG
-  - runs DB migrations
-  - builds the worker when needed
-  - prepares local STT and TTS once
+**Start flow (`--start` / `--foreground`):**
+1. Ensures Docker infrastructure is running
+2. Runs database migrations
+3. Launches `scripts/setup/service-runner.mjs` which starts Web, Worker, STT, TTS
+4. Tracks the service runner PID in `runtime/config/secretary-py-state.json`
 
-- `start-secretary-dev.cmd`
-  - delegates to `secretary.cmd start`
-  - refreshes the local stack
-  - starts web, worker, STT, and TTS as background services
-  - waits for ports to become ready
-  - writes logs into `runtime/dev-logs`
+**Stop flow (`--stop`):**
+1. Kills the service runner and any tracked child processes
+2. Cleans stray listeners on known ports
+3. Shuts down Docker infrastructure
+4. Removes the state file
 
-- `stop-secretary-dev.cmd`
-  - delegates to `secretary.cmd stop`
-  - stops managed background processes
-  - cleans stale listeners on the known ports
-  - shuts the local stack down
+---
 
-### Manual Start
+## Architecture
 
-If you prefer to do it by hand:
+```
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                                Secretary AI Stack                                     ║
+╠═══════════════════════════════════════════════════════════════════════════╣
+║                                                                                       ║
+║   ┌──────────────────────────────────────────────────────────────────────┐   ║
+║   │  Web (Next.js 16)    http://localhost:3000                                    │   ║
+║   │  - Desk chat, Onboarding, Health, Persona, Memory, Activity, Tools, Voice   │   ║
+║   │  - Channels (Telegram integration setup)                                   │   ║
+║   └──────────────────────────────────────────────────────────────────────┘   ║
+║                                      │                                              ║
+║   ┌──────────────────────────────────────────────────────────────────────┐   ║
+║   │  Worker (Fastify)    http://localhost:4000                                   │   ║
+║   │  - Chat orchestration, async jobs (BullMQ/Redis)                            │   ║
+║   │  - Memory extraction, research, tool execution                              │   ║
+║   │  - Telegram webhook handler                                                 │   ║
+║   └──────────────────────────────────────────────────────────────────────┘   ║
+║                                      │                                              ║
+║   ┌──────────────────────────────────────────────────────────────────────┐   ║
+║   │  STT (faster-whisper) http://localhost:5001  │  TTS (Chatterbox) :5002      │   ║
+║   └──────────────────────────────────────────────────────────────────────┘   ║
+║                                      │                                              ║
+║   ┌──────────────────────────────────────────────────────────────────────┐   ║
+║   │  Postgres (pgvector) :5432  │  Redis :6379  │  SearXNG :8080  │  Crawl4AI :11235 │   ║
+║   └──────────────────────────────────────────────────────────────────────┘   ║
+║                                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+```
 
-1. Install dependencies with `npm install`
-2. Copy `.env.example` to `.env`
-3. Add your real `TELEGRAM_BOT_TOKEN` only in `.env` if you want to exercise the live Telegram path
-4. Optional but recommended: set `APP_AUTH_PASSWORD` and `APP_SESSION_SECRET` in `.env` to enable the single-user sign-in gate
-5. Create visible runtime storage folders with `npm run storage:prepare`
-6. Start local services with `npm run stack:up`
-7. Apply the current schema with `npm run db:migrate`
-8. Prepare the local speech services once with:
-   - `npm run stt:setup`
-   - `npm run tts:setup`
-9. Run the apps in separate terminals:
-   - `npm run dev:web`
-   - `npm run dev:worker`
-   - `npm run dev:stt`
-   - `npm run dev:tts`n
+### Workspace Layout
 
-## Deployment Package
+| Path | What |
+|------|------|
+| `apps/web` | Next.js Desk UI and thin web-facing APIs |
+| `apps/worker` | Fastify runtime for chat orchestration and async processing |
+| `packages/config` | Shared environment parsing and runtime config helpers |
+| `packages/core-runtime` | Normalized runtime contracts and deterministic fallback reply logic |
+| `packages/db` | Database schema and migration home (Drizzle ORM) |
+| `packages/integrations` | Telegram, Discord, Slack, email, SMS adapters |
+| `packages/observability` | Logger and trace helpers |
+| `services/stt-faster-whisper` | Local CPU-first STT service |
+| `services/tts-chatterbox` | Local Chatterbox TTS service |
+| `docker/compose` | Local infrastructure definitions |
+| `docker/caddy` | Reverse proxy config for deployment |
+| `docs/adr` | Architectural decision records |
+| `docs/runbooks` | Operator runbooks |
+| `scripts/setup` | Orchestrator, service runner, compose runner, storage prep |
+| `scripts/speech` | STT/TTS setup and run scripts |
+| `scripts/phase1..6` | Phase verification scripts |
+| `scripts/backup` | Backup and restore scripts |
+| `runtime/` | Runtime storage (postgres, redis, speech, logs, venvs, backups) |
 
-This repo now includes a packaged always-on deployment path with:
+---
 
-- `proxy`: Caddy reverse proxy
-- `web`: Next.js app
-- `worker`: Fastify runtime
-- `stt`: faster-whisper speech service
-- `tts`: Chatterbox speech service
-- `postgres`
-- `redis`
+## Troubleshooting
 
-Deployment files:
+### Docker daemon not running
+```
+[Docker] FAIL (daemon not running)
+```
+Start Docker Desktop and wait for it to show "Engine running".
 
-- [`docker-compose.deploy.yml`](./docker/compose/docker-compose.deploy.yml)
-- [`Caddyfile`](./docker/caddy/Caddyfile)
-- [`deployment.md`](./docs/runbooks/deployment.md)
-- [`.env.deploy.example`](./.env.deploy.example)
+### Port already in use
+```
+[Stop] Web (port 3000)
+```
+The script attempts to clean up stale listeners automatically. If a port is still blocked:
+```bash
+# macOS/Linux
+lsof -ti :3000 | xargs kill -9
 
-Basic deployment flow:
+# Windows (PowerShell)
+Get-NetTCPConnection -LocalPort 3000 | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
 
-1. Copy `.env.deploy.example` to `.env.deploy`
-2. Set your public host, secrets, and Telegram webhook URL
-3. Run `npm run storage:prepare`
-4. Run `npm run deploy:up`
-5. Run `npm run deploy:migrate`
-6. Use `npm run deploy:logs` to watch the stack
+### Node.js too old
+```
+[Node.js] 20.5.0 FAIL (need 24+)
+```
+Upgrade Node.js. On macOS: `brew upgrade node`. On Windows: `winget upgrade OpenJS.NodeJS`.
 
-Useful deployment commands:
+### Missing `.env`
+```
+[.env] creating from .env.example
+```
+The script auto-creates `.env` from `.env.example` on first run. Open `.env` and add any API keys you need (Telegram, OpenAI, etc.).
 
-- `npm run deploy:config`
-- `npm run deploy:up`
-- `npm run deploy:migrate`
-- `npm run deploy:logs`
-- `npm run deploy:down`
+### Migrations fail
+```
+[DB] attempt 1 failed, retrying in 5s...
+```
+The script retries migrations up to 5 times. If they keep failing, check that Postgres is healthy:
+```bash
+docker logs secretary-postgres
+```
+
+### STT/TTS model download is slow
+The first time the STT or TTS services start, they download models from Hugging Face. This can take several minutes on a slow connection. The services will show as "starting" during this time.
+
+---
+
+## Development
+
+### Manual Start (without secretary.py)
+
+If you prefer to run each step manually:
+
+```bash
+npm install
+cp .env.example .env
+npm run storage:prepare
+npm run stack:up
+npm run db:migrate
+npm run build:packages
+npm run build --workspace @secretary/worker
+npm run stt:setup
+npm run tts:setup
+npm run dev:web      # Terminal 1
+npm run dev:worker   # Terminal 2
+npm run dev:stt      # Terminal 3
+npm run dev:tts      # Terminal 4
+```
+
+### Testing
+
+```bash
+# Run the full test suite (requires pytest in the STT venv)
+runtime/venvs/stt/bin/python -m pytest tests/ -v
+
+# Run only unit tests
+runtime/venvs/stt/bin/python -m pytest tests/test_secretary_unit.py -v
+
+# Run only integration tests
+runtime/venvs/stt/bin/python -m pytest tests/test_secretary_integration.py -v
+
+# Run only E2E tests (starts/stops the full stack)
+runtime/venvs/stt/bin/python -m pytest tests/test_secretary_e2e.py -v
+```
+
+### Phase Verification
+
+```bash
+# Phase 1: Desk, chat, conversation persistence
+npm run phase1:verify
+
+# Phase 2: Memory extraction, pin/suppress, reminders
+npm run phase2:verify
+
+# Phase 3: Telegram webhook, inbound/outbound, conversation routing
+npm run phase3:verify
+
+# Phase 4: Voice profiles, STT, TTS, voice notes
+npm run phase4:verify
+npm run phase4:verify:voice
+
+# Phase 5: Tool registry, approvals, audit
+npm run phase5:verify
+
+# Phase 6: Onboarding, health, persona, backup/export
+npm run phase6:verify
+```
+
+---
+
+## Deployment
+
+For an always-on deployment with Caddy reverse proxy:
+
+```bash
+cp .env.deploy.example .env.deploy
+# Edit .env.deploy with your public host and secrets
+npm run storage:prepare
+npm run deploy:up
+npm run deploy:migrate
+npm run deploy:logs
+```
+
+See [`docs/runbooks/deployment.md`](./docs/runbooks/deployment.md) for full details.
+
+---
+
+## Legacy Windows Workflow
+
+If you prefer the native Windows batch files, they still work and delegate to the same Node.js infrastructure underneath:
+
+- `first-run-setup.cmd` - delegates to `secretary.cmd install`
+- `start-secretary-dev.cmd` - delegates to `secretary.cmd start`
+- `stop-secretary-dev.cmd` - delegates to `secretary.cmd stop`
+- `secretary.cmd` - wraps `node scripts/setup/secretary-dev-orchestrator.mjs`
+
+The Python script (`secretary.py`) is the recommended cross-platform entry point.
+
+---
 
 ## Current Baseline
 
-- `apps/web`: Next.js `16.2.1` with React `19.2.4`
-- shared TypeScript baseline: `5.9.3`
-- `packages/db`: Drizzle ORM `0.45.1`
-- `packages/config`: Zod `4.3.6`
-- `apps/worker`: Fastify runtime with Dotenv `17.3.1`
-
-Primary local surfaces:
-
-- `/`: Desk chat with recent conversations, runtime context, and trace previews
-- `/login`: optional single-user sign-in gate when auth is enabled
-- `/onboarding`: guided setup checklist for daily-use readiness
-- `/health`: dependency, storage, and runtime health dashboard
-- `/persona`: Secretary identity editor plus settings export/import
-- `/memory`: memory browser/editor with pin and suppress controls
-- `/activity`: runtime activity and trace inspection console
-- `/tools`: tool registry, approval queue, and execution audit console
-- `/channels`: Telegram integration setup, health, test send, and reminder dispatch
-- `/voice`: voice profile and speech artifact inspection console
-
-## Phase 1 Verification
-
-To verify the current Phase 1 checkpoint:
-
-1. Make sure the core stack is running with `npm run stack:up`
-2. Run `npm run phase1:verify`
-
-The verification script checks:
-
-- runtime storage folders exist
-- build succeeds
-- migrations apply
-- core stack is reachable
-- Desk page loads
-- web chat succeeds
-- conversation history can be read back
-- app restart preserves conversation data
-
-Live service storage now lands in repo-visible paths:
-
-- `runtime/postgres/data`: PostgreSQL cluster data
-- `runtime/redis/data`: Redis persistence data
-
-## Phase 2 Verification
-
-To verify the current Phase 2 checkpoint:
-
-1. Make sure the core stack is running with `npm run stack:up`
-2. Run `npm run phase2:verify`
-
-The Phase 2 verifier checks:
-
-- memory extraction writes long-term memory entries
-- pinned memory affects later replies
-- suppressed memory stops affecting later replies
-- reminder hooks appear in task state
-- research-shaped prompts use the internal research specialist
-- activity traces show memory and specialist usage
-
-## Phase 3 Verification
-
-To verify the current Phase 3 checkpoint:
-
-1. Make sure the core stack is running with `npm run stack:up`
-2. Run `npm run phase3:verify`
-
-The Phase 3 verifier checks:
-
-- Telegram webhook sync works against a local fake Bot API
-- Telegram inbound text reaches the worker and persists locally
-- repeated Telegram messages reuse the same conversation thread
-- Telegram replies reuse the same memory core as web chat
-- due reminders can be dispatched through Telegram
-- disabling the integration removes webhook state cleanly
-
-## Phase 4 Voice
-
-Phase 4 is now complete for local development. The current checkpoint includes:
-
-- speech storage under `runtime/speech`
-- seeded voice profiles and speech artifact tables
-- Telegram voice-note intake that stores inbound audio locally
-- a local STT hook through `STT_BASE_URL`
-- a local Chatterbox TTS hook through `TTS_BASE_URL`
-- `/voice` UI for profile editing, sample upload, preview synthesis, browser push-to-talk, and speech artifact inspection
-- a repo-native CPU speech service in `services/stt-faster-whisper`
-- a repo-native Chatterbox TTS service in `services/tts-chatterbox`
-- Telegram spoken replies backed by synthesized local TTS artifacts
-
-### Local STT Setup
-
-The current Phase 4 build uses a local `faster-whisper` service, which the design doc specified as the first STT target.
-
-1. Make sure `ffmpeg` is available on `PATH`
-2. Run `npm run stt:setup`
-3. Make sure `.env` contains:
-   - `STT_BASE_URL=http://127.0.0.1:5001`
-   - optional `FFMPEG_PATH=C:\Users\Sean\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe` if `ffmpeg` is installed but not visible on `PATH`
-   - `STT_PORT=5001`
-   - `STT_MODEL_SIZE=base`
-   - `STT_DEVICE=cpu`
-   - `STT_COMPUTE_TYPE=int8`
-4. Start the service with `npm run dev:stt`
-5. Confirm it is ready:
-   - `http://127.0.0.1:5001/health/live`
-   - `http://127.0.0.1:5001/health/ready`
-
-The first ready check will download and load the configured Whisper model into `runtime/speech/models`.
-
-### Local TTS Setup
-
-The current Phase 4 voice-output build uses a local Chatterbox service, which is the newer cloned-voice path we selected for this repo.
-
-1. Make sure Python `3.11` is installed and `py -3.11 --version` works on Windows
-2. Run `npm run tts:setup`
-3. Make sure `.env` contains:
-   - `TTS_BASE_URL=http://127.0.0.1:5002`
-   - optional `FFMPEG_PATH=C:\Users\Sean\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe` for Telegram voice-note style replies on Windows
-   - `TTS_PORT=5002`
-   - `TTS_DEVICE=cpu`
-   - `TTS_DEFAULT_ENGINE=chatterbox`
-   - `TTS_DEFAULT_LANGUAGE=en`
-4. Start the service with `npm run dev:tts`
-5. Confirm it is ready:
-   - `http://127.0.0.1:5002/health/live`
-   - `http://127.0.0.1:5002/health/ready`
-
-The first ready check will download the selected Chatterbox weights into the Python environment cache and keep the default Secretary voice warm for later replies.
-
-If `ffmpeg` is available in the runtime environment, Telegram replies can be sent as voice-note style Opus audio. If it is not available, the worker falls back to sending a normal playable Telegram audio attachment while still keeping the synthesized WAV artifact locally.
-
-## Phase 4 Verification
-
-To verify the current Phase 4 checkpoint:
-
-1. Make sure the core stack is running with `npm run stack:up`
-2. Run `npm run phase4:verify`
-3. Run `npm run phase4:verify:voice`
-
-The current Phase 4 verifiers check:
-
-- the Phase 4 migration applies
-- the worker seeds a default voice profile
-- the `/voice` page loads
-- voice profile data is available through the web API
-- speech artifacts round-trip through the worker and web API
-- the web voice-turn endpoint is available for browser push-to-talk
-- a Telegram voice note is stored locally
-- local STT produces a real transcript
-- the transcript is routed into the Secretary chat flow
-- local Chatterbox TTS produces a persisted `tts_output` artifact
-- Telegram receives a spoken audio reply
-
-## Phase 5 Tools
-
-Phase 5 is now complete for local development. The current checkpoint includes:
-
-- a seeded tool registry for `web_search`, `file_read`, `shell_command`, and `task_create`
-- per-tool `always_allow` / `ask_first` / `deny` policy controls
-- approval requests in the Desk conversation flow with readable request summaries
-- a dedicated `/tools` page for policy editing, pending approvals, audit inspection, and recent execution filtering
-- execution audit records with request, response, approval state, and timestamps
-- a constrained read-only shell wrapper
-- a basic file read tool scoped to the local workspace with text-only safety limits
-- task creation through the same approval and audit pipeline
-- tool activity traces that make approvals, denials, completion, and failures easier to inspect
-
-## Phase 5 Verification
-
-To verify the current Phase 5 checkpoint:
-
-1. Make sure the core stack is running with `npm run stack:up`
-2. Run `npm run phase5:verify`
-
-The Phase 5 verifier checks:
-
-- the Phase 5 migration applies
-- the `/tools` page loads
-- the tool registry exposes the expected built-in tools
-- a direct web-search tool call executes and is logged
-- an approval-required shell execution can be approved and completed
-- an approval-required file read can be denied safely
-- the resulting audit trail is available through the web API
-
-## Phase 6 Polish
-
-Phase 6 is now complete for local development. The current checkpoint includes:
-
-- optional single-user sign-in gate for the web app and web-facing APIs
-- `/onboarding` for a guided setup and readiness checklist
-- `/health` for dependency, speech, Telegram, storage, and state visibility
-- `/persona` for Secretary identity editing and voice attachment
-- JSON settings export/import through the web UI
-- repo-native backup and restore scripts
-- visible runtime backup and export directories
-- phase-by-phase operator runbook commands
-- deployment notes that keep the worker/web/speech split understandable
-- groundwork for future adapter expansion through the existing integrations/admin model
-
-## Phase 6 Verification
-
-To verify the current Phase 6 checkpoint:
-
-1. Make sure the core stack is running with `npm run stack:up`
-2. Run `npm run phase6:verify`
-
-The Phase 6 verifier checks:
-
-- `/onboarding`, `/health`, and `/persona` all load
-- system health returns dependency, storage, and state data
-- persona settings can be updated through the web API
-- exported settings can be imported back and restore persona state
-- `npm run backup:create` produces a logical backup bundle
-- `npm run backup:restore` restores that bundle cleanly
-
-## Phase 6 Runbook
-
-Daily operator commands:
-
-- `npm run stack:up`
-- `npm run db:migrate`
-- `npm run backup:create`
-- `npm run export:settings`
-- `npm run phase6:verify`
-
-Restore and import commands:
-
-- `npm run backup:restore -- <backup-directory>`
-- `npm run import:settings -- <settings-json-path>`
-
-Deployment notes:
-
-- run `web`, `worker`, `stt`, and `tts` as separate long-lived processes
-- keep Postgres and Redis on the visible bind-mounted runtime paths
-- use Tailscale or a public tunnel only for the worker when testing Telegram inbound webhooks
-- keep secrets in `.env`, not in tracked example files
-- treat `runtime/backups` and `runtime/exports` as operator-facing working folders
-
-## Live Telegram Test
-
-To verify the real bot instead of the fake verifier:
-
-1. Make sure `.env` contains a real `TELEGRAM_BOT_TOKEN`
-2. Start the local stack with `npm run stack:up`
-3. Apply the schema with `npm run db:migrate`
-4. Run the apps:
-   - `npm run dev:web`
-   - `npm run dev:worker`
-5. Expose the worker on port `4000` through a public tunnel
-   - example: `npx --yes localtunnel --port 4000 --local-host 127.0.0.1`
-6. Copy the public worker base URL from the tunnel
-7. Open `/channels`
-8. Enable Telegram integration
-9. Set the public worker URL in the Telegram webhook field
-10. Set `TELEGRAM_DEFAULT_CHAT_ID` or save a default chat id in the Channels page
-11. Click `Save Settings`
-12. Click `Sync Webhook`
-13. Send a real Telegram message to the bot
-14. Confirm the Channels page stays healthy and the conversation appears in local state
-
-Important notes:
-
-- the public URL must point to the `worker`, not the web app
-- the worker webhook path is `/integrations/telegram/webhook`
-- outbound Telegram tests can succeed even if inbound webhook delivery is broken
-- if inbound delivery fails, check the tunnel URL directly first; a dead tunnel will usually return `503`
-- temporary tunnel URLs are ephemeral, so resync the webhook whenever the tunnel URL changes
-
-What success looks like:
-
-- `/channels` shows Telegram health as `ok`
-- the bot can send a real outbound test message
-- a real inbound Telegram message creates or updates a local `telegram` conversation
-- activity traces show `telegram.update.received` and `telegram.reply.sent`
-- reminder delivery can send to the configured Telegram chat
-
-This current checkpoint now includes:
-
-- a web Desk shell and thin API proxy
-- a worker runtime with health checks
-- Drizzle schema plus Phase 1, Phase 2, and Phase 3 migrations
-- persisted conversation, message, job, and trace wiring in the worker
-- deterministic Secretary replies that use conversation, memory, task, and research context
-- memory extraction and retrieval through BullMQ-backed worker processing
-- Memory page UI with search, edit, pin, and suppress controls
-- Activity page UI for recent conversation trace inspection
-- recent conversation browser in the Desk
-- reminder/task hooks created from memory processing
-- Telegram webhook handling, outbound replies, conversation routing, settings, and reminder delivery
-- voice profile seeding, speech artifact persistence, Telegram voice-note intake, and Telegram spoken reply flow
-- a local CPU-first faster-whisper speech service with repo-native setup scripts
-- a local Chatterbox TTS service with repo-native setup scripts
-- approval-gated tools with readable audit and policy controls
-- onboarding, health, persona, backup, and export/import operator surfaces
-- automated Phase 1 through Phase 6 verification flows
+- Next.js `16.2.6` with React `19.2.4`
+- TypeScript `5.9.3`
+- Drizzle ORM `0.45.1`
+- Zod `4.3.6`
+- Fastify with Dotenv `17.3.1`
+- faster-whisper `1.2.1` for STT
+- Chatterbox (kokoro-onnx) for TTS
+
+---
+
+## License
+
+MIT - See individual package `package.json` files for specifics.
