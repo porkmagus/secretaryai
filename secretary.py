@@ -10,43 +10,35 @@ One-liner usage (no flags = interactive menu):
 
 Flag usage (CI / scripts):
     python3 secretary.py --install       # Install & build only
-    python3 secretary.py --start         # Start services in background
-    python3 secretary.py --foreground  # Start services in foreground
-    python3 secretary.py --stop          # Stop all services + Docker
-    python3 secretary.py --status        # Quick health check
-    python3 secretary.py --logs          # Tail service-runner log
-    python3 secretary.py --help          # Show help
+    python3 secretary.py --start          # Start services in background
+    python3 secretary.py --foreground     # Start services in foreground
+    python3 secretary.py --stop           # Stop all services + Docker
+    python3 secretary.py --status         # Quick health check
+    python3 secretary.py --logs           # Tail service-runner log
 
-Prerequisites:
-    - Python 3.11+     (you have this if you're running this script)
-    - Node.js 24.0+    (https://nodejs.org/)
-    - npm              (bundled with Node.js)
-    - Docker Desktop   (https://www.docker.com/products/docker-desktop/)
-    - ffmpeg           (optional, required for voice-note features)
-
-Platform install hints (if prerequisites are missing):
-    macOS:   brew install node ffmpeg && brew install --cask docker
-    Ubuntu:  sudo apt install nodejs npm ffmpeg docker.io docker-compose-plugin
-    Windows: winget install OpenJS.NodeJS Docker.DockerDesktop Gyan.FFmpeg
+This script delegates to the existing npm/Node.js infrastructure where
+possible (storage:prepare, stack:up, db:migrate, build:packages, stt:setup,
+tts:setup, service-runner) and only reimplements what's needed for a
+cross-platform Python entrypoint.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import sys
-import subprocess
-import shutil
-import time
-import socket
 import json
+import os
+import shutil
 import signal
-import platform
+import socket
+import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
+
 
 # =============================================================================
-# Colors and Formatting
+# Colors
 # =============================================================================
 
 class Colors:
@@ -69,23 +61,55 @@ class Colors:
 if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
     Colors.disable()
 
+
+def log_section(title: str):
+    print(f"\n{Colors.BOLD}{Colors.OKCYAN}== {title} =={Colors.RESET}\n")
+
+
+def log_step(label: str, detail: str = ""):
+    if detail:
+        print(f"  [{Colors.OKGREEN}{label}{Colors.RESET}] {detail}")
+    else:
+        print(f"  [{Colors.OKGREEN}{label}{Colors.RESET}]")
+
+
+def log_warn(label: str, detail: str = ""):
+    print(f"  [{Colors.WARNING}{label}{Colors.RESET}] {detail}")
+
+
+def log_error(label: str, detail: str = ""):
+    print(f"  [{Colors.FAIL}{label}{Colors.RESET}] {detail}")
+
+
+def log_info(detail: str):
+    print(f"  {Colors.DIM}{detail}{Colors.RESET}")
+
+
 # =============================================================================
-# Paths and Configuration
+# Paths
 # =============================================================================
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR
+REPO_ROOT = Path(__file__).resolve().parent
 ENV_PATH = REPO_ROOT / ".env"
 ENV_EXAMPLE_PATH = REPO_ROOT / ".env.example"
 RUNTIME_DIR = REPO_ROOT / "runtime"
-VENV_DIR = RUNTIME_DIR / "venvs"
-STT_VENV = VENV_DIR / "stt"
-TTS_VENV = VENV_DIR / "tts"
+CONFIG_DIR = RUNTIME_DIR / "config"
+LOGS_DIR = RUNTIME_DIR / "dev-logs"
+STATE_FILE = CONFIG_DIR / "secretary-py-state.json"
+
+PACKAGE_LOCK_PATH = REPO_ROOT / "package-lock.json"
+NODE_MODULES_PATH = REPO_ROOT / "node_modules"
+WORKER_SOURCE_ROOT = REPO_ROOT / "apps" / "worker" / "src"
+WORKER_DIST_PATH = REPO_ROOT / "apps" / "worker" / "dist" / "index.js"
+WORKER_PACKAGE_PATH = REPO_ROOT / "apps" / "worker" / "package.json"
+WORKER_TSCONFIG_PATH = REPO_ROOT / "apps" / "worker" / "tsconfig.json"
+
 STT_REQUIREMENTS = REPO_ROOT / "services" / "stt-faster-whisper" / "requirements.txt"
 TTS_REQUIREMENTS = REPO_ROOT / "services" / "tts-chatterbox" / "requirements.txt"
-DOCKER_COMPOSE_FILE = REPO_ROOT / "docker" / "compose" / "docker-compose.yml"
-LOGS_DIR = RUNTIME_DIR / "dev-logs"
-STATE_FILE = RUNTIME_DIR / "config" / "secretary-py-state.json"
+STT_VENV = RUNTIME_DIR / "venvs" / "stt"
+TTS_VENV = RUNTIME_DIR / "venvs" / "tts"
+
+SERVICE_RUNNER = REPO_ROOT / "scripts" / "setup" / "service-runner.mjs"
 
 INFRA_SERVICES = [
     {"name": "Postgres", "port": 5432, "timeout": 60},
@@ -101,37 +125,9 @@ APP_SERVICES = [
     {"name": "TTS", "port": 5002, "health_url": "http://127.0.0.1:5002/health", "timeout": 150},
 ]
 
-# =============================================================================
-# Logging Helpers
-# =============================================================================
-
-def log_section(title: str):
-    print(f"\n{Colors.BOLD}{Colors.OKCYAN}== {title} =={Colors.RESET}\n")
-
-def log_step(label: str, detail: str = ""):
-    if detail:
-        print(f"  [{Colors.OKGREEN}{label}{Colors.RESET}] {detail}")
-    else:
-        print(f"  [{Colors.OKGREEN}{label}{Colors.RESET}]")
-
-def log_warn(label: str, detail: str = ""):
-    print(f"  [{Colors.WARNING}{label}{Colors.RESET}] {detail}")
-
-def log_error(label: str, detail: str = ""):
-    print(f"  [{Colors.FAIL}{label}{Colors.RESET}] {detail}")
-
-def log_info(detail: str):
-    print(f"  {Colors.DIM}{detail}{Colors.RESET}")
-
-def get_python_cmd() -> str:
-    if shutil.which("python3"):
-        return "python3"
-    if shutil.which("python"):
-        return "python"
-    return Path(sys.executable).name
 
 # =============================================================================
-# State / PID Tracking
+# State / PID
 # =============================================================================
 
 def load_state() -> dict:
@@ -139,21 +135,24 @@ def load_state() -> dict:
         with open(STATE_FILE) as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
+
 
 def save_state(data: dict):
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(data, f, indent=2)
+        f.write("\n")
+
 
 def is_pid_alive(pid: int) -> bool:
-    if PLATFORM == "windows":
+    if sys.platform == "win32":
         try:
-            _, stdout, _ = run_command(
+            result = subprocess.run(
                 ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                capture=True, timeout=5, check=False
+                capture_output=True, text=True, timeout=5
             )
-            return str(pid) in stdout
+            return str(pid) in result.stdout
         except Exception:
             return False
     else:
@@ -163,25 +162,29 @@ def is_pid_alive(pid: int) -> bool:
         except (OSError, ProcessLookupError):
             return False
 
+
 # =============================================================================
 # Command Execution
 # =============================================================================
 
-def run_command(
+def run(
     cmd: List[str],
+    *,
     cwd: Optional[Path] = None,
-    env: Optional[Dict[str, str]] = None,
     capture: bool = False,
     timeout: Optional[int] = None,
     check: bool = True,
+    env: Optional[Dict[str, str]] = None,
 ) -> Tuple[int, str, str]:
     if cwd is None:
         cwd = REPO_ROOT
     merged_env = {**os.environ, **(env or {})}
     if capture:
-        result = subprocess.run(cmd, cwd=str(cwd), env=merged_env, capture_output=True, text=True, timeout=timeout)
-        stdout: str = result.stdout or ""
-        stderr: str = result.stderr or ""
+        result = subprocess.run(
+            cmd, cwd=str(cwd), env=merged_env, capture_output=True, text=True, timeout=timeout
+        )
+        stdout = result.stdout or ""
+        stderr = result.stderr or ""
     else:
         result = subprocess.run(cmd, cwd=str(cwd), env=merged_env, timeout=timeout)
         stdout = ""
@@ -190,272 +193,245 @@ def run_command(
         raise subprocess.CalledProcessError(result.returncode, cmd, output=stdout, stderr=stderr)
     return result.returncode, stdout, stderr
 
-def run_command_stream(cmd: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None) -> subprocess.Popen:
+
+def run_stream(cmd: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None) -> subprocess.Popen:
     if cwd is None:
         cwd = REPO_ROOT
     merged_env = {**os.environ, **(env or {})}
     return subprocess.Popen(cmd, cwd=str(cwd), env=merged_env, stdout=sys.stdout, stderr=sys.stderr)
 
+
+def npm(args: List[str], capture: bool = False, timeout: Optional[int] = None, check: bool = True):
+    npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
+    return run([npm_cmd] + args, capture=capture, timeout=timeout, check=check)
+
+
+def node(args: List[str], capture: bool = False, timeout: Optional[int] = None, check: bool = True):
+    return run(["node"] + args, capture=capture, timeout=timeout, check=check)
+
+
 # =============================================================================
 # Prerequisite Checks
 # =============================================================================
 
-def get_platform() -> str:
-    system = platform.system().lower()
-    if system == "darwin":
-        return "macos"
-    if system in ("windows", "win32"):
-        return "windows"
-    return "linux"
-
-PLATFORM = get_platform()
-
-def check_command_exists(command: str, args: Optional[List[str]] = None) -> bool:
+def check_cmd(command: str, args: Optional[List[str]] = None) -> bool:
     if args is None:
         args = ["--version"]
     try:
-        run_command([command] + args, capture=True, timeout=5, check=False)
+        run([command] + args, capture=True, timeout=5, check=False)
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    except Exception:
         return False
 
-def check_node_version() -> Tuple[bool, str, Optional[str]]:
-    if not check_command_exists("node"):
-        return False, "", "Node.js is not installed or not on PATH."
-    try:
-        _, stdout, _ = run_command(["node", "--version"], capture=True, timeout=5)
-        version = stdout.strip().lstrip("v")
-        major = int(version.split(".")[0])
-        if major >= 24:
-            return True, version, None
-        return False, version, f"Node.js {version} is too old. Version 24.0.0 or higher is required."
-    except Exception as e:
-        return False, "", f"Failed to check Node.js version: {e}"
 
-def check_npm() -> bool:
-    return check_command_exists("npm")
-
-def check_docker_daemon() -> Tuple[bool, str]:
-    try:
-        run_command(["docker", "info"], capture=True, timeout=5)
-        return True, ""
-    except subprocess.CalledProcessError:
-        return False, "Docker is installed but the daemon is not running. Start Docker Desktop."
-    except FileNotFoundError:
-        return False, "Docker is not installed or not on PATH."
-
-def check_docker() -> Tuple[bool, str]:
-    if not check_command_exists("docker"):
-        return False, "Docker is not installed or not on PATH."
-    compose_ok = False
-    try:
-        run_command(["docker", "compose", "version"], capture=True, timeout=5)
-        compose_ok = True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    if not compose_ok:
-        try:
-            run_command(["docker-compose", "--version"], capture=True, timeout=5)
-            compose_ok = True
-        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-    if not compose_ok:
-        return False, "Docker is installed but 'docker compose' is not available."
-    daemon_ok, daemon_err = check_docker_daemon()
-    if not daemon_ok:
-        return False, daemon_err
-    return True, ""
-
-def check_ffmpeg() -> bool:
-    return check_command_exists("ffmpeg", ["-version"])
-
-def check_python_version() -> Tuple[bool, str]:
-    version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-    if sys.version_info >= (3, 11):
-        return True, version
-    return False, version
-
-def print_prerequisite_install_help():
-    log_section("How to Install Missing Prerequisites")
-    print(f"  Your platform: {Colors.BOLD}{PLATFORM}{Colors.RESET}")
-    print()
-    print(f"  {Colors.BOLD}Node.js 24+ & npm:{Colors.RESET}")
-    if PLATFORM == "macos":
-        print("    brew install node")
-    elif PLATFORM == "linux":
-        print("    sudo apt install nodejs npm")
-    elif PLATFORM == "windows":
-        print("    winget install OpenJS.NodeJS")
-    print()
-    print(f"  {Colors.BOLD}Docker Desktop:{Colors.RESET}")
-    if PLATFORM == "macos":
-        print("    brew install --cask docker")
-    elif PLATFORM == "linux":
-        print("    sudo apt install docker.io docker-compose-plugin")
-    elif PLATFORM == "windows":
-        print("    winget install Docker.DockerDesktop")
-    print()
-    print(f"  {Colors.BOLD}ffmpeg (optional, for voice):{Colors.RESET}")
-    if PLATFORM == "macos":
-        print("    brew install ffmpeg")
-    elif PLATFORM == "linux":
-        print("    sudo apt install ffmpeg")
-    elif PLATFORM == "windows":
-        print("    winget install Gyan.FFmpeg")
-    print()
-    print(f"  {Colors.BOLD}Python 3.11+:{Colors.RESET}")
-    if PLATFORM == "macos":
-        print("    brew install python@3.11")
-    elif PLATFORM == "linux":
-        print("    sudo apt install python3.11 python3.11-venv python3.11-pip")
-    elif PLATFORM == "windows":
-        print("    winget install Python.Python.3.11")
-    print()
-
-def check_all_prerequisites(allow_missing_ffmpeg: bool = True) -> Tuple[bool, List[str]]:
+def check_prerequisites() -> Tuple[bool, List[str]]:
     errors = []
     warnings = []
-    py_ok, py_version = check_python_version()
-    if py_ok:
+
+    # Python
+    py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    if sys.version_info >= (3, 11):
         log_step("Python", f"{py_version} OK")
     else:
         errors.append(f"Python {py_version} is too old. Python 3.11+ is required.")
         log_error("Python", f"{py_version} FAIL (need 3.11+)")
-    node_ok, node_version, node_err = check_node_version()
-    if node_ok:
-        log_step("Node.js", f"{node_version} OK")
+
+    # Node.js
+    if check_cmd("node"):
+        _, out, _ = run(["node", "--version"], capture=True, timeout=5)
+        node_version = out.strip().lstrip("v")
+        try:
+            major = int(node_version.split(".")[0])
+            if major >= 24:
+                log_step("Node.js", f"{node_version} OK")
+            else:
+                errors.append(f"Node.js {node_version} is too old. Need 24+.")
+                log_error("Node.js", f"{node_version} FAIL (need 24+)")
+        except ValueError:
+            log_step("Node.js", f"{node_version} (version parse failed)")
     else:
-        errors.append(node_err)
-        log_error("Node.js", f"FAIL: {node_err}")
-    if check_npm():
+        errors.append("Node.js is not installed or not on PATH.")
+        log_error("Node.js", "FAIL")
+
+    # npm
+    if check_cmd("npm"):
         log_step("npm", "OK")
     else:
         errors.append("npm is not installed or not on PATH.")
         log_error("npm", "FAIL")
-    docker_ok, docker_err = check_docker()
+
+    # Docker
+    docker_ok = False
+    if check_cmd("docker"):
+        try:
+            run(["docker", "info"], capture=True, timeout=5)
+            # Check compose
+            try:
+                run(["docker", "compose", "version"], capture=True, timeout=5)
+                docker_ok = True
+            except Exception:
+                try:
+                    run(["docker-compose", "--version"], capture=True, timeout=5)
+                    docker_ok = True
+                except Exception:
+                    errors.append("Docker is installed but 'docker compose' is not available.")
+                    log_error("Docker", "FAIL (no compose)")
+        except Exception:
+            errors.append("Docker daemon is not running. Start Docker Desktop.")
+            log_error("Docker", "FAIL (daemon not running)")
+    else:
+        errors.append("Docker is not installed or not on PATH.")
+        log_error("Docker", "FAIL")
+
     if docker_ok:
         log_step("Docker", "OK")
-    else:
-        errors.append(docker_err)
-        log_error("Docker", f"FAIL: {docker_err}")
-    if check_ffmpeg():
+
+    # ffmpeg (optional)
+    if check_cmd("ffmpeg", ["-version"]):
         log_step("ffmpeg", "OK")
     else:
-        msg = "ffmpeg not found (optional, needed for voice-note features)"
-        if allow_missing_ffmpeg:
-            warnings.append(msg)
-            log_warn("ffmpeg", "MISSING (optional)")
-        else:
-            errors.append(msg)
-            log_error("ffmpeg", "MISSING")
+        warnings.append("ffmpeg not found (optional, needed for voice-note features)")
+        log_warn("ffmpeg", "MISSING (optional)")
+
     if warnings:
         for w in warnings:
             log_warn("Warning", w)
+
     return len(errors) == 0, errors
 
+
+def print_install_help():
+    log_section("How to Install Missing Prerequisites")
+    plat = "macOS" if sys.platform == "darwin" else "Windows" if sys.platform == "win32" else "Linux"
+    print(f"  Your platform: {Colors.BOLD}{plat}{Colors.RESET}")
+    print()
+    print(f"  {Colors.BOLD}Node.js 24+ & npm:{Colors.RESET}")
+    if sys.platform == "darwin":
+        print("    brew install node")
+    elif sys.platform == "win32":
+        print("    winget install OpenJS.NodeJS")
+    else:
+        print("    sudo apt install nodejs npm")
+    print()
+    print(f"  {Colors.BOLD}Docker Desktop:{Colors.RESET}")
+    if sys.platform == "darwin":
+        print("    brew install --cask docker")
+    elif sys.platform == "win32":
+        print("    winget install Docker.DockerDesktop")
+    else:
+        print("    sudo apt install docker.io docker-compose-plugin")
+    print()
+    print(f"  {Colors.BOLD}ffmpeg (optional):{Colors.RESET}")
+    if sys.platform == "darwin":
+        print("    brew install ffmpeg")
+    elif sys.platform == "win32":
+        print("    winget install Gyan.FFmpeg")
+    else:
+        print("    sudo apt install ffmpeg")
+    print()
+
+
 # =============================================================================
-# Setup / Install Functions
+# Bootstrap Helpers
 # =============================================================================
 
 def ensure_env_file():
     if ENV_PATH.exists():
-        log_step(".env", "already exists")
+        log_step(".env", "present")
         return
     if not ENV_EXAMPLE_PATH.exists():
-        log_error(".env", "cannot create: .env.example is missing")
-        raise RuntimeError("Missing .env.example")
+        raise RuntimeError("Missing .env.example; cannot create .env automatically.")
     log_step(".env", "creating from .env.example")
     shutil.copy(ENV_EXAMPLE_PATH, ENV_PATH)
 
-def ensure_storage_directories():
-    dirs = [
-        "runtime/postgres", "runtime/postgres/data",
-        "runtime/redis", "runtime/redis/data",
-        "runtime/speech", "runtime/speech/inbound", "runtime/speech/models",
-        "runtime/speech/transcripts", "runtime/speech/tts", "runtime/speech/profiles",
-        "runtime/caddy", "runtime/caddy/data", "runtime/caddy/config",
-        "runtime/backups", "runtime/exports",
-        "runtime/generated", "runtime/generated/documents",
-        "runtime/downloads", "runtime/venvs", "runtime/dev-logs",
-    ]
-    for d in dirs:
-        (REPO_ROOT / d).mkdir(parents=True, exist_ok=True)
-    log_step("Storage", f"{len(dirs)} directories ready")
 
-def ensure_node_modules():
-    node_modules = REPO_ROOT / "node_modules"
-    package_lock = REPO_ROOT / "package-lock.json"
-    if node_modules.exists() and package_lock.exists():
-        log_step("npm", "node_modules exists (skipping install)")
-        return
-    log_step("npm", "install (this may take a few minutes)...")
-    run_command(["npm", "install"], timeout=300)
-    log_step("npm", "install complete")
+def _get_latest_mtime(path: Path) -> float:
+    stat = path.stat()
+    if not path.is_dir():
+        return stat.st_mtime
+    latest = stat.st_mtime
+    for entry in path.iterdir():
+        if entry.is_dir():
+            latest = max(latest, _get_latest_mtime(entry))
+        else:
+            latest = max(latest, entry.stat().st_mtime)
+    return latest
 
-def build_packages_and_worker():
-    worker_dist = REPO_ROOT / "apps" / "worker" / "dist" / "index.js"
-    if worker_dist.exists():
-        log_step("Build", "worker dist exists (skipping)")
-        log_step("Build", "npm run build:packages")
-        run_command(["npm", "run", "build:packages"], timeout=120)
-        return
-    log_step("Build", "npm run build:packages")
-    run_command(["npm", "run", "build:packages"], timeout=120)
-    log_step("Build", "npm run build --workspace @secretary/worker")
-    run_command(["npm", "run", "build", "--workspace", "@secretary/worker"], timeout=120)
 
-def ensure_venv_python(venv_path: Path) -> Path:
-    if PLATFORM == "windows":
-        python_bin = venv_path / "Scripts" / "python.exe"
+def ensure_node_modules(state: dict) -> dict:
+    if not PACKAGE_LOCK_PATH.exists():
+        log_step("Dependencies", "npm install")
+        npm(["install"], timeout=300)
+        return {**state, "bootstrap": {**state.get("bootstrap", {}), "packageLockMtimeMs": 0}}
+
+    lock_mtime = PACKAGE_LOCK_PATH.stat().st_mtime
+    needs = (
+        not NODE_MODULES_PATH.exists()
+        or state.get("bootstrap", {}).get("packageLockMtimeMs") != lock_mtime
+    )
+    if not needs:
+        log_step("Dependencies", "already installed")
+        return state
+
+    log_step("Dependencies", "npm install")
+    npm(["install"], timeout=300)
+    return {**state, "bootstrap": {**state.get("bootstrap", {}), "packageLockMtimeMs": lock_mtime}}
+
+
+def ensure_worker_build(state: dict) -> dict:
+    source_mtime = max(
+        _get_latest_mtime(WORKER_SOURCE_ROOT),
+        WORKER_PACKAGE_PATH.stat().st_mtime,
+        WORKER_TSCONFIG_PATH.stat().st_mtime,
+    )
+    dist_exists = WORKER_DIST_PATH.exists()
+    needs = not dist_exists or state.get("bootstrap", {}).get("workerSourceMtimeMs") != source_mtime
+
+    if not needs:
+        log_step("Worker build", "ready")
+        return {**state, "bootstrap": {**state.get("bootstrap", {}), "workerSourceMtimeMs": source_mtime}}
+
+    log_step("Packages build", "npm run build:packages")
+    npm(["run", "build:packages"], timeout=120)
+    log_step("Worker build", "npm run build --workspace @secretary/worker")
+    npm(["run", "build", "--workspace", "@secretary/worker"], timeout=120)
+    return {**state, "bootstrap": {**state.get("bootstrap", {}), "workerSourceMtimeMs": source_mtime}}
+
+
+def ensure_speech_setup(state: dict) -> dict:
+    stt_req_mtime = STT_REQUIREMENTS.stat().st_mtime
+    tts_req_mtime = TTS_REQUIREMENTS.stat().st_mtime
+    bootstrap = state.get("bootstrap", {})
+
+    stt_ready = STT_VENV.exists() and bootstrap.get("sttRequirementsMtimeMs") == stt_req_mtime
+    tts_ready = TTS_VENV.exists() and bootstrap.get("ttsRequirementsMtimeMs") == tts_req_mtime
+
+    if stt_ready:
+        log_step("STT setup", "ready")
     else:
-        python_bin = venv_path / "bin" / "python"
-    if not python_bin.exists():
-        log_step("Venv", f"creating at {venv_path}")
-        run_command([sys.executable, "-m", "venv", str(venv_path)], timeout=60)
-    return python_bin
+        log_step("STT setup", "npm run stt:setup")
+        npm(["run", "stt:setup"], timeout=300)
+        bootstrap = {**bootstrap, "sttRequirementsMtimeMs": stt_req_mtime}
 
-def setup_stt_venv():
-    python_bin = ensure_venv_python(STT_VENV)
-    if not STT_REQUIREMENTS.exists():
-        log_warn("STT", "requirements.txt not found, skipping")
-        return
-    log_step("STT", "upgrading pip")
-    run_command([str(python_bin), "-m", "pip", "install", "--upgrade", "pip"], timeout=60)
-    log_step("STT", "installing requirements")
-    run_command([str(python_bin), "-m", "pip", "install", "-r", str(STT_REQUIREMENTS)], timeout=180)
+    if tts_ready:
+        log_step("TTS setup", "ready")
+    else:
+        log_step("TTS setup", "npm run tts:setup")
+        npm(["run", "tts:setup"], timeout=300)
+        bootstrap = {**bootstrap, "ttsRequirementsMtimeMs": tts_req_mtime}
 
-def setup_tts_venv():
-    python_bin = ensure_venv_python(TTS_VENV)
-    if not TTS_REQUIREMENTS.exists():
-        log_warn("TTS", "requirements.txt not found, skipping")
-        return
-    log_step("TTS", "upgrading pip")
-    run_command([str(python_bin), "-m", "pip", "install", "--upgrade", "pip"], timeout=60)
-    log_step("TTS", "installing requirements")
-    run_command([str(python_bin), "-m", "pip", "install", "-r", str(TTS_REQUIREMENTS)], timeout=180)
+    return {**state, "bootstrap": bootstrap}
 
-def docker_compose_cmd() -> List[str]:
-    try:
-        run_command(["docker", "compose", "version"], capture=True, timeout=5)
-        return ["docker", "compose", "-f", str(DOCKER_COMPOSE_FILE)]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    try:
-        run_command(["docker-compose", "--version"], capture=True, timeout=5)
-        return ["docker-compose", "-f", str(DOCKER_COMPOSE_FILE)]
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    raise RuntimeError("No docker compose command found")
 
 def ensure_docker_stack():
-    cmd = docker_compose_cmd()
-    log_step("Docker", "starting infrastructure stack...")
+    log_step("Docker stack", "npm run stack:up")
     try:
-        run_command(cmd + ["up", "-d"], timeout=120)
+        npm(["run", "stack:up"], timeout=120)
     except subprocess.CalledProcessError:
         log_warn("Docker", "first up failed, cleaning residue and retrying...")
-        run_command(cmd + ["down"], timeout=60, check=False)
-        run_command(cmd + ["up", "-d"], timeout=120)
+        npm(["run", "stack:down"], timeout=60, check=False)
+        npm(["run", "stack:up"], timeout=120)
+
 
 def wait_for_port(host: str, port: int, timeout_sec: int = 60) -> bool:
     deadline = time.time() + timeout_sec
@@ -466,6 +442,7 @@ def wait_for_port(host: str, port: int, timeout_sec: int = 60) -> bool:
         except (socket.timeout, ConnectionRefusedError, OSError):
             time.sleep(1)
     return False
+
 
 def wait_for_health(url: str, timeout_sec: int = 30, retries: int = 3) -> bool:
     import urllib.request
@@ -483,6 +460,7 @@ def wait_for_health(url: str, timeout_sec: int = 30, retries: int = 3) -> bool:
         time.sleep(1)
     return False
 
+
 def wait_for_infrastructure():
     log_section("Waiting for Infrastructure")
     all_ready = True
@@ -497,11 +475,12 @@ def wait_for_infrastructure():
     if not all_ready:
         raise RuntimeError("Infrastructure services did not become ready in time.")
 
+
 def run_db_migrations(retries: int = 5, delay: int = 5):
     log_step("DB", "running migrations...")
     for attempt in range(1, retries + 1):
         try:
-            run_command(["npm", "run", "db:migrate"], timeout=60)
+            npm(["run", "db:migrate"], timeout=60)
             log_step("DB", "migrations applied")
             return
         except subprocess.CalledProcessError as e:
@@ -510,26 +489,57 @@ def run_db_migrations(retries: int = 5, delay: int = 5):
             log_warn("DB", f"attempt {attempt} failed, retrying in {delay}s...")
             time.sleep(delay)
 
+
 # =============================================================================
-# Start / Stop / Status
+# Install Flow
+# =============================================================================
+
+def run_install():
+    log_section("Prerequisites")
+    ok, errors = check_prerequisites()
+    if not ok:
+        log_section("Missing Prerequisites")
+        for err in errors:
+            log_error("Missing", err)
+        print()
+        print_install_help()
+        sys.exit(1)
+
+    log_section("Install")
+    ensure_env_file()
+    log_step("Storage", "npm run storage:prepare")
+    npm(["run", "storage:prepare"], timeout=30)
+
+    state = load_state()
+    state = ensure_node_modules(state)
+    ensure_docker_stack()
+    wait_for_infrastructure()
+    run_db_migrations()
+    state = ensure_worker_build(state)
+    state = ensure_speech_setup(state)
+    save_state(state)
+    log_section("Install Complete")
+    log_step("Next step", "Run: python3 secretary.py --start")
+
+
+# =============================================================================
+# Start / Stop
 # =============================================================================
 
 def start_infrastructure():
     ensure_docker_stack()
     wait_for_infrastructure()
 
+
 def start_app_services(foreground: bool = False):
-    runner = REPO_ROOT / "scripts" / "setup" / "service-runner.mjs"
-    if not runner.exists():
-        log_error("Start", "service-runner.mjs not found")
+    if not SERVICE_RUNNER.exists():
         raise RuntimeError("Missing service-runner.mjs")
 
     if foreground:
         log_section("Starting App Services")
         log_info("Delegating to service-runner.mjs (Press Ctrl+C to stop)")
-        log_info("Services: Web (3000), Worker (4000), STT (5001), TTS (5002)")
         print()
-        proc = run_command_stream(["node", str(runner)])
+        proc = run_stream(["node", str(SERVICE_RUNNER)])
         try:
             proc.wait()
         except KeyboardInterrupt:
@@ -548,7 +558,7 @@ def start_app_services(foreground: bool = False):
     if existing_pid and is_pid_alive(existing_pid):
         log_warn("Start", f"Service runner already running (PID {existing_pid})")
         log_info(f"Logs: {LOGS_DIR / 'service-runner.log'}")
-        log_info(f"Stop with: {get_python_cmd()} secretary.py --stop")
+        log_info("Stop with: python3 secretary.py --stop")
         return
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -560,74 +570,45 @@ def start_app_services(foreground: bool = False):
     with open(log_path, "a") as log_file:
         log_file.write(f"\n=== Service runner started at {time.strftime('%c')} ===\n")
         log_file.flush()
-        popen_kwargs: Dict[str, Any] = {
+        kwargs: Dict[str, Any] = {
             "stdout": log_file,
             "stderr": subprocess.STDOUT,
             "stdin": subprocess.DEVNULL,
         }
-        if PLATFORM == "windows":
-            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        if sys.platform == "win32":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         else:
-            popen_kwargs["start_new_session"] = True
-        proc = subprocess.Popen(["node", str(runner)], cwd=str(REPO_ROOT), **popen_kwargs)
+            kwargs["start_new_session"] = True
+        proc = subprocess.Popen(["node", str(SERVICE_RUNNER)], cwd=str(REPO_ROOT), **kwargs)
 
     save_state({
+        **state,
         "service_runner_pid": proc.pid,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
 
     log_step("PID", str(proc.pid))
     log_info(f"Logs: {log_path}")
-    log_info(f"Stop with: {get_python_cmd()} secretary.py --stop")
+    log_info("Stop with: python3 secretary.py --stop")
+
 
 def stop_infrastructure():
     try:
-        cmd = docker_compose_cmd()
         log_step("Docker", "stopping infrastructure...")
-        run_command(cmd + ["down"], timeout=60, check=False)
+        npm(["run", "stack:down"], timeout=60, check=False)
     except Exception as e:
         log_warn("Docker", f"stop issue: {e}")
 
+
 def stop_app_services():
     log_section("Stopping App Services")
-    for svc in APP_SERVICES:
-        port = svc["port"]
-        if PLATFORM == "windows":
-            ps_cmd = (
-                f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
-                f"ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"
-            )
-            run_command(["powershell", "-NoProfile", "-Command", ps_cmd], timeout=10, check=False)
-        elif PLATFORM in ("macos", "linux"):
-            try:
-                _, stdout, _ = run_command(["lsof", "-ti", f":{port}"], capture=True, timeout=5, check=False)
-                pids = [p for p in stdout.strip().split("\n") if p.strip().isdigit()]
-                for pid in pids:
-                    run_command(["kill", "-9", pid], timeout=5, check=False)
-            except Exception:
-                pass
-        else:
-            pass
-        log_step("Stop", f"{svc['name']} (port {port})")
-
-    if PLATFORM in ("macos", "linux"):
-        patterns = ["next dev", "apps/worker/dist/index.js", "run-stt.mjs", "run-tts.mjs"]
-        for pat in patterns:
-            try:
-                _, stdout, _ = run_command(["pgrep", "-f", pat], capture=True, timeout=5, check=False)
-                pids = [p for p in stdout.strip().split("\n") if p.strip().isdigit()]
-                for pid in pids:
-                    run_command(["kill", "-9", pid], timeout=5, check=False)
-            except Exception:
-                pass
-
-def stop_all():
+    # Kill service runner
     state = load_state()
     pid = state.get("service_runner_pid")
     if pid and is_pid_alive(pid):
         log_step("Stop", f"Service runner (PID {pid})")
-        if PLATFORM == "windows":
-            run_command(["taskkill", "/PID", str(pid), "/T", "/F"], timeout=10, check=False)
+        if sys.platform == "win32":
+            run(["taskkill", "/PID", str(pid), "/T", "/F"], timeout=10, check=False)
         else:
             try:
                 os.kill(pid, signal.SIGTERM)
@@ -638,28 +619,74 @@ def stop_all():
                     break
                 time.sleep(0.5)
             if is_pid_alive(pid):
-                log_warn("Stop", "Force killing service runner")
                 try:
                     os.kill(pid, signal.SIGKILL)
                 except Exception:
                     pass
                 time.sleep(0.5)
+
+    # Kill stray processes by port
+    for svc in APP_SERVICES:
+        port = svc["port"]
+        if sys.platform == "win32":
+            ps = (
+                f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
+                f"ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"
+            )
+            run(["powershell", "-NoProfile", "-Command", ps], timeout=10, check=False)
+        elif sys.platform != "win32":
+            try:
+                _, out, _ = run(["lsof", "-ti", f":{port}"], capture=True, timeout=5, check=False)
+                for p in out.strip().split("\n"):
+                    if p.strip().isdigit():
+                        run(["kill", "-9", p.strip()], timeout=5, check=False)
+            except Exception:
+                pass
+        log_step("Stop", f"{svc['name']} (port {port})")
+
+    # Kill stray processes by pattern
+    if sys.platform != "win32":
+        patterns = ["next dev", "apps/worker/dist/index.js", "run-stt.mjs", "run-tts.mjs"]
+        for pat in patterns:
+            try:
+                _, out, _ = run(["pgrep", "-f", pat], capture=True, timeout=5, check=False)
+                for p in out.strip().split("\n"):
+                    if p.strip().isdigit():
+                        run(["kill", "-9", p.strip()], timeout=5, check=False)
+            except Exception:
+                pass
+
+
+def stop_all():
     stop_app_services()
     stop_infrastructure()
     if STATE_FILE.exists():
         STATE_FILE.unlink()
     log_step("Stop", "complete")
 
+
+# =============================================================================
+# Status / Logs
+# =============================================================================
+
 def show_status():
     log_section("Secretary Status")
     log_step("Repo", str(REPO_ROOT))
     log_step(".env", "present" if ENV_PATH.exists() else "missing")
-    _, node_version, _ = check_node_version()
-    log_step("Node.js", node_version or "missing")
-    log_step("npm", "OK" if check_npm() else "missing")
-    docker_ok, _ = check_docker()
-    log_step("Docker", "OK" if docker_ok else "missing")
-    log_step("ffmpeg", "OK" if check_ffmpeg() else "missing")
+    if check_cmd("node"):
+        _, out, _ = run(["node", "--version"], capture=True, timeout=5)
+        log_step("Node.js", out.strip().lstrip("v"))
+    else:
+        log_step("Node.js", "missing")
+    log_step("npm", "OK" if check_cmd("npm") else "missing")
+    docker_ok, _ = check_prerequisites() if False else (False, [])
+    # Quick docker check
+    try:
+        run(["docker", "info"], capture=True, timeout=3)
+        log_step("Docker", "OK")
+    except Exception:
+        log_step("Docker", "missing")
+    log_step("ffmpeg", "OK" if check_cmd("ffmpeg", ["-version"]) else "missing")
 
     state = load_state()
     runner_pid = state.get("service_runner_pid")
@@ -689,40 +716,18 @@ def show_status():
         print(f"  {svc['name']:12} port {svc['port']} -> {status}{health}")
     print()
 
+
 def tail_logs():
     log_path = LOGS_DIR / "service-runner.log"
     if not log_path.exists():
         log_error("Logs", f"No log file found at {log_path}")
         return
     log_step("Logs", f"Tailing {log_path}")
-    if PLATFORM == "windows":
-        run_command(["powershell", "-NoProfile", "-Command", f"Get-Content -Path '{log_path}' -Wait -Tail 30"], check=False)
+    if sys.platform == "win32":
+        run(["powershell", "-NoProfile", "-Command", f"Get-Content -Path '{log_path}' -Wait -Tail 30"], check=False)
     else:
-        run_command(["tail", "-f", "-n", "30", str(log_path)], check=False)
+        run(["tail", "-f", "-n", "30", str(log_path)], check=False)
 
-# =============================================================================
-# Main Install Flow
-# =============================================================================
-
-def run_install(skip_if_exists: bool = False):
-    log_section("Prerequisites")
-    ok, errors = check_all_prerequisites(allow_missing_ffmpeg=True)
-    if not ok:
-        log_section("Missing Prerequisites")
-        for err in errors:
-            log_error("Missing", err)
-        print()
-        print_prerequisite_install_help()
-        sys.exit(1)
-
-    log_section("Install")
-    ensure_env_file()
-    ensure_storage_directories()
-    ensure_node_modules()
-    build_packages_and_worker()
-    setup_stt_venv()
-    setup_tts_venv()
-    log_section("Install Complete")
 
 # =============================================================================
 # Interactive Menu
@@ -734,24 +739,23 @@ def show_menu():
     runner_alive = runner_pid and is_pid_alive(runner_pid)
 
     print()
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╔══════════════════════════════════════════════════════╗{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║        Secretary AI - Control Panel                 ║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╠══════════════════════════════════════════════════════╣{Colors.RESET}")
-
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╔══════════════════════════════════════════════════════════╗{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║        Secretary AI - Control Panel                       ║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╠══════════════════════════════════════════════════════════╣{Colors.RESET}")
     status_line = f"{Colors.OKGREEN}● Running (PID {runner_pid}){Colors.RESET}" if runner_alive else f"{Colors.DIM}○ Stopped{Colors.RESET}"
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  Status: {status_line:<36}{Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╠══════════════════════════════════════════════════════╣{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [1]  Install & Build (deps, venvs, compile)          {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [2]  Start All  (background)                         {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [3]  Start All  (foreground / live logs)             {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [4]  Stop All    (kill processes, docker down)       {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [5]  Status      (health check all ports)             {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [6]  Logs        (tail service-runner output)        {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [7]  Full Reset  (stop + wipe runtime state)         {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [0]  Exit                                            {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╚══════════════════════════════════════════════════════╝{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  Status: {status_line:<42}{Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╠══════════════════════════════════════════════════════════╣{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [1]  Install & Build (deps, venvs, compile)              {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [2]  Start All  (background)                           {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [3]  Start All  (foreground / live logs)               {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [4]  Stop All    (kill processes, docker down)          {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [5]  Status      (health check all ports)               {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [6]  Logs        (tail service-runner output)           {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [7]  Full Reset  (stop + wipe runtime state)             {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [0]  Exit                                                {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ╚══════════════════════════════════════════════════════════╝{Colors.RESET}")
     print()
+
 
 def menu_loop():
     while True:
@@ -799,11 +803,8 @@ def menu_loop():
         elif choice == "7":
             try:
                 stop_all()
-                if RUNTIME_DIR.exists():
-                    log_step("Reset", "wiping runtime state files")
-                    for f in [STATE_FILE]:
-                        if f.exists():
-                            f.unlink()
+                if STATE_FILE.exists():
+                    STATE_FILE.unlink()
                 log_step("Reset", "complete")
             except Exception as e:
                 log_error("Reset failed", str(e))
@@ -813,6 +814,7 @@ def menu_loop():
         input(f"\n  {Colors.DIM}Press Enter to return to menu...{Colors.RESET}")
         print()
 
+
 # =============================================================================
 # CLI
 # =============================================================================
@@ -821,15 +823,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Secretary AI - Interactive Setup and Launch",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=f"""
+        epilog="""
 Examples:
-  {get_python_cmd()} secretary.py                  # Interactive menu
-  {get_python_cmd()} secretary.py --install        # Install & build only
-  {get_python_cmd()} secretary.py --start          # Start services in background
-  {get_python_cmd()} secretary.py --foreground   # Start services in foreground
-  {get_python_cmd()} secretary.py --stop           # Stop all services
-  {get_python_cmd()} secretary.py --status         # Check status
-  {get_python_cmd()} secretary.py --logs           # Tail service-runner log
+  python3 secretary.py                  # Interactive menu
+  python3 secretary.py --install        # Install & build only
+  python3 secretary.py --start          # Start services in background
+  python3 secretary.py --foreground     # Start services in foreground
+  python3 secretary.py --stop           # Stop all services
+  python3 secretary.py --status         # Check status
+  python3 secretary.py --logs           # Tail service-runner log
         """,
     )
     parser.add_argument("--install", action="store_true", help="Install dependencies and build only")
@@ -850,15 +852,7 @@ Examples:
     if not package_json.exists():
         log_error("Error", "package.json not found. Run this script from the repo root.")
         sys.exit(1)
-    try:
-        with open(package_json) as f:
-            data = json.load(f)
-        if data.get("name") != "secretary-first-assistant":
-            log_warn("Warning", f"Unexpected package name: {data.get('name')}")
-    except Exception:
-        pass
 
-    # Determine if we should show the menu or run flags
     has_flags = any([args.install, args.start, args.foreground, args.stop, args.status, args.logs])
     use_menu = args.menu or (not has_flags and sys.stdin.isatty() and sys.stdout.isatty())
 
@@ -895,12 +889,13 @@ Examples:
     run_db_migrations()
     start_app_services(foreground=False)
 
+
 if __name__ == "__main__":
     try:
         main()
     except subprocess.CalledProcessError as e:
         log_section("Fatal Error")
-        log_error("Command failed", f"{' '.join(str(x) for x in e.cmd)}")
+        log_error("Command failed", " ".join(str(x) for x in e.cmd))
         if e.stderr:
             log_error("stderr", e.stderr.strip()[:500])
         log_info("Fix the issue above and re-run the script.")
