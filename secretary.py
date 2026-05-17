@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Secretary AI - Interactive Setup, Launch & Control
-==================================================
+====================================================
 Cross-platform installer, process manager, and launcher for the
 Secretary-First Personal Assistant.
 
@@ -25,6 +25,7 @@ cross-platform Python entrypoint.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import shutil
@@ -33,10 +34,9 @@ import socket
 import subprocess
 import sys
 import time
-import urllib.error
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-
+from urllib.error import HTTPError, URLError
 
 # =============================================================================
 # Colors
@@ -54,7 +54,7 @@ class Colors:
     RESET = "\033[0m"
 
     @classmethod
-    def disable(cls):
+    def disable(cls) -> None:
         for attr in dir(cls):
             if not attr.startswith("_") and isinstance(getattr(cls, attr), str):
                 setattr(cls, attr, "")
@@ -63,26 +63,26 @@ if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
     Colors.disable()
 
 
-def log_section(title: str):
+def log_section(title: str) -> None:
     print(f"\n{Colors.BOLD}{Colors.OKCYAN}== {title} =={Colors.RESET}\n")
 
 
-def log_step(label: str, detail: str = ""):
+def log_step(label: str, detail: str = "") -> None:
     if detail:
         print(f"  [{Colors.OKGREEN}{label}{Colors.RESET}] {detail}")
     else:
         print(f"  [{Colors.OKGREEN}{label}{Colors.RESET}]")
 
 
-def log_warn(label: str, detail: str = ""):
+def log_warn(label: str, detail: str = "") -> None:
     print(f"  [{Colors.WARNING}{label}{Colors.RESET}] {detail}")
 
 
-def log_error(label: str, detail: str = ""):
+def log_error(label: str, detail: str = "") -> None:
     print(f"  [{Colors.FAIL}{label}{Colors.RESET}] {detail}")
 
 
-def log_info(detail: str):
+def log_info(detail: str) -> None:
     print(f"  {Colors.DIM}{detail}{Colors.RESET}")
 
 
@@ -126,34 +126,70 @@ APP_SERVICES = [
     {"name": "TTS", "port": 5002, "health_url": "http://127.0.0.1:5002/health", "timeout": 150},
 ]
 
+# =============================================================================
+# Process Tracking (zombie reaping)
+# =============================================================================
+
+_runner_proc: Optional[subprocess.Popen] = None
+
+
+def _reap_runner() -> None:
+    """Non-blocking poll to reap a dead service-runner and avoid zombies."""
+    global _runner_proc
+    if _runner_proc is not None:
+        _runner_proc.poll()
+
+
+atexit.register(_reap_runner)
+
 
 # =============================================================================
-# State / PID
+# Atomic State Management
 # =============================================================================
+
+def _default_state() -> dict:
+    return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
+
 
 def load_state() -> dict:
+    if not STATE_FILE.exists():
+        return _default_state()
     try:
-        with open(STATE_FILE) as f:
+        with open(STATE_FILE, "r") as f:
             data = json.load(f)
-            if data is None:
-                return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
             if not isinstance(data, dict):
-                return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
+                return _default_state()
             return data
-    except (FileNotFoundError, json.JSONDecodeError, IsADirectoryError):
-        return {"bootstrap": {}, "processes": {}, "lastStartedAt": None}
+    except (FileNotFoundError, json.JSONDecodeError, IsADirectoryError, PermissionError):
+        return _default_state()
 
 
-def save_state(data: dict):
+def save_state(data: dict) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(STATE_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    tmp = STATE_FILE.with_suffix(".tmp")
+    try:
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(STATE_FILE)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except (OSError, PermissionError):
+                pass
 
 
 def is_pid_alive(pid: int) -> bool:
     if not isinstance(pid, int) or pid <= 0:
         return False
+    # Reap our own tracked runner first to avoid zombie false-positives.
+    global _runner_proc
+    if _runner_proc is not None and _runner_proc.pid == pid:
+        if _runner_proc.poll() is not None:
+            return False
     if sys.platform == "win32":
         try:
             result = subprocess.run(
@@ -161,14 +197,13 @@ def is_pid_alive(pid: int) -> bool:
                 capture_output=True, text=True, timeout=5
             )
             return str(pid) in result.stdout
-        except Exception:
+        except (subprocess.TimeoutExpired, OSError):
             return False
     else:
         try:
             os.kill(pid, 0)
             return True
         except PermissionError:
-            # Process exists but we can't signal it
             return True
         except (OSError, ProcessLookupError):
             return False
@@ -205,20 +240,20 @@ def run(
     return result.returncode, stdout, stderr
 
 
-def run_stream(cmd: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None) -> subprocess.Popen:
+def run_stream(
+    cmd: List[str], cwd: Optional[Path] = None, env: Optional[Dict[str, str]] = None
+) -> subprocess.Popen:
     if cwd is None:
         cwd = REPO_ROOT
     merged_env = {**os.environ, **(env or {})}
     return subprocess.Popen(cmd, cwd=str(cwd), env=merged_env, stdout=sys.stdout, stderr=sys.stderr)
 
 
-def npm(args: List[str], capture: bool = False, timeout: Optional[int] = None, check: bool = True):
+def npm(
+    args: List[str], capture: bool = False, timeout: Optional[int] = None, check: bool = True
+):
     npm_cmd = "npm.cmd" if sys.platform == "win32" else "npm"
     return run([npm_cmd] + args, capture=capture, timeout=timeout, check=check)
-
-
-def node(args: List[str], capture: bool = False, timeout: Optional[int] = None, check: bool = True):
-    return run(["node"] + args, capture=capture, timeout=timeout, check=check)
 
 
 # =============================================================================
@@ -231,15 +266,13 @@ def check_cmd(command: str, args: Optional[List[str]] = None) -> bool:
     try:
         run([command] + args, capture=True, timeout=5, check=False)
         return True
-    except Exception:
+    except (subprocess.TimeoutExpired, OSError, FileNotFoundError):
         return False
 
 
 def check_prerequisites() -> Tuple[bool, List[str]]:
-    errors = []
-    warnings = []
+    errors: List[str] = []
 
-    # Python
     py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     if sys.version_info >= (3, 11):
         log_step("Python", f"{py_version} OK")
@@ -247,7 +280,6 @@ def check_prerequisites() -> Tuple[bool, List[str]]:
         errors.append(f"Python {py_version} is too old. Python 3.11+ is required.")
         log_error("Python", f"{py_version} FAIL (need 3.11+)")
 
-    # Node.js
     if check_cmd("node"):
         _, out, _ = run(["node", "--version"], capture=True, timeout=5)
         node_version = out.strip().lstrip("v")
@@ -264,30 +296,27 @@ def check_prerequisites() -> Tuple[bool, List[str]]:
         errors.append("Node.js is not installed or not on PATH.")
         log_error("Node.js", "FAIL")
 
-    # npm
     if check_cmd("npm"):
         log_step("npm", "OK")
     else:
         errors.append("npm is not installed or not on PATH.")
         log_error("npm", "FAIL")
 
-    # Docker
     docker_ok = False
     if check_cmd("docker"):
         try:
             run(["docker", "info"], capture=True, timeout=5)
-            # Check compose
             try:
                 run(["docker", "compose", "version"], capture=True, timeout=5)
                 docker_ok = True
-            except Exception:
+            except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError):
                 try:
                     run(["docker-compose", "--version"], capture=True, timeout=5)
                     docker_ok = True
-                except Exception:
+                except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError):
                     errors.append("Docker is installed but 'docker compose' is not available.")
                     log_error("Docker", "FAIL (no compose)")
-        except Exception:
+        except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError):
             errors.append("Docker daemon is not running. Start Docker Desktop.")
             log_error("Docker", "FAIL (daemon not running)")
     else:
@@ -297,21 +326,15 @@ def check_prerequisites() -> Tuple[bool, List[str]]:
     if docker_ok:
         log_step("Docker", "OK")
 
-    # ffmpeg (optional)
     if check_cmd("ffmpeg", ["-version"]):
         log_step("ffmpeg", "OK")
     else:
-        warnings.append("ffmpeg not found (optional, needed for voice-note features)")
-        log_warn("ffmpeg", "MISSING (optional)")
-
-    if warnings:
-        for w in warnings:
-            log_warn("Warning", w)
+        log_warn("ffmpeg", "MISSING (optional, needed for voice-note features)")
 
     return len(errors) == 0, errors
 
 
-def print_install_help():
+def print_install_help() -> None:
     log_section("How to Install Missing Prerequisites")
     plat = "macOS" if sys.platform == "darwin" else "Windows" if sys.platform == "win32" else "Linux"
     print(f"  Your platform: {Colors.BOLD}{plat}{Colors.RESET}")
@@ -346,7 +369,7 @@ def print_install_help():
 # Bootstrap Helpers
 # =============================================================================
 
-def ensure_env_file():
+def ensure_env_file() -> None:
     if ENV_PATH.exists():
         if ENV_PATH.is_dir():
             raise RuntimeError(f".env exists but is a directory: {ENV_PATH}")
@@ -359,16 +382,26 @@ def ensure_env_file():
 
 
 def _get_latest_mtime(path: Path) -> float:
-    stat = path.stat()
-    if not path.is_dir():
-        return stat.st_mtime
-    latest = stat.st_mtime
-    for entry in path.iterdir():
-        if entry.is_dir():
-            latest = max(latest, _get_latest_mtime(entry))
-        else:
-            latest = max(latest, entry.stat().st_mtime)
-    return latest
+    """Return the latest mtime of a file or any file under a directory tree."""
+    if not path.exists():
+        raise FileNotFoundError(path)
+    if path.is_file():
+        return path.stat().st_mtime
+    if path.is_dir():
+        latest = 0.0
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    fp = os.path.join(root, name)
+                    m = os.stat(fp).st_mtime
+                    if m > latest:
+                        latest = m
+                except (OSError, FileNotFoundError):
+                    continue
+        if latest > 0:
+            return latest
+        return path.stat().st_mtime
+    return 0.0
 
 
 def ensure_node_modules(state: dict) -> dict:
@@ -436,7 +469,7 @@ def ensure_speech_setup(state: dict) -> dict:
     return {**state, "bootstrap": bootstrap}
 
 
-def ensure_docker_stack():
+def ensure_docker_stack() -> None:
     log_step("Docker stack", "npm run stack:up")
     try:
         npm(["run", "stack:up"], timeout=120)
@@ -447,19 +480,22 @@ def ensure_docker_stack():
 
 
 def wait_for_port(host: str, port: int, timeout_sec: int = 60) -> bool:
-    deadline = time.time() + timeout_sec
-    while time.time() < deadline:
+    deadline = time.time() + max(0, timeout_sec)
+    while True:
         try:
-            with socket.create_connection((host, port), timeout=1):
-                return True
+            conn = socket.create_connection((host, port), timeout=1)
+            conn.close()
+            return True
         except (socket.timeout, ConnectionRefusedError, OSError):
+            if time.time() >= deadline:
+                return False
             time.sleep(1)
-    return False
 
 
 def wait_for_health(url: str, timeout_sec: int = 30, retries: int = 3) -> bool:
     import urllib.request
-    deadline = time.time() + timeout_sec
+
+    deadline = time.time() + max(0, timeout_sec)
     attempt = 0
     while time.time() < deadline and attempt < retries:
         try:
@@ -467,17 +503,17 @@ def wait_for_health(url: str, timeout_sec: int = 30, retries: int = 3) -> bool:
             with urllib.request.urlopen(req, timeout=2) as resp:
                 if resp.status in (200, 204, 404):
                     return True
-        except urllib.error.HTTPError as e:
+        except HTTPError as e:
             if e.code in (200, 204, 404):
                 return True
-        except Exception:
+        except (URLError, socket.timeout, OSError, ValueError):
             pass
         attempt += 1
         time.sleep(1)
     return False
 
 
-def wait_for_infrastructure():
+def wait_for_infrastructure() -> None:
     log_section("Waiting for Infrastructure")
     all_ready = True
     for svc in INFRA_SERVICES:
@@ -492,9 +528,9 @@ def wait_for_infrastructure():
         raise RuntimeError("Infrastructure services did not become ready in time.")
 
 
-def run_db_migrations(retries: int = 5, delay: int = 5):
-    if retries <= 0:
-        raise RuntimeError("run_db_migrations called with retries <= 0")
+def run_db_migrations(retries: int = 5, delay: int = 5) -> None:
+    if not isinstance(retries, int) or retries <= 0:
+        raise RuntimeError("run_db_migrations called with invalid retries (must be > 0)")
     log_step("DB", "running migrations...")
     for attempt in range(1, retries + 1):
         try:
@@ -512,7 +548,7 @@ def run_db_migrations(retries: int = 5, delay: int = 5):
 # Install Flow
 # =============================================================================
 
-def run_install():
+def run_install() -> None:
     log_section("Prerequisites")
     ok, errors = check_prerequisites()
     if not ok:
@@ -544,12 +580,20 @@ def run_install():
 # Start / Stop
 # =============================================================================
 
-def start_infrastructure():
+def _do_start(foreground: bool = False) -> None:
+    """Shared start sequence used by CLI and menu."""
+    start_infrastructure()
+    run_db_migrations()
+    start_app_services(foreground=foreground)
+
+
+def start_infrastructure() -> None:
     ensure_docker_stack()
     wait_for_infrastructure()
 
 
-def start_app_services(foreground: bool = False):
+def start_app_services(foreground: bool = False) -> None:
+    global _runner_proc
     if not SERVICE_RUNNER.exists():
         raise RuntimeError("Missing service-runner.mjs")
 
@@ -567,6 +611,7 @@ def start_app_services(foreground: bool = False):
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                proc.wait(timeout=2)
             stop_infrastructure()
             sys.exit(0)
         return
@@ -598,6 +643,7 @@ def start_app_services(foreground: bool = False):
         else:
             kwargs["start_new_session"] = True
         proc = subprocess.Popen(["node", str(SERVICE_RUNNER)], cwd=str(REPO_ROOT), **kwargs)
+        _runner_proc = proc
 
     save_state({
         **state,
@@ -610,76 +656,102 @@ def start_app_services(foreground: bool = False):
     log_info("Stop with: python3 secretary.py --stop")
 
 
-def stop_infrastructure():
+def _safe_kill(pid: int, timeout: float = 5.0) -> None:
+    """Send SIGTERM, wait, then SIGKILL if necessary. Handles PID reuse safely."""
+    if sys.platform == "win32":
+        run(["taskkill", "/PID", str(pid), "/T", "/F"], timeout=10, check=False)
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except PermissionError:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError, PermissionError):
+            pass
+        return
+    except (OSError, ProcessLookupError):
+        return
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not is_pid_alive(pid):
+            return
+        time.sleep(0.2)
+
+    if is_pid_alive(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+        time.sleep(0.3)
+
+
+def _kill_port_processes(port: int) -> None:
+    """Kill processes listening on a specific port."""
+    if sys.platform == "win32":
+        ps = (
+            f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
+            f"ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"
+        )
+        run(["powershell", "-NoProfile", "-Command", ps], timeout=10, check=False)
+        return
+
+    try:
+        _, out, _ = run(["lsof", "-ti", f":{port}"], capture=True, timeout=5, check=False)
+        for p in out.strip().split():
+            if p.isdigit():
+                _safe_kill(int(p), timeout=2.0)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+
+def _kill_by_patterns(patterns: List[str]) -> None:
+    """Kill stray processes matching pgrep patterns."""
+    if sys.platform == "win32":
+        return
+    for pat in patterns:
+        try:
+            _, out, _ = run(["pgrep", "-f", pat], capture=True, timeout=5, check=False)
+            for p in out.strip().split():
+                if p.isdigit():
+                    _safe_kill(int(p), timeout=2.0)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+
+def stop_app_services() -> None:
+    log_section("Stopping App Services")
+    state = load_state()
+    pid = state.get("service_runner_pid")
+    if pid and isinstance(pid, int) and pid > 0:
+        _safe_kill(pid)
+
+    for svc in APP_SERVICES:
+        port = svc["port"]
+        if wait_for_port("127.0.0.1", port, timeout_sec=1):
+            _kill_port_processes(port)
+        log_step("Stop", f"{svc['name']} (port {port})")
+
+    _kill_by_patterns(["next dev", "apps/worker/dist/index.js", "run-stt.mjs", "run-tts.mjs"])
+
+
+def stop_infrastructure() -> None:
     try:
         log_step("Docker", "stopping infrastructure...")
         npm(["run", "stack:down"], timeout=60, check=False)
-    except Exception as e:
+    except (subprocess.TimeoutExpired, OSError) as e:
         log_warn("Docker", f"stop issue: {e}")
 
 
-def stop_app_services():
-    log_section("Stopping App Services")
-    # Kill service runner
-    state = load_state()
-    pid = state.get("service_runner_pid")
-    if pid and is_pid_alive(pid):
-        log_step("Stop", f"Service runner (PID {pid})")
-        if sys.platform == "win32":
-            run(["taskkill", "/PID", str(pid), "/T", "/F"], timeout=10, check=False)
-        else:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except Exception:
-                pass
-            for _ in range(10):
-                if not is_pid_alive(pid):
-                    break
-                time.sleep(0.5)
-            if is_pid_alive(pid):
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except Exception:
-                    pass
-                time.sleep(0.5)
-
-    # Kill stray processes by port
-    for svc in APP_SERVICES:
-        port = svc["port"]
-        if sys.platform == "win32":
-            ps = (
-                f"Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue | "
-                f"ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }}"
-            )
-            run(["powershell", "-NoProfile", "-Command", ps], timeout=10, check=False)
-        elif sys.platform != "win32":
-            try:
-                _, out, _ = run(["lsof", "-ti", f":{port}"], capture=True, timeout=5, check=False)
-                for p in out.strip().split("\n"):
-                    if p.strip().isdigit():
-                        run(["kill", "-9", p.strip()], timeout=5, check=False)
-            except Exception:
-                pass
-        log_step("Stop", f"{svc['name']} (port {port})")
-
-    # Kill stray processes by pattern
-    if sys.platform != "win32":
-        patterns = ["next dev", "apps/worker/dist/index.js", "run-stt.mjs", "run-tts.mjs"]
-        for pat in patterns:
-            try:
-                _, out, _ = run(["pgrep", "-f", pat], capture=True, timeout=5, check=False)
-                for p in out.strip().split("\n"):
-                    if p.strip().isdigit():
-                        run(["kill", "-9", p.strip()], timeout=5, check=False)
-            except Exception:
-                pass
-
-
-def stop_all():
+def stop_all() -> None:
     stop_app_services()
     stop_infrastructure()
     if STATE_FILE.exists():
-        STATE_FILE.unlink()
+        try:
+            STATE_FILE.unlink()
+        except (OSError, PermissionError):
+            pass
     log_step("Stop", "complete")
 
 
@@ -687,7 +759,7 @@ def stop_all():
 # Status / Logs
 # =============================================================================
 
-def show_status():
+def show_status() -> None:
     log_section("Secretary Status")
     log_step("Repo", str(REPO_ROOT))
     log_step(".env", "present" if ENV_PATH.exists() else "missing")
@@ -700,7 +772,7 @@ def show_status():
     try:
         run(["docker", "info"], capture=True, timeout=3)
         log_step("Docker", "OK")
-    except Exception:
+    except (subprocess.TimeoutExpired, OSError, subprocess.CalledProcessError):
         log_step("Docker", "missing")
     log_step("ffmpeg", "OK" if check_cmd("ffmpeg", ["-version"]) else "missing")
 
@@ -708,7 +780,11 @@ def show_status():
     runner_pid = state.get("service_runner_pid")
     if runner_pid:
         alive = is_pid_alive(runner_pid)
-        status = f"PID {runner_pid} ({Colors.OKGREEN}running{Colors.RESET})" if alive else f"PID {runner_pid} ({Colors.DIM}dead{Colors.RESET})"
+        status = (
+            f"PID {runner_pid} ({Colors.OKGREEN}running{Colors.RESET})"
+            if alive
+            else f"PID {runner_pid} ({Colors.DIM}dead{Colors.RESET})"
+        )
         log_step("Service runner", status)
     else:
         log_step("Service runner", "not started")
@@ -733,14 +809,17 @@ def show_status():
     print()
 
 
-def tail_logs():
+def tail_logs() -> None:
     log_path = LOGS_DIR / "service-runner.log"
     if not log_path.exists():
         log_error("Logs", f"No log file found at {log_path}")
         return
     log_step("Logs", f"Tailing {log_path}")
     if sys.platform == "win32":
-        run(["powershell", "-NoProfile", "-Command", f"Get-Content -Path '{log_path}' -Wait -Tail 30"], check=False)
+        run(
+            ["powershell", "-NoProfile", "-Command", f"Get-Content -Path '{log_path}' -Wait -Tail 30"],
+            check=False,
+        )
     else:
         run(["tail", "-f", "-n", "30", str(log_path)], check=False)
 
@@ -749,7 +828,7 @@ def tail_logs():
 # Interactive Menu
 # =============================================================================
 
-def show_menu():
+def show_menu() -> None:
     state = load_state()
     runner_pid = state.get("service_runner_pid")
     runner_alive = runner_pid and is_pid_alive(runner_pid)
@@ -773,7 +852,53 @@ def show_menu():
     print()
 
 
-def menu_loop():
+def _menu_install() -> None:
+    try:
+        run_install()
+    except Exception as e:
+        log_error("Install failed", str(e))
+
+
+def _menu_start(foreground: bool) -> None:
+    try:
+        _do_start(foreground=foreground)
+    except Exception as e:
+        log_error("Start failed", str(e))
+
+
+def _menu_stop() -> None:
+    try:
+        stop_all()
+    except Exception as e:
+        log_error("Stop failed", str(e))
+
+
+def _menu_logs() -> None:
+    try:
+        tail_logs()
+    except Exception as e:
+        log_error("Logs failed", str(e))
+
+
+def _menu_reset() -> None:
+    try:
+        stop_all()
+        log_step("Reset", "complete")
+    except Exception as e:
+        log_error("Reset failed", str(e))
+
+
+def menu_loop() -> None:
+    dispatch = {
+        "1": _menu_install,
+        "2": lambda: _menu_start(False),
+        "3": lambda: _menu_start(True),
+        "4": _menu_stop,
+        "5": show_status,
+        "6": _menu_logs,
+        "7": _menu_reset,
+    }
+
     while True:
         show_menu()
         try:
@@ -785,49 +910,18 @@ def menu_loop():
         if choice == "0" or choice.lower() in ("q", "quit", "exit"):
             print(f"\n  {Colors.DIM}Goodbye.{Colors.RESET}\n")
             break
-        elif choice == "1":
-            try:
-                run_install()
-            except Exception as e:
-                log_error("Install failed", str(e))
-        elif choice == "2":
-            try:
-                start_infrastructure()
-                run_db_migrations()
-                start_app_services(foreground=False)
-            except Exception as e:
-                log_error("Start failed", str(e))
-        elif choice == "3":
-            try:
-                start_infrastructure()
-                run_db_migrations()
-                start_app_services(foreground=True)
-            except Exception as e:
-                log_error("Start failed", str(e))
-        elif choice == "4":
-            try:
-                stop_all()
-            except Exception as e:
-                log_error("Stop failed", str(e))
-        elif choice == "5":
-            show_status()
-        elif choice == "6":
-            try:
-                tail_logs()
-            except Exception as e:
-                log_error("Logs failed", str(e))
-        elif choice == "7":
-            try:
-                stop_all()
-                if STATE_FILE.exists():
-                    STATE_FILE.unlink()
-                log_step("Reset", "complete")
-            except Exception as e:
-                log_error("Reset failed", str(e))
+
+        handler = dispatch.get(choice)
+        if handler:
+            handler()
         else:
             log_warn("Invalid", f"'{choice}' is not a valid option")
 
-        input(f"\n  {Colors.DIM}Press Enter to return to menu...{Colors.RESET}")
+        try:
+            input(f"\n  {Colors.DIM}Press Enter to return to menu...{Colors.RESET}")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
         print()
 
 
@@ -835,7 +929,7 @@ def menu_loop():
 # CLI
 # =============================================================================
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Secretary AI - Interactive Setup and Launch",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -878,32 +972,19 @@ Examples:
 
     if args.status:
         show_status()
-        return
-    if args.stop:
+    elif args.stop:
         stop_all()
-        return
-    if args.logs:
+    elif args.logs:
         tail_logs()
-        return
-    if args.install:
+    elif args.install:
         run_install()
-        return
-    if args.foreground:
-        start_infrastructure()
-        run_db_migrations()
-        start_app_services(foreground=True)
-        return
-    if args.start:
-        start_infrastructure()
-        run_db_migrations()
+    elif args.foreground:
+        _do_start(foreground=True)
+    elif args.start:
+        _do_start(foreground=False)
+    else:
+        run_install()
         start_app_services(foreground=False)
-        return
-
-    # Default: install + start (background)
-    run_install()
-    start_infrastructure()
-    run_db_migrations()
-    start_app_services(foreground=False)
 
 
 if __name__ == "__main__":
