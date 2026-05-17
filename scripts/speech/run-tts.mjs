@@ -49,7 +49,7 @@ if (!existsSync(pythonPath)) {
 const port = process.env.TTS_PORT ?? "5002";
 const child = spawn(
   pythonPath,
-  ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", port, "--app-dir", appDir],
+  ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", port, "--app-dir", appDir, "--no-access-log"],
   {
     cwd: root,
     stdio: "inherit",

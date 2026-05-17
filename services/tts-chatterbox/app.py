@@ -129,6 +129,7 @@ def generate_speech(text: str, voice: str = "af") -> tuple[bytes, int, int]:
     
     return buffer.getvalue(), duration_ms, sample_rate
 
+@app.get("/health")
 @app.get("/health/live")
 def live():
     return {"ok": True, "service": "tts"}

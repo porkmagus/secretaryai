@@ -53,6 +53,7 @@ def get_model() -> WhisperModel:
     return _model
 
 
+@app.get("/health")
 @app.get("/health/live")
 def live() -> dict[str, object]:
     return {
