@@ -40,7 +40,7 @@ const ALLOWED_DOWNLOAD_HOSTS: readonly string[] = process.env.ALLOWED_DOWNLOAD_H
 function assertDownloadHostAllowlistConfigured(): void {
   if (ALLOWED_DOWNLOAD_HOSTS.length === 0) {
     throw new Error(
-      "Download URL host allowlist is not configured. Set ALLOWED_DOWNLOAD_HOSTS to a comma-separated list of allowed hostnames.",
+      "SECURITY: Download URL host allowlist is not configured. Set ALLOWED_DOWNLOAD_HOSTS to a comma-separated list of allowed hostnames before using download_url.",
     );
   }
 }
