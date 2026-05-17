@@ -777,7 +777,7 @@ export function DeskShell() {
     }
   }, []);
 
-  async function reportDeskPresence() {
+  const reportDeskPresence = useCallback(async () => {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") {
       return;
     }
@@ -802,7 +802,7 @@ export function DeskShell() {
     } catch {
       // Presence is best-effort.
     }
-  }
+  }, []);
 
   const loadPendingApprovals = useCallback(async (nextConversationId: string) => {
     try {
@@ -929,12 +929,12 @@ export function DeskShell() {
     };
   }, [conversationId, loadPendingApprovals]);
 
-  function resetConversationContext() {
+  const resetConversationContext = useCallback(() => {
     setDeskPortraitError(null);
     setDeskVoiceError(null);
-  }
+  }, []);
 
-  function startFreshConversation() {
+  const startFreshConversation = useCallback(() => {
     stopMessagePlayback();
     setConversationId(undefined);
     setConversationSeedMessages(starterMessages);
@@ -942,7 +942,7 @@ export function DeskShell() {
     setPendingApprovals([]);
     hasLoadedHistory.current = null;
     resetConversationContext();
-  }
+  }, [stopMessagePlayback, starterMessages, resetConversationContext]);
 
   const openConversation = useCallback(
     async (nextConversationId: string) => {
