@@ -1,0 +1,55 @@
+    secureJsonParse(input);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// src/parse-json-event-stream.ts
+import {
+  EventSourceParserStream
+} from "eventsource-parser/stream";
+function parseJsonEventStream({
+  stream,
+  schema
+}) {
+  return stream.pipeThrough(new TextDecoderStream()).pipeThrough(new EventSourceParserStream()).pipeThrough(
+    new TransformStream({
+      async transform({ data }, controller) {
+        if (data === "[DONE]") {
+          return;
+        }
+        controller.enqueue(await safeParseJSON({ text: data, schema }));
+      }
+    })
+  );
+}
+
+// src/parse-provider-options.ts
+import { InvalidArgumentError as InvalidArgumentError2 } from "@ai-sdk/provider";
+async function parseProviderOptions({
+  provider,
+  providerOptions,
+  schema
+}) {
+  if ((providerOptions == null ? void 0 : providerOptions[provider]) == null) {
+    return void 0;
+  }
+  const parsedProviderOptions = await safeValidateTypes({
+    value: providerOptions[provider],
+    schema
+  });
+  if (!parsedProviderOptions.success) {
+    throw new InvalidArgumentError2({
+      argument: "providerOptions",
+      message: `invalid ${provider} provider options`,
+      cause: parsedProviderOptions.error
+    });
+  }
+  return parsedProviderOptions.value;
+}
+
+// src/post-to-api.ts
+import { APICallError as APICallError3 } from "@ai-sdk/provider";
+var getOriginalFetch2 = () => globalThis.fetch;
+var
