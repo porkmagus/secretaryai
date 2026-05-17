@@ -2,6 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "preserve",
+    "baseUrl": "./",
+    "paths": {
+      "@lib/*": ["app/activity/lib/*"]
+    },
     "plugins": [
       {
         "name": "next"
