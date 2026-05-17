@@ -32,8 +32,18 @@ import {
 } from "./utils.js";
 
 const ALLOWED_DOWNLOAD_HOSTS: readonly string[] = process.env.ALLOWED_DOWNLOAD_HOSTS
-  ? process.env.ALLOWED_DOWNLOAD_HOSTS.split(",").map((h) => h.trim().toLowerCase())
-  : ["example.com"];
+  ? process.env.ALLOWED_DOWNLOAD_HOSTS.split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter((entry) => entry.length > 0)
+  : [];
+
+function assertDownloadHostAllowlistConfigured(): void {
+  if (ALLOWED_DOWNLOAD_HOSTS.length === 0) {
+    throw new Error(
+      "Download URL host allowlist is not configured. Set ALLOWED_DOWNLOAD_HOSTS to a comma-separated list of allowed hostnames.",
+    );
+  }
+}
 
 function sanitizeFileNamePart(value: string) {
   return (
@@ -46,6 +56,7 @@ function sanitizeFileNamePart(value: string) {
 }
 
 function assertAllowedDownloadHost(hostname: string): void {
+  assertDownloadHostAllowlistConfigured();
   const normalized = hostname.trim().toLowerCase();
   const allowed = ALLOWED_DOWNLOAD_HOSTS.some(
     (entry) => entry && (normalized === entry || normalized.endsWith(`.${entry}`)),
