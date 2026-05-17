@@ -1,4 +1,4 @@
-# HamCult - Secretary-First Personal Assistant
+# SecretaryAI - Secretary-First Personal Assistant
 
 A self-hosted, single-user Secretary-first assistant system with a Next.js Desk UI, Fastify worker runtime, local STT/TTS speech services, and integrated memory, tools, and channel support.
 
