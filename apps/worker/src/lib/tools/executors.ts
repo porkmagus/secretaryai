@@ -40,6 +40,78 @@ function sanitizeFileNamePart(value: string) {
   );
 }
 
+function parseAndValidateExternalUrl(rawUrl: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Download URL must be a valid absolute URL.");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Only HTTP(S) download URLs are allowed.");
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error("Download URL must not include credentials.");
+  }
+
+  if (isPrivateOrLocalHost(parsed.hostname)) {
+    throw new Error("Download URL targets a non-public host, which is not allowed.");
+  }
+
+  return parsed;
+}
+
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+
+  if (!host) {
+    return true;
+  }
+
+  if (host === "localhost" || host.endsWith(".localhost")) {
+    return true;
+  }
+
+  // IPv6 literals in URLs may be bracketed.
+  const normalized = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+
+  // Common local/unsafe IPv6 forms.
+  if (
+    normalized === "::1" ||
+    normalized === "::" ||
+    normalized.startsWith("fe80:") ||
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd")
+  ) {
+    return true;
+  }
+
+  // Basic IPv4 literal detection and private/special range checks.
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalized)) {
+    const parts = normalized.split(".").map((part) => Number(part));
+    if (parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
+      return true;
+    }
+
+    const [a, b] = parts;
+    if (
+      a === 10 ||
+      a === 127 ||
+      a === 0 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function executeCrawl4aiLight(config: AppConfig, url: string) {
   if (!config.crawl4ai?.baseUrl) {
     throw new Error("Crawl4AI is not configured.");
@@ -294,7 +366,10 @@ export async function executeDownloadUrl(requestJson: Record<string, unknown>) {
     throw new Error("Download URL is required.");
   }
 
-  const response = await fetch(url, { cache: "no-store" });
+  const parsedUrl = parseAndValidateExternalUrl(url);
+  const normalizedUrl = parsedUrl.toString();
+
+  const response = await fetch(normalizedUrl, { cache: "no-store", redirect: "error" });
   if (!response.ok) {
     throw new Error(`Download failed with ${response.status}.`);
   }
@@ -308,7 +383,7 @@ export async function executeDownloadUrl(requestJson: Record<string, unknown>) {
     typeof requestJson.path === "string" && requestJson.path.trim()
       ? requestJson.path.trim()
       : null;
-  const fallbackName = basename(new URL(url).pathname) || `download-${Date.now()}`;
+  const fallbackName = basename(parsedUrl.pathname) || `download-${Date.now()}`;
   const filename = sanitizeFileNamePart(customPath ? basename(customPath) : fallbackName);
   const relativePath = customPath ?? `${DOWNLOADS_DIR}/${filename}`;
   const targetPath = resolveWorkspacePath(relativePath);
@@ -319,9 +394,9 @@ export async function executeDownloadUrl(requestJson: Record<string, unknown>) {
     responseJson: {
       bytes: bytes.byteLength,
       path: relativePath,
-      url,
+      url: normalizedUrl,
     },
-    text: `Downloaded ${url} to ${relativePath}.`,
+    text: `Downloaded ${normalizedUrl} to ${relativePath}.`,
   };
 }
 
