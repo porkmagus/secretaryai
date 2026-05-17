@@ -588,7 +588,15 @@ export async function listInferenceModels(
     case "openai_compatible":
       if (
         selectedProvider.id === "ollama_cloud" &&
-        selectedProvider.baseUrl?.includes("ollama.com")
+        (() => {
+          if (!selectedProvider.baseUrl) return false;
+          try {
+            const hostname = new URL(selectedProvider.baseUrl).hostname;
+            return hostname === "ollama.com" || hostname.endsWith(".ollama.com");
+          } catch {
+            return false;
+          }
+        })()
       ) {
         return listOllamaModels({
           providerId: selectedProvider.id,
