@@ -46,11 +46,15 @@ export async function ensureSpeechStorageLayout() {
 }
 
 export function normalizeSpeechStorageKey(storageKey: string) {
-  return storageKey
-    .trim()
-    .replace(/[\\/]+/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\.\.(?:\/|\\)/g, "");
+  let normalized = storageKey.trim().replace(/[\\/]+/g, "/").replace(/^\/+/, "");
+
+  let previous: string;
+  do {
+    previous = normalized;
+    normalized = normalized.replace(/\.\.(?:\/|$)/g, "");
+  } while (normalized !== previous);
+
+  return normalized;
 }
 
 function buildSpeechStorageKey(parts: string[]) {
