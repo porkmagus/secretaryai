@@ -31,6 +31,20 @@ import {
   resolveWorkspacePath,
 } from "./utils.js";
 
+const ALLOWED_DOWNLOAD_HOSTS: readonly string[] = process.env.ALLOWED_DOWNLOAD_HOSTS
+  ? process.env.ALLOWED_DOWNLOAD_HOSTS.split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter((entry) => entry.length > 0)
+  : [];
+
+function assertDownloadHostAllowlistConfigured(): void {
+  if (ALLOWED_DOWNLOAD_HOSTS.length === 0) {
+    throw new Error(
+      "Configuration Error: ALLOWED_DOWNLOAD_HOSTS environment variable must be set to a comma-separated list of allowed hostnames to enable download_url.",
+    );
+  }
+}
+
 function sanitizeFileNamePart(value: string) {
   return (
     value
@@ -39,6 +53,17 @@ function sanitizeFileNamePart(value: string) {
       .replace(/^-+|-+$/g, "")
       .slice(0, 72) || `item-${Date.now()}`
   );
+}
+
+function assertAllowedDownloadHost(hostname: string): void {
+  assertDownloadHostAllowlistConfigured();
+  const normalized = hostname.trim().toLowerCase();
+  const allowed = ALLOWED_DOWNLOAD_HOSTS.some(
+    (entry) => normalized === entry || normalized.endsWith(`.${entry}`),
+  );
+  if (!allowed) {
+    throw new Error("Download URL host is not in the allowed list.");
+  }
 }
 
 function parseAndValidateExternalUrl(rawUrl: string): URL {
@@ -424,6 +449,7 @@ export async function executeDownloadUrl(requestJson: Record<string, unknown>) {
   }
 
   const parsedUrl = parseAndValidateExternalUrl(url);
+  assertAllowedDownloadHost(parsedUrl.hostname);
   await assertPublicResolvedHost(parsedUrl.hostname);
   const normalizedUrl = parsedUrl.toString();
 
