@@ -9,7 +9,7 @@ One-liner usage (no flags = interactive menu):
     python3 secretary.py
 
 Flag usage (CI / scripts):
-    python3 secretary.py --install       # Install & build only
+    python3 secretary.py --install        # Install & build only
     python3 secretary.py --start          # Start services in background
     python3 secretary.py --foreground     # Start services in foreground
     python3 secretary.py --stop           # Stop all services + Docker
@@ -835,19 +835,21 @@ def show_menu() -> None:
 
     print()
     print(f"{Colors.BOLD}{Colors.OKCYAN}  ╔══════════════════════════════════════════════════════════╗{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║        Secretary AI - Control Panel                       ║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║        Secretary AI - Control Panel                      ║{Colors.RESET}")
     print(f"{Colors.BOLD}{Colors.OKCYAN}  ╠══════════════════════════════════════════════════════════╣{Colors.RESET}")
-    status_line = f"{Colors.OKGREEN}● Running (PID {runner_pid}){Colors.RESET}" if runner_alive else f"{Colors.DIM}○ Stopped{Colors.RESET}"
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  Status: {status_line:<42}{Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    status_text = f"● Running (PID {runner_pid})" if runner_alive else "○ Stopped"
+    status_line = f"{Colors.OKGREEN}{status_text}{Colors.RESET}" if runner_alive else f"{Colors.DIM}{status_text}{Colors.RESET}"
+    padding = ' ' * (30 - len(status_text))
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}   Status:                 {status_line}{padding} {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
     print(f"{Colors.BOLD}{Colors.OKCYAN}  ╠══════════════════════════════════════════════════════════╣{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [1]  Install & Build (deps, venvs, compile)            {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [2]  Start All  (background)                           {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [3]  Start All  (foreground / live logs)               {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [4]  Stop All    (kill processes, docker down)         {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [5]  Status      (health check all ports)              {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [6]  Logs        (tail service-runner output)          {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [7]  Full Reset  (stop + wipe runtime state)           {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
-    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [0]  Exit                                              {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [1]  Install & Build    (deps, venvs, compile)          {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [2]  Start All          (background)                    {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [3]  Start All          (foreground / live logs)        {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [4]  Stop All           (kill processes, docker down)   {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [5]  Status             (health check all ports)        {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [6]  Logs               (tail service-runner output)    {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [7]  Full Reset         (stop + wipe runtime state)     {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
+    print(f"{Colors.BOLD}{Colors.OKCYAN}  ║{Colors.RESET}  [0]  Exit                                               {Colors.BOLD}{Colors.OKCYAN}║{Colors.RESET}")
     print(f"{Colors.BOLD}{Colors.OKCYAN}  ╚══════════════════════════════════════════════════════════╝{Colors.RESET}")
     print()
 
