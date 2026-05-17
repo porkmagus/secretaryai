@@ -48,7 +48,7 @@ function sanitizeFileNamePart(value: string) {
 function assertAllowedDownloadHost(hostname: string): void {
   const normalized = hostname.trim().toLowerCase();
   const allowed = ALLOWED_DOWNLOAD_HOSTS.some(
-    (entry) => normalized === entry || normalized.endsWith(`.${entry}`),
+    (entry) => entry && (normalized === entry || normalized.endsWith(`.${entry}`)),
   );
   if (!allowed) {
     throw new Error("Download URL host is not in the allowed list.");
