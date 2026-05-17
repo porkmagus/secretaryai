@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { lookup } from "node:dns/promises";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import type { AppConfig } from "@secretary/config";
@@ -110,6 +111,62 @@ function isPrivateOrLocalHost(hostname: string): boolean {
   }
 
   return false;
+}
+
+function isPrivateOrLocalIp(address: string): boolean {
+  const value = address.trim().toLowerCase();
+  if (!value) {
+    return true;
+  }
+
+  if (value.includes(":")) {
+    return (
+      value === "::1" ||
+      value === "::" ||
+      value.startsWith("fc") ||
+      value.startsWith("fd") ||
+      value.startsWith("fe80:") ||
+      value.startsWith("::ffff:127.") ||
+      value.startsWith("::ffff:10.") ||
+      value.startsWith("::ffff:192.168.") ||
+      /^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(value)
+    );
+  }
+
+  if (value === "0.0.0.0") {
+    return true;
+  }
+
+  if (
+    value.startsWith("10.") ||
+    value.startsWith("127.") ||
+    value.startsWith("169.254.") ||
+    value.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(value)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+async function assertPublicResolvedHost(hostname: string): Promise<void> {
+  let resolved;
+  try {
+    resolved = await lookup(hostname, { all: true, verbatim: true });
+  } catch {
+    throw new Error("Download URL hostname could not be resolved.");
+  }
+
+  if (!resolved.length) {
+    throw new Error("Download URL hostname did not resolve to any address.");
+  }
+
+  for (const entry of resolved) {
+    if (isPrivateOrLocalIp(entry.address)) {
+      throw new Error("Download URL resolves to a non-public address, which is not allowed.");
+    }
+  }
 }
 
 export async function executeCrawl4aiLight(config: AppConfig, url: string) {
@@ -367,6 +424,7 @@ export async function executeDownloadUrl(requestJson: Record<string, unknown>) {
   }
 
   const parsedUrl = parseAndValidateExternalUrl(url);
+  await assertPublicResolvedHost(parsedUrl.hostname);
   const normalizedUrl = parsedUrl.toString();
 
   const response = await fetch(normalizedUrl, { cache: "no-store", redirect: "error" });
