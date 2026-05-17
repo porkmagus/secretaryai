@@ -31,9 +31,9 @@ import {
   resolveWorkspacePath,
 } from "./utils.js";
 
-const ALLOWED_DOWNLOAD_HOSTS = [
-  "example.com",
-] as const;
+const ALLOWED_DOWNLOAD_HOSTS: readonly string[] = process.env.ALLOWED_DOWNLOAD_HOSTS
+  ? process.env.ALLOWED_DOWNLOAD_HOSTS.split(",").map((h) => h.trim().toLowerCase())
+  : ["example.com"];
 
 function sanitizeFileNamePart(value: string) {
   return (
