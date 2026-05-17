@@ -31,6 +31,10 @@ import {
   resolveWorkspacePath,
 } from "./utils.js";
 
+const ALLOWED_DOWNLOAD_HOSTS = [
+  "example.com",
+] as const;
+
 function sanitizeFileNamePart(value: string) {
   return (
     value
@@ -39,6 +43,16 @@ function sanitizeFileNamePart(value: string) {
       .replace(/^-+|-+$/g, "")
       .slice(0, 72) || `item-${Date.now()}`
   );
+}
+
+function assertAllowedDownloadHost(hostname: string): void {
+  const normalized = hostname.trim().toLowerCase();
+  const allowed = ALLOWED_DOWNLOAD_HOSTS.some(
+    (entry) => normalized === entry || normalized.endsWith(`.${entry}`),
+  );
+  if (!allowed) {
+    throw new Error("Download URL host is not in the allowed list.");
+  }
 }
 
 function parseAndValidateExternalUrl(rawUrl: string): URL {
@@ -424,6 +438,7 @@ export async function executeDownloadUrl(requestJson: Record<string, unknown>) {
   }
 
   const parsedUrl = parseAndValidateExternalUrl(url);
+  assertAllowedDownloadHost(parsedUrl.hostname);
   await assertPublicResolvedHost(parsedUrl.hostname);
   const normalizedUrl = parsedUrl.toString();
 
