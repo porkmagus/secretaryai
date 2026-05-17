@@ -84,7 +84,7 @@ If you prefer to do it by hand:
    - `npm run dev:web`
    - `npm run dev:worker`
    - `npm run dev:stt`
-   - `npm run dev:tts`
+   - `npm run dev:tts`n
 
 ## Deployment Package
 
