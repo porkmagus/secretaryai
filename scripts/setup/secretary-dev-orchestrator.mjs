@@ -106,12 +106,21 @@ function parseArgs(argv) {
   };
 }
 
-function logSection(_title) {}
+function logSection(title) {
+  console.log(`\n== ${title} ==`);
+}
 
-function logStep(_label, _detail = null) {}
+function logStep(label, detail = null) {
+  if (detail) {
+    console.log(`  [${label}] ${detail}`);
+  } else {
+    console.log(`  [${label}]`);
+  }
+}
 
-function logVerbose(verbose, _message) {
+function logVerbose(verbose, message) {
   if (verbose) {
+    console.log(`  (verbose) ${message}`);
   }
 }
 
@@ -483,6 +492,11 @@ async function ensureWorkerBuild(state, { dryRun }) {
         workerSourceMtimeMs: sourceMtimeMs,
       },
     };
+  }
+
+  logStep("Packages build", "npm run build:packages");
+  if (!dryRun) {
+    await runNpmArgs(["run", "build:packages"]);
   }
 
   logStep("Worker build", "npm run build --workspace @secretary/worker");
@@ -984,13 +998,15 @@ async function startCommand({ dryRun, verbose }) {
       activeProcesses.delete("service-runner");
 
       if (code !== 0) {
+        console.error(`Service runner exited with code ${code}`);
       }
 
       // Clean up state
-      const state = readState();
-      writeState({
-        ...state,
-        processes: {},
+      readState().then((state) => {
+        writeState({
+          ...state,
+          processes: {},
+        });
       });
 
       resolvePromise();
@@ -1120,6 +1136,7 @@ async function main() {
   }
 }
 
-void main().catch((_error) => {
+void main().catch((error) => {
+  console.error("Error:", error.message || error);
   process.exit(1);
 });

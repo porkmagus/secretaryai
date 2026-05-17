@@ -3,8 +3,8 @@ import type {
   AgentJobDetailResponse,
   AgentJobRequirementRecord,
 } from "@secretary/core-runtime";
-import { formatTimestamp } from "@lib/presenters";
-import { EmptyState, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "@lib/ui";
+import { formatTimestamp } from "../../../lib/presenters";
+import { EmptyState, NoticeBanner, StatCard, StatGrid, SurfaceCard } from "../../../lib/ui";
 import { ArtifactContent, JobStatusPill } from "./job-status-pill";
 
 type JobDetailPanelProps = {

@@ -36,8 +36,8 @@ function run(command, args) {
 
 async function main() {
   const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "py" : "python");
-  // Use -3.13 on Windows, or let PYTHON env var override
-  const pythonArgs = process.platform === "win32" && !process.env.PYTHON ? ["-3.13"] : [];
+  // Use -3 on Windows, or let PYTHON env var override
+  const pythonArgs = process.platform === "win32" && !process.env.PYTHON ? ["-3"] : [];
 
   if (!existsSync(resolveVenvPython())) {
     await run(pythonCommand, [...pythonArgs, "-m", "venv", venvDir]);

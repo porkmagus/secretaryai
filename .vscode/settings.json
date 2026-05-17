@@ -15,5 +15,8 @@
   "[json]": {
     "editor.defaultFormatter": "biomejs.biome"
   },
-  "biome.lspBin": "./node_modules/@biomejs/biome/bin/biome"
+  "biome.lspBin": "./node_modules/@biomejs/biome/bin/biome",
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }

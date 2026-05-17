@@ -74,8 +74,11 @@ function log(service, message, isError = false) {
 }
 
 function showBanner() {
-  for (const _service of services) {
+  console.log("\n=== Secretary Development Services ===\n");
+  for (const service of services) {
+    console.log(`  ${service.color}${service.label}${RESET} (port ${service.port})`);
   }
+  console.log("");
 }
 
 function normalizeWindowsSpawn(command, args) {
