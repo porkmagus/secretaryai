@@ -17,7 +17,28 @@ This repository contains a polished Phase 1 through Phase 6 checkpoint for a sel
 
 ## Getting Started
 
+### Quick Start (Any Platform)
+
+The fastest way to get running from a fresh clone:
+
+```bash
+python secretary.py
+```
+
+That's it. The script checks prerequisites, installs dependencies, builds the project, starts Docker infrastructure, runs database migrations, and launches all services.
+
+```bash
+python secretary.py                  # Full install + start in background
+python secretary.py --install   # Install and build only
+python secretary.py --start     # Start services in background (skip install)
+python secretary.py --foreground     # Start services in foreground (blocks terminal)
+python secretary.py --stop           # Stop all services and Docker stack
+python secretary.py --status         # Check what's running
+```
+
 ### Fastest Windows Start
+
+If you prefer the native Windows batch workflow:
 
 First time only:
 
