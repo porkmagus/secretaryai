@@ -51,16 +51,17 @@
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
-    "ai": "^6.0.141",
-    "ai-sdk-provider-opencode-sdk": "^3.0.1"
+    "ai": "^6.0.184",
+    "ai-sdk-provider-opencode-sdk": "^3.0.2"
   },
   "optionalDependencies": {
-    "@esbuild/linux-x64": "^0.27.4"
+    "@esbuild/linux-x64": "^0.27.7"
   },
   "devDependencies": {
     "c8": "^11.0.0"
   },
   "volta": {
-    "node": "24.15.0"
+    "node": "24.15.0",
+    "npm": "11.14.1"
   }
 }
