@@ -5,7 +5,7 @@ import type {
   OnboardingStatusResponse,
   SystemHealthResponse,
 } from "@secretary/core-runtime";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchJson } from "../lib/fetch-json";
 import {
   AppPage,
@@ -60,7 +60,7 @@ export function OverviewConsole() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunningHeartbeat, setIsRunningHeartbeat] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     setError(null);
 
     try {
@@ -83,11 +83,10 @@ export function OverviewConsole() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void load();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable via setState only
   }, [load]);
 
   const readiness = useMemo(() => {

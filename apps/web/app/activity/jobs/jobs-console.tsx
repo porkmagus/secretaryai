@@ -116,7 +116,6 @@ function ArtifactContent({ artifact }: { artifact: AgentJobArtifactRecord }) {
         >
           Open image artifact
         </a>
-        {/* biome-ignore lint/performance/noImgElement: dynamic artifact image with unknown dimensions */}
         <img
           src={fileHref}
           alt={artifact.label}

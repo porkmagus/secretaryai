@@ -161,7 +161,6 @@ export function VoiceConsole() {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: refreshCore is stable via setState closures
   }, [previewUrl]);
 
   async function refreshCore() {

@@ -23,7 +23,7 @@ import type {
   UpdateInferenceSettingsRequest,
   UpdatePersonaSettingsRequest,
 } from "@secretary/core-runtime";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionRow,
   AppPage,
@@ -233,7 +233,7 @@ export function PersonaConsole({
   const showSecretary = mode !== "general";
   const isLoaded = Boolean(data && draft && (!showGeneral || (inference && inferenceDraft)));
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const [personaResponse, inferenceResponse] = await Promise.all([
         fetch("/api/persona", { cache: "no-store" }),
@@ -286,7 +286,7 @@ export function PersonaConsole({
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load persona.");
     }
-  }
+  }, []);
 
   useEffect(() => {
     void load();

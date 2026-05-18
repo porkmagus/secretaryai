@@ -170,7 +170,6 @@ export function LoadingSurface({
     <SurfaceCard tone="dark" title={title} description={description}>
       <div className="loading-shell" aria-hidden="true">
         {Array.from({ length: blocks }).map((_, index) => (
-          /* biome-ignore lint/suspicious/noArrayIndexKey: loading skeleton items are static and never reordered */
           <div key={index} className="loading-shell__block">
             <span className="loading-shell__line loading-shell__line--short" />
             <span className="loading-shell__line" />

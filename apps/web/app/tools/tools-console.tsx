@@ -7,7 +7,7 @@ import type {
   ToolListResponse,
   ToolRecord,
 } from "@secretary/core-runtime";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppPage,
   EmptyState,
@@ -89,7 +89,7 @@ export function ToolsConsole() {
   const [filterToolKey, setFilterToolKey] = useState("all");
   const [filterState, setFilterState] = useState<ExecutionFilter>("all");
 
-  async function load() {
+  const load = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -147,11 +147,10 @@ export function ToolsConsole() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void load();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: load is stable via setState only
   }, [load]);
 
   async function save(tool: ToolRecord) {

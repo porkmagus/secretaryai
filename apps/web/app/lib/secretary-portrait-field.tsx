@@ -189,7 +189,6 @@ export function SecretaryPortraitField({
 
       {isOpen ? (
         <>
-          {/* biome-ignore lint/a11y/useSemanticElements: backdrop overlay is not interactive content */}
           <div
             style={{
               position: "fixed",

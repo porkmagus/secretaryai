@@ -98,7 +98,6 @@ export function AdminSettingsConsole() {
 
   useEffect(() => {
     void loadOverview();
-    // biome-ignore lint/correctness/useExhaustiveDependencies: loadOverview is stable via setState only
   }, [loadOverview]);
 
   async function runAction(action: AdminMaintenanceAction) {
