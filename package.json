@@ -71,5 +71,8 @@
     "*.{ts,tsx}": "biome check --write --no-errors-on-unmatched",
     "*.{js,mjs}": "biome check --write --no-errors-on-unmatched",
     "*.json": "biome check --write --no-errors-on-unmatched"
+  },
+  "volta": {
+    "node": "24.15.0"
   }
 }
