@@ -52,7 +52,9 @@
     "@fastify/swagger": "^9.7.0",
     "@fastify/swagger-ui": "^5.2.6",
     "ai": "^6.0.184",
-    "ai-sdk-provider-opencode-sdk": "^3.0.2"
+    "ai-sdk-provider-opencode-sdk": "^3.0.2",
+    "ffmpeg": "^0.0.4",
+    "secretary": "^0.1.0"
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.27.7"

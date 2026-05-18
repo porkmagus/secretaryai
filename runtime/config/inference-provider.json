@@ -1,13 +1,18 @@
 {
   "enabled": true,
   "activeTarget": "provider",
-  "selectedProviderId": "opencode_zen",
+  "selectedProviderId": "opencode_go",
   "reasoningEffort": "low",
   "providers": {
     "opencode_zen": {
       "baseUrl": "https://opencode.ai/zen/v1",
       "model": "mimo-v2-pro-free",
       "maxOutputTokens": 1000
+    },
+    "opencode_go": {
+      "baseUrl": "https://opencode.ai/zen/go/v1",
+      "model": "kimi-k2.6",
+      "maxOutputTokens": 262144
     }
   }
 }
