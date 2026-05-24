@@ -22,6 +22,9 @@ export async function POST(request: Request) {
     text,
   };
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
   try {
     const response = await fetch(`${workerBaseUrl}/runtime/chat/stream`, {
       method: "POST",
@@ -30,6 +33,7 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify(payload),
       cache: "no-store",
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -49,7 +53,13 @@ export async function POST(request: Request) {
       status: response.status,
       statusText: response.statusText,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return NextResponse.json({ error: "Worker request timed out." }, { status: 504 });
+    }
+    console.error("[chat] Worker stream request failed:", err);
     return NextResponse.json({ error: "Worker is unavailable." }, { status: 503 });
+  } finally {
+    clearTimeout(timeout);
   }
 }

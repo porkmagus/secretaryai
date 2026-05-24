@@ -451,7 +451,6 @@ export async function persistChatTurn({
   request,
   traceId,
 }: PersistTurnParams) {
-  void config;
   const preparedTurn = await prepareChatTurn({
     config,
     dbClient,

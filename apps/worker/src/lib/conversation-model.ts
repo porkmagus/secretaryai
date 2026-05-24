@@ -516,6 +516,11 @@ function logInferenceUnavailable(params: {
   if (!params.inference.enabled) {
     return;
   }
+
+  logFallbackTriggered(
+    `inference_unavailable: ${params.reason}`,
+    params.traceId,
+  );
 }
 
 function normalizeProviderError(error: unknown) {

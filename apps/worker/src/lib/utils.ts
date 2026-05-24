@@ -101,7 +101,7 @@ export async function resolveConversationId(
 
 // ─── Observability ──────────────────────────────────────────────────────────
 
-export function logAgentEvent(_event: {
+export function logAgentEvent(event: {
   type: string;
   reason?: string;
   textPreview?: string;
@@ -109,7 +109,20 @@ export function logAgentEvent(_event: {
   durationMs?: number;
   resultCount?: number;
   [key: string]: unknown;
-}) {}
+}) {
+  const extra: Record<string, string> = {};
+  if (event.reason) extra.reason = event.reason;
+  if (event.textPreview) extra.textPreview = event.textPreview;
+  if (event.toolKey) extra.toolKey = event.toolKey;
+  if (event.durationMs !== undefined) extra.durationMs = String(event.durationMs);
+  if (event.resultCount !== undefined) extra.resultCount = String(event.resultCount);
+
+  const details = Object.entries(extra)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(" ");
+
+  console.error(`[agent] ${event.type}${details ? ` ${details}` : ""}`);
+}
 
 export function logFallbackTriggered(reason: string, text: string) {
   logAgentEvent({
@@ -151,7 +164,7 @@ export function logError(params: {
   traceId?: string | null;
   metadataJson?: Record<string, unknown>;
 }) {
-  const _errorObj =
+  const errorObj =
     params.error instanceof Error
       ? {
           name: params.error.name,
@@ -159,6 +172,15 @@ export function logError(params: {
           stack: params.error.stack,
         }
       : params.error;
+
+  console.error(
+    `[error] ${params.service}.${params.event}`,
+    JSON.stringify({
+      error: errorObj,
+      traceId: params.traceId ?? null,
+      ...(params.metadataJson ?? {}),
+    }),
+  );
 }
 
 // ─── Normalization helpers ──────────────────────────────────────────────────

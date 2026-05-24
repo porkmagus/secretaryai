@@ -69,7 +69,8 @@ export async function proxyWorkerJson<T>(
     return NextResponse.json(payload as T, {
       status: successStatus ?? response.status,
     });
-  } catch {
+  } catch (err) {
+    console.error(`[worker-proxy] JSON proxy failed for ${path}:`, err);
     return NextResponse.json({ error: unavailableMessage }, { status: 503 });
   } finally {
     if (timeout) {
@@ -135,7 +136,8 @@ export async function proxyWorkerBinary(
           response.headers.get("content-type") ?? mimeType ?? "application/octet-stream",
       },
     });
-  } catch {
+  } catch (err) {
+    console.error(`[worker-proxy] JSON proxy failed for ${path}:`, err);
     return NextResponse.json({ error: unavailableMessage }, { status: 503 });
   } finally {
     if (timeout) {
@@ -192,7 +194,8 @@ export async function proxyWorkerFormDataJson<T>(
     return NextResponse.json(payload as T, {
       status: successStatus ?? response.status,
     });
-  } catch {
+  } catch (err) {
+    console.error(`[worker-proxy] FormData proxy failed for ${path}:`, err);
     return NextResponse.json({ error: unavailableMessage }, { status: 503 });
   }
 }

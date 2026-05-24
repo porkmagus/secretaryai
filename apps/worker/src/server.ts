@@ -48,7 +48,7 @@ function validateRequiredEnv(): void {
   }
 
   if (missing.length > 0) {
-    const _lines = [
+    const lines = [
       "",
       "╔══════════════════════════════════════════════════════════════╗",
       "║             SECRETARY WORKER — MISSING ENV VARS              ║",
@@ -62,6 +62,7 @@ function validateRequiredEnv(): void {
       "Then restart the worker.",
       "",
     ];
+    console.error(lines.join("\n"));
     process.exit(1);
   }
 }

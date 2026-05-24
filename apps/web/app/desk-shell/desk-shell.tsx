@@ -198,7 +198,6 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
   const latestAssistantMessage = [...messages]
     .reverse()
     .find((message) => message.role === "assistant");
-  const _latestMetadata = extractMetadata(latestAssistantMessage);
   const suggestionOptions = followUpSuggestions(latestAssistantMessage);
   const composerStatus =
     props.deskVoiceError ??
@@ -232,7 +231,7 @@ function DeskConversationPane(props: DeskConversationPaneProps) {
     });
 
     return () => window.cancelAnimationFrame(nextFrame);
-  }, [status]);
+  }, [status, messages]);
 
   useEffect(() => {
     const node = streamRef.current;

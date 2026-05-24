@@ -52,16 +52,24 @@ export function createAgentJobQueue(redisUrl: string, options: CreateAgentJobQue
 
   void queue.client
     .then((client) => {
-      client.on("error", (_err) => {});
+      client.on("error", (err) => {
+        console.error("[AgentJobQueue] Redis client error:", err);
+      });
     })
-    .catch((_err) => {});
+    .catch((err) => {
+      console.error("[AgentJobQueue] Failed to connect Redis client:", err);
+    });
 
   if (worker) {
     void worker.client
       .then((client) => {
-        client.on("error", (_err) => {});
+        client.on("error", (err) => {
+          console.error("[AgentJobQueue] Redis worker error:", err);
+        });
       })
-      .catch((_err) => {});
+      .catch((err) => {
+        console.error("[AgentJobQueue] Failed to connect Redis worker:", err);
+      });
   }
 
   return {

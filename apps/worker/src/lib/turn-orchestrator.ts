@@ -79,7 +79,6 @@ export async function resolveImmediateRuntimeTurn(
   });
 
   if (toolHandledTurn) {
-    void selectRuntimeTurnBranch({ tool_runtime: true });
     return toolHandledTurn;
   }
 
@@ -93,7 +92,6 @@ export async function resolveImmediateRuntimeTurn(
   });
 
   if (toolApprovalHandledTurn) {
-    void selectRuntimeTurnBranch({ tool_approval: true });
     return toolApprovalHandledTurn;
   }
 
@@ -108,7 +106,6 @@ export async function resolveImmediateRuntimeTurn(
   });
 
   if (requirementHandledTurn) {
-    void selectRuntimeTurnBranch({ agent_job_requirement: true });
     return requirementHandledTurn;
   }
 

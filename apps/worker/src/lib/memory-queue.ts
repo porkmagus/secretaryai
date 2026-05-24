@@ -50,16 +50,24 @@ export function createMemoryQueue(redisUrl: string, options: CreateMemoryQueueOp
 
   void queue.client
     .then((client) => {
-      client.on("error", (_err) => {});
+      client.on("error", (err) => {
+        console.error("[MemoryQueue] Redis client error:", err);
+      });
     })
-    .catch((_err) => {});
+    .catch((err) => {
+      console.error("[MemoryQueue] Failed to connect Redis client:", err);
+    });
 
   if (worker) {
     void worker.client
       .then((client) => {
-        client.on("error", (_err) => {});
+        client.on("error", (err) => {
+          console.error("[MemoryQueue] Redis worker error:", err);
+        });
       })
-      .catch((_err) => {});
+      .catch((err) => {
+        console.error("[MemoryQueue] Failed to connect Redis worker:", err);
+      });
   }
 
   return {
