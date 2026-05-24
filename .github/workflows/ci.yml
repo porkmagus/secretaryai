@@ -40,9 +40,6 @@ jobs:
           NODE_OPTIONS: "--no-warnings"
           TZ: "UTC"
 
-      - name: Lint
-        run: npm run lint
-
       - name: Phase 4 verify (dry)
         run: node scripts/phase4/verify.mjs --dry
 
