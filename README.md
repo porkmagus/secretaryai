@@ -45,18 +45,18 @@ Running `python3 secretary.py` with no flags opens an **interactive menu**:
 
 ```
   ╔══════════════════════════════════════════════════════════╗
-  ║        Secretary AI - Control Panel                       ║
+  ║        Secretary AI - Control Panel                      ║
   ╠══════════════════════════════════════════════════════════╣
-  ║  Status: ● Running (PID 27266)                          ║
+  ║  Status: ● Running (PID 27266)                           ║
   ╠══════════════════════════════════════════════════════════╣
-  ║  [1]  Install & Build (deps, venvs, compile)              ║
-  ║  [2]  Start All  (background)                           ║
-  ║  [3]  Start All  (foreground / live logs)               ║
+  ║  [1]  Install & Build (deps, venvs, compile)             ║
+  ║  [2]  Start All  (background)                            ║
+  ║  [3]  Start All  (foreground / live logs)                ║
   ║  [4]  Stop All    (kill processes, docker down)          ║
   ║  [5]  Status      (health check all ports)               ║
   ║  [6]  Logs        (tail service-runner output)           ║
-  ║  [7]  Full Reset  (stop + wipe runtime state)             ║
-  ║  [0]  Exit                                                ║
+  ║  [7]  Full Reset  (stop + wipe runtime state)            ║
+  ║  [0]  Exit                                               ║
   ╚══════════════════════════════════════════════════════════╝
 ```
 
@@ -131,30 +131,30 @@ The script is a cross-platform launcher and process manager. It delegates to the
 
 ```
 ╔═══════════════════════════════════════════════════════════════════════════╗
-║                                Secretary AI Stack                                     ║
+║                                Secretary AI Stack                         ║
 ╠═══════════════════════════════════════════════════════════════════════════╣
-║                                                                                       ║
-║   ┌──────────────────────────────────────────────────────────────────────┐   ║
-║   │  Web (Next.js 16)    http://localhost:3000                                    │   ║
-║   │  - Desk chat, Onboarding, Health, Persona, Memory, Activity, Tools, Voice   │   ║
-║   │  - Channels (Telegram integration setup)                                   │   ║
-║   └──────────────────────────────────────────────────────────────────────┘   ║
-║                                      │                                              ║
-║   ┌──────────────────────────────────────────────────────────────────────┐   ║
-║   │  Worker (Fastify)    http://localhost:4000                                   │   ║
-║   │  - Chat orchestration, async jobs (BullMQ/Redis)                            │   ║
-║   │  - Memory extraction, research, tool execution                              │   ║
-║   │  - Telegram webhook handler                                                 │   ║
-║   └──────────────────────────────────────────────────────────────────────┘   ║
-║                                      │                                              ║
-║   ┌──────────────────────────────────────────────────────────────────────┐   ║
-║   │  STT (faster-whisper) http://localhost:5001  │  TTS (Chatterbox) :5002      │   ║
-║   └──────────────────────────────────────────────────────────────────────┘   ║
-║                                      │                                              ║
-║   ┌──────────────────────────────────────────────────────────────────────┐   ║
+║                                                                           ║
+║   ┌──────────────────────────────────────────────────────────────────────┐║
+║   │  Web (Next.js 16)    http://localhost:3000                           │║
+║   │  - Desk chat, Onboarding, Health, Persona, Memory, Activity, voice   │║
+║   │  - Channels (Telegram integration setup)                             │║
+║   └──────────────────────────────────────────────────────────────────────┘║
+║                                      │                                    ║
+║   ┌──────────────────────────────────────────────────────────────────────┐║
+║   │  Worker (Fastify)    http://localhost:4000                           │║
+║   │  - Chat orchestration, async jobs (BullMQ/Redis)                     │║
+║   │  - Memory extraction, research, tool execution                       │║
+║   │  - Telegram webhook handler                                          │║
+║   └──────────────────────────────────────────────────────────────────────┘║
+║                                      │                                    ║
+║   ┌──────────────────────────────────────────────────────────────────────┐║
+║   │  STT (faster-whisper) http://localhost:5001  │TTS (Chatterbox) :5002 │║
+║   └──────────────────────────────────────────────────────────────────────┘║
+║                                      │                                    ║
+║   ┌──────────────────────────────────────────────────────────────────────┐║
 ║   │  Postgres (pgvector) :5432  │  Redis :6379  │  SearXNG :8080  │  Crawl4AI :11235 │   ║
-║   └──────────────────────────────────────────────────────────────────────┘   ║
-║                                                                                       ║
+║   └──────────────────────────────────────────────────────────────────────┘║
+║                                                                           ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 ```
 
